@@ -1,6 +1,3 @@
-## 🔥 관련 이슈
-relates to #ISSUE_NUMBER
-
 ## 💜 기능 개요
 - 새로운 기능 혹은 개선 사항 요약
 
