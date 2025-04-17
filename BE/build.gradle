@@ -49,8 +49,17 @@ dependencies {
 	// redies
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
-	// AWS S3
-//	implementation 'com.amazonaws:aws-java-sdk-s3:1.12.696'
+	// WebSocket 관련 의존성
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
+	// JSON 처리를 위한 라이브러리
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+	// Java WebSocket Client 라이브러리
+	implementation 'org.java-websocket:Java-WebSocket:1.5.3'
+
+	// Add WebFlux for WebClient
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 
 	// 테스트용
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
