@@ -2,27 +2,26 @@ package realClassOne.chickenStock.stock.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
-import realClassOne.chickenStock.stock.service.KiwoomAuthService;
+import realClassOne.chickenStock.stock.dto.request.StockSubscriptionRequestDTO;
+import realClassOne.chickenStock.stock.dto.response.StockSubscriptionResponseDTO;
 import realClassOne.chickenStock.stock.service.StockInfoService;
-import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
+import realClassOne.chickenStock.stock.service.StockSubscriptionService;
 
 import java.util.List;
+import java.util.Set;
 
 @RestController
-@RequestMapping(value = "/api/stock")
+@RequestMapping(value = "/api/stocks")
 @RequiredArgsConstructor
 @Slf4j
 public class StockController {
 
-    private final KiwoomAuthService authService;
-    private final KiwoomWebSocketClient kiwoomWebSocketClient;
     private final StockInfoService stockInfoService;
+    private final StockSubscriptionService stockSubscriptionService;
 
     @GetMapping("/all")
     public ResponseEntity<List<StockResponse>> getAllStocks() {
@@ -34,38 +33,36 @@ public class StockController {
     public ResponseEntity<StockResponse> getStockByCode(@PathVariable String code) {
         log.debug("종목코드로 주식 정보 요청: {}", code);
         StockResponse stock = stockInfoService.getStockByCode(code);
-        if (stock != null) {
-            return ResponseEntity.ok(stock);
-        } else {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.ok(stock);
     }
 
     @GetMapping("/name/{name}")
     public ResponseEntity<StockResponse> getStockByName(@PathVariable String name) {
         log.debug("종목명으로 주식 정보 요청: {}", name);
         StockResponse stock = stockInfoService.getStockByName(name);
-        if (stock != null) {
-            return ResponseEntity.ok(stock);
-        } else {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.ok(stock);
     }
 
-    @GetMapping("/test-encoding")
-    public ResponseEntity<StockResponse> testEncoding() {
-        StockResponse testStock = StockResponse.builder()
-                .shortCode("000000")
-                .shortName("테스트종목")
-                .market("KOSPI")
-                .stockType("보통주")
-                .faceValue("500")
-                .build();
-        return ResponseEntity.ok(testStock);
+    @PostMapping("/subscribe")
+    public ResponseEntity<Void> subscribeStock(@RequestBody StockSubscriptionRequestDTO request) {
+        log.info("종목 구독 요청: {}", request.getStockCode());
+        stockSubscriptionService.registerStockForSubscription(request.getStockCode());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/unsubscribe")
+    public ResponseEntity<Void> unsubscribeStock(@RequestBody StockSubscriptionRequestDTO request) {
+        log.info("종목 구독 해제 요청: {}", request.getStockCode());
+        stockSubscriptionService.unregisterStockForSubscription(request.getStockCode());
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/subscribed")
+    public ResponseEntity<Set<String>> getSubscribedStocks() {
+        Set<String> subscribedStocks = stockSubscriptionService.getSubscribedStocks();
+        return ResponseEntity.ok(subscribedStocks);
     }
 }
-
-
 
 
 

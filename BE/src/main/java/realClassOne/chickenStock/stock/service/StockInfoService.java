@@ -7,8 +7,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
 import realClassOne.chickenStock.stock.entity.Stock;
+import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockRepository;
 
 import java.io.BufferedReader;
@@ -68,72 +70,6 @@ public class StockInfoService {
             log.error("주식 종목 정보 로드 중 오류 발생", e);
         }
     }
-
-//    private void loadStocksFromFile(File file) {
-//        try (BufferedReader reader = new BufferedReader(
-//                new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-//
-//            // 첫 줄은 헤더이므로 스킵
-//            String line = reader.readLine();
-//            log.debug("헤더 라인: {}", line);
-//
-//            List<Stock> stockBatch = new ArrayList<>();
-//            int count = 0;
-//
-//            while ((line = reader.readLine()) != null) {
-//                try {
-//                    // CSV 형식 파싱 (따옴표로 감싸진 값들 처리)
-//                    String[] fields = parseCsvLine(line);
-//
-//                    // 필드 개수가 충분한지 확인
-//                    if (fields.length >= 11) {
-//                        String rawShortCode = fields[1].trim();
-//                        String shortName = fields[3].trim();
-//                        String market = fields[6].trim();
-//                        String stockType = (fields.length > 9 && !fields[9].isEmpty()) ? fields[9].trim() : "일반";
-//                        String faceValue = fields[10].trim();
-//
-//                        log.debug("파싱된 값 - 코드: {}, 이름: {}, 시장: {}, 유형: {}, 액면가: {}",
-//                                rawShortCode, shortName, market, stockType, faceValue);
-//
-//                        // 단축코드를 6자리로 표준화
-//                        String shortCode = normalizeShortCode(rawShortCode);
-//
-//                        Stock stock = Stock.builder()
-//                                .shortCode(shortCode)
-//                                .shortName(shortName)
-//                                .market(market)
-//                                .stockType(stockType)
-//                                .faceValue(faceValue)
-//                                .build();
-//
-//                        stockBatch.add(stock);
-//                        count++;
-//
-//                        // 배치 크기가 100이 되면 저장
-//                        if (stockBatch.size() >= 100) {
-//                            stockRepository.saveAll(stockBatch);
-//                            stockBatch.clear();
-//                        }
-//                    } else {
-//                        log.warn("필드 수가 부족한 라인: {}", line);
-//                    }
-//                } catch (Exception e) {
-//                    log.error("라인 처리 중 오류 발생: {}", line, e);
-//                }
-//            }
-//
-//            // 남은 배치 저장
-//            if (!stockBatch.isEmpty()) {
-//                stockRepository.saveAll(stockBatch);
-//            }
-//
-//            log.info("{}에서 로드된 종목 수: {}", file.getName(), count);
-//        } catch (Exception e) {
-//            log.error("주식 종목 정보 파일 읽기 중 오류 발생: {}", file.getName(), e);
-//            e.printStackTrace();
-//        }
-//    }
 
     // CSV 라인 파싱 (따옴표로 감싸진 값 처리)
     private String[] parseCsvLine(String line) {
@@ -220,14 +156,14 @@ public class StockInfoService {
         String normalizedCode = normalizeShortCode(code);
         return stockRepository.findById(normalizedCode)
                 .map(this::mapStockToResponse)
-                .orElse(null);
+                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
     }
 
     @Transactional(readOnly = true)
     public StockResponse getStockByName(String name) {
         return stockRepository.findByShortName(name)
                 .map(this::mapStockToResponse)
-                .orElse(null);
+                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND_BY_NAME));
     }
 
     private StockResponse mapStockToResponse(Stock stock) {

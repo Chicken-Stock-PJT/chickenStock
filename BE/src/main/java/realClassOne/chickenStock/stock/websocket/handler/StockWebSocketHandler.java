@@ -2,6 +2,7 @@ package realClassOne.chickenStock.stock.websocket.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -25,20 +27,43 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
     private final ObjectMapper objectMapper;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
+    // 각 세션별 구독 종목 관리
+    private final Map<String, Set<String>> sessionSubscriptions = new ConcurrentHashMap<>();
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         log.info("클라이언트 연결: {}", session.getId());
         sessions.put(session.getId(), session);
+        sessionSubscriptions.put(session.getId(), ConcurrentHashMap.newKeySet());
 
         // KiwoomWebSocketClient에 리스너로 등록
         if (sessions.size() == 1) {
             kiwoomWebSocketClient.addListener(this);
+        }
+
+        try {
+            // 클라이언트에게 연결 성공 메시지 전송
+            ObjectNode connectMessage = objectMapper.createObjectNode();
+            connectMessage.put("type", "connected");
+            connectMessage.put("message", "실시간 주식 데이터 서버에 연결되었습니다");
+
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(connectMessage)));
+        } catch (Exception e) {
+            log.error("연결 메시지 전송 실패", e);
         }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         log.info("클라이언트 연결 종료: {}", session.getId());
+
+        // 해당 세션의 모든 구독 종목 해제
+        Set<String> subscribedStocks = sessionSubscriptions.remove(session.getId());
+        if (subscribedStocks != null) {
+            subscribedStocks.forEach(stockCode ->
+                    kiwoomWebSocketClient.unsubscribeStock(stockCode));
+        }
+
         sessions.remove(session.getId());
 
         // 연결된 클라이언트가 없으면 리스너 제거
@@ -53,21 +78,97 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             // 클라이언트로부터 메시지 수신 처리
             JsonNode requestJson = objectMapper.readTree(message.getPayload());
             String action = requestJson.get("action").asText();
+            String stockCode = requestJson.has("stockCode") ? requestJson.get("stockCode").asText() : null;
+
+            if (stockCode == null || stockCode.trim().isEmpty()) {
+                sendErrorMessage(session, "종목 코드가 유효하지 않습니다.");
+                return;
+            }
+
+            stockCode = stockCode.trim();
 
             if ("subscribe".equals(action)) {
                 // 클라이언트가 특정 종목 구독 요청
-                String stockCode = requestJson.get("stockCode").asText();
                 log.info("클라이언트 {} 종목 구독 요청: {}", session.getId(), stockCode);
 
-                // 여기서 필요하다면 해당 종목을 키움API에 등록할 수 있음
+                Set<String> subscribedStocks = sessionSubscriptions.get(session.getId());
+                if (subscribedStocks != null && !subscribedStocks.contains(stockCode)) {
+                    // 키움 API에 종목 등록
+                    boolean success = kiwoomWebSocketClient.subscribeStock(stockCode);
+
+                    if (success) {
+                        subscribedStocks.add(stockCode);
+                        sendSuccessMessage(session, "구독", stockCode);
+                    } else {
+                        sendErrorMessage(session, "종목 등록에 실패했습니다: " + stockCode);
+                    }
+                } else {
+                    sendInfoMessage(session, "이미 구독 중인 종목입니다: " + stockCode);
+                }
             } else if ("unsubscribe".equals(action)) {
                 // 클라이언트가 특정 종목 구독 해제 요청
-                String stockCode = requestJson.get("stockCode").asText();
                 log.info("클라이언트 {} 종목 구독 해제 요청: {}", session.getId(), stockCode);
+
+                Set<String> subscribedStocks = sessionSubscriptions.get(session.getId());
+                if (subscribedStocks != null && subscribedStocks.contains(stockCode)) {
+                    // 키움 API에서 종목 해제
+                    boolean success = kiwoomWebSocketClient.unsubscribeStock(stockCode);
+
+                    if (success) {
+                        subscribedStocks.remove(stockCode);
+                        sendSuccessMessage(session, "구독 해제", stockCode);
+                    } else {
+                        sendErrorMessage(session, "종목 해제에 실패했습니다: " + stockCode);
+                    }
+                } else {
+                    sendInfoMessage(session, "구독 중이 아닌 종목입니다: " + stockCode);
+                }
+            } else if ("list".equals(action)) {
+                // 구독 중인 종목 목록 요청
+                Set<String> subscribedStocks = sessionSubscriptions.get(session.getId());
+                if (subscribedStocks != null) {
+                    ObjectNode listMessage = objectMapper.createObjectNode();
+                    listMessage.put("type", "subscriptionList");
+
+                    ArrayNode stockList = objectMapper.createArrayNode();
+                    for (String code : subscribedStocks) {
+                        stockList.add(code);
+                    }
+
+                    listMessage.set("stocks", stockList);
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(listMessage)));
+                }
             }
         } catch (Exception e) {
             log.error("클라이언트 메시지 처리 중 오류 발생", e);
+            try {
+                sendErrorMessage(session, "메시지 처리 중 오류가 발생했습니다.");
+            } catch (Exception ex) {
+                log.error("오류 메시지 전송 실패", ex);
+            }
         }
+    }
+
+    private void sendSuccessMessage(WebSocketSession session, String action, String stockCode) throws IOException {
+        ObjectNode message = objectMapper.createObjectNode();
+        message.put("type", "success");
+        message.put("action", action);
+        message.put("stockCode", stockCode);
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
+    }
+
+    private void sendErrorMessage(WebSocketSession session, String errorMessage) throws IOException {
+        ObjectNode message = objectMapper.createObjectNode();
+        message.put("type", "error");
+        message.put("message", errorMessage);
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
+    }
+
+    private void sendInfoMessage(WebSocketSession session, String infoMessage) throws IOException {
+        ObjectNode message = objectMapper.createObjectNode();
+        message.put("type", "info");
+        message.put("message", infoMessage);
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
     }
 
     @Override
@@ -83,7 +184,9 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             messageNode.put("timestamp", data.get("20").asText());         // 체결시간
 
             String message = objectMapper.writeValueAsString(messageNode);
-            broadcastMessage(message);
+
+            // 해당 종목을 구독 중인 세션에만 전송
+            broadcastToSubscribers(stockCode, message);
         } catch (Exception e) {
             log.error("주식체결 데이터 처리 중 오류 발생", e);
         }
@@ -124,20 +227,27 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             messageNode.set("bidVolumes", bidVolumes);
 
             String message = objectMapper.writeValueAsString(messageNode);
-            broadcastMessage(message);
+
+            // 해당 종목을 구독 중인 세션에만 전송
+            broadcastToSubscribers(stockCode, message);
         } catch (Exception e) {
             log.error("주식호가잔량 데이터 처리 중 오류 발생", e);
         }
     }
 
-    private void broadcastMessage(String message) {
-        sessions.values().forEach(session -> {
-            try {
-                if (session.isOpen()) {
-                    session.sendMessage(new TextMessage(message));
+    // 특정 종목 구독자들에게만 메시지 전송
+    private void broadcastToSubscribers(String stockCode, String message) {
+        sessionSubscriptions.forEach((sessionId, subscribedStocks) -> {
+            if (subscribedStocks.contains(stockCode)) {
+                WebSocketSession session = sessions.get(sessionId);
+
+                if (session != null && session.isOpen()) {
+                    try {
+                        session.sendMessage(new TextMessage(message));
+                    } catch (IOException e) {
+                        log.error("메시지 전송 중 오류 발생: {}", sessionId, e);
+                    }
                 }
-            } catch (IOException e) {
-                log.error("메시지 전송 중 오류 발생: {}", session.getId(), e);
             }
         });
     }
