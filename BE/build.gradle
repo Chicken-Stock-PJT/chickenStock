@@ -61,6 +61,8 @@ dependencies {
 	// Add WebFlux for WebClient
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 
+	implementation 'com.opencsv:opencsv:5.9'
+
 	// 테스트용
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 
