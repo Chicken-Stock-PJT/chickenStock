@@ -2,12 +2,10 @@ package realClassOne.chickenStock.stock.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
 import realClassOne.chickenStock.stock.dto.request.StockSubscriptionRequestDTO;
-import realClassOne.chickenStock.stock.dto.response.StockSubscriptionResponseDTO;
 import realClassOne.chickenStock.stock.service.StockInfoService;
 import realClassOne.chickenStock.stock.service.StockSubscriptionService;
 
@@ -18,7 +16,7 @@ import java.util.Set;
 @RequestMapping(value = "/api/stocks")
 @RequiredArgsConstructor
 @Slf4j
-public class StockController {
+public class StockSocketController {
 
     private final StockInfoService stockInfoService;
     private final StockSubscriptionService stockSubscriptionService;
@@ -63,12 +61,3 @@ public class StockController {
         return ResponseEntity.ok(subscribedStocks);
     }
 }
-
-
-
-//    @GetMapping("/register/{stockCode}")
-//    public ResponseEntity<String> registerStock(@PathVariable String stockCode) {
-//        kiwoomWebSocketClient.registerRealTimeData("0B", List.of(stockCode));
-//        kiwoomWebSocketClient.registerRealTimeData("0D", List.of(stockCode));
-//        return ResponseEntity.ok("종목 등록 완료: " + stockCode);
-//    }
