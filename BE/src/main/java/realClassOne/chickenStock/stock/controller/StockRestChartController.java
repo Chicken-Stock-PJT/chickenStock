@@ -12,7 +12,7 @@ import realClassOne.chickenStock.stock.service.StockChartService;
 @RequestMapping("/api/stock/chart")
 @RequiredArgsConstructor
 @Slf4j
-public class StockRestController {
+public class StockRestChartController {
 
     private final StockChartService stockChartService;
 

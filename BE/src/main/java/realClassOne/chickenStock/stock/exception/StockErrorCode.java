@@ -17,7 +17,8 @@ public enum StockErrorCode implements ErrorCode {
     API_REQUEST_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E007", "API 요청 처리에 실패했습니다"),
     CHART_DATA_PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E008", "차트 데이터 처리에 실패했습니다"),
     AUTHENTICATION_FAILED(HttpStatus.UNAUTHORIZED, "STOCK-E009", "API 인증에 실패했습니다"),
-    INVALID_CHART_TYPE(HttpStatus.BAD_REQUEST, "STOCK-E010", "유효하지 않은 차트 타입입니다");
+    INVALID_CHART_TYPE(HttpStatus.BAD_REQUEST, "STOCK-E010", "유효하지 않은 차트 타입입니다"),
+    INVALID_RANKING_TYPE(HttpStatus.BAD_REQUEST, "STOCK-E011", "유효하지 않은 랭킹 타입입니다");
 
     private final HttpStatus httpStatus;
     private final String code;
