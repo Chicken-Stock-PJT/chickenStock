@@ -1,0 +1,62 @@
+# 실행할 서비스(컨테이너) 정의
+services:
+  # Jenkins 서비스 정의
+  jenkins:
+    # Dockerfile을 사용하여 이미지 빌드
+    build:
+      # 빌드 컨텍스트(파일 경로) 지정
+      context: ./docker/jenkins
+      # 사용할 Dockerfile 이름 지정
+      dockerfile: Dockerfile
+    # 생성될 컨테이너 이름 지정
+    container_name: jenkins
+    # 컨테이너 재시작 정책 설정 (충돌 시 자동 재시작, 수동 중지 시 재시작 안 함)
+    restart: unless-stopped
+    # 호스트와 컨테이너 간의 포트 매핑
+    ports:
+      - "8080:8080" # Jenkins 웹 UI 포트
+      - "50000:50000" # Jenkins 에이전트 연결 포트
+    # 호스트와 컨테이너 간의 볼륨 마운트 설정
+    volumes:
+      - jenkins_home:/var/jenkins_home # Jenkins 데이터 영구 저장을 위한 볼륨
+      - /var/run/docker.sock:/var/run/docker.sock # 호스트의 Docker 소켓 마운트 (Docker 명령어 실행 가능)
+    # 컨테이너가 연결될 네트워크 지정
+    networks:
+      - cicd_network
+
+  # Nginx 서비스 정의
+  nginx:
+    # Dockerfile을 사용하여 이미지 빌드
+    build:
+      # 빌드 컨텍스트(파일 경로) 지정
+      context: ./docker/nginx
+      # 사용할 Dockerfile 이름 지정
+      dockerfile: Dockerfile
+    # 생성될 컨테이너 이름 지정
+    container_name: nginx
+    # 컨테이너 재시작 정책 설정
+    restart: unless-stopped
+    # 호스트와 컨테이너 간의 포트 매핑
+    ports:
+      - "80:80" # HTTP 포트
+      - "443:443" # HTTPS 포트
+    # 서비스 의존성 설정 (jenkins 서비스가 먼저 시작된 후 nginx 시작)
+    depends_on:
+      - jenkins
+    # 컨테이너가 연결될 네트워크 지정
+    networks:
+      - cicd_network
+
+# Docker 네트워크 정의
+networks:
+  # cicd_network라는 네트워크 생성
+  cicd_network:
+    # 브릿지 네트워크 드라이버 사용 (같은 Docker 호스트 내 컨테이너 간 통신 가능)
+    driver: bridge
+
+# Docker 볼륨 정의
+volumes:
+  # jenkins_home이라는 볼륨 생성
+  jenkins_home:
+    # 로컬 파일시스템에 데이터 저장하는 볼륨 드라이버 사용
+    driver: local
