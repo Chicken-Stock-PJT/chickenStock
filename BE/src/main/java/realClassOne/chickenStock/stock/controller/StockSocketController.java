@@ -9,7 +9,9 @@ import realClassOne.chickenStock.stock.dto.request.StockSubscriptionRequestDTO;
 import realClassOne.chickenStock.stock.service.StockInfoService;
 import realClassOne.chickenStock.stock.service.StockSubscriptionService;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @RestController
@@ -60,4 +62,17 @@ public class StockSocketController {
         Set<String> subscribedStocks = stockSubscriptionService.getSubscribedStocks();
         return ResponseEntity.ok(subscribedStocks);
     }
+
+//    @PostMapping("/subscribe-all")
+//    public ResponseEntity<Map<String, Object>> subscribeAllStocks() {
+//        log.info("모든 종목 일괄 구독 요청 받음");
+//        int successCount = stockSubscriptionService.registerAllStocksForSubscription();
+//
+//        Map<String, Object> response = new HashMap<>();
+//        response.put("status", "success");
+//        response.put("message", "일괄 구독 처리 완료");
+//        response.put("subscribedCount", successCount);
+//
+//        return ResponseEntity.ok(response);
+//    }
 }
