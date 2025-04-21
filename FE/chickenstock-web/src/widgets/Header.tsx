@@ -7,7 +7,7 @@ const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   return (
-    <div className="flex items-center justify-between h-14 px-4">
+    <div className="flex items-center justify-between h-14 px-4 w-screen">
       <div className="flex items-center">
         <img
           src={logo}

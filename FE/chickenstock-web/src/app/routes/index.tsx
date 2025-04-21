@@ -3,6 +3,8 @@ import ErrorPage from "../../pages/ErrorPage";
 import HomePage from "../../pages/HomePage";
 import Layout from "../Layout";
 import StockPage from "../../pages/StockPage";
+import { Children } from "react";
+import StockList from "../../pages/StockList";
 // import LoginPage from "../../pages/LoginPage";
 // import SignupPage from "../../pages/SignupPage";
 // import DashboardPage from "../../pages/DashboardPage";
@@ -31,7 +33,16 @@ const router = createBrowserRouter([
       //   },
       {
         path: "stocks",
-        element: <StockPage />,
+        children: [
+          {
+            path: "",
+            element: <StockList />,
+          },
+          {
+            path: ":id",
+            element: <StockPage />,
+          },
+        ],
       },
     ],
   },
