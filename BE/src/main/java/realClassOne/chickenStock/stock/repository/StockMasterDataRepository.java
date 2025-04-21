@@ -7,6 +7,7 @@ import realClassOne.chickenStock.stock.entity.StockMasterData;
 import java.util.Optional;
 
 @Repository
-public interface StockRepository extends JpaRepository<StockMasterData, String> {
+public interface StockMasterDataRepository extends JpaRepository<StockMasterData, String> {
     Optional<StockMasterData> findByShortName(String shortName);
+    Optional<StockMasterData> findByShortCode(String shortCode);
 }

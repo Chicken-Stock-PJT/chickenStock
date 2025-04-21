@@ -15,7 +15,7 @@ public class InvestmentSummary {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "portfolio_id")
-    private Long portfolioId;
+    private Long InvestmentSummaryId;
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "member_id", nullable = false)
