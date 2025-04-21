@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
-import realClassOne.chickenStock.stock.entity.StockMasterData;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockMasterDataRepository;
 
@@ -105,7 +105,7 @@ public class StockInfoService {
 
             csvReader.skip(1); // 헤더 스킵
 
-            List<StockMasterData> stockMasterDataBatches = new ArrayList<>();
+            List<StockData> stockDataBatches = new ArrayList<>();
             String[] fields;
             while ((fields = csvReader.readNext()) != null) {
                 try {
@@ -119,7 +119,7 @@ public class StockInfoService {
                         // 단축코드 6자리 보정
                         shortCode = String.format("%06d", Integer.parseInt(shortCode));
 
-                        StockMasterData stockMasterData = StockMasterData.of(
+                        StockData stockData = StockData.of(
                                 shortCode,
                                 shortName,
                                 market,
@@ -127,15 +127,15 @@ public class StockInfoService {
                                 faceValue
                         );
 
-                        stockMasterDataBatches.add(stockMasterData);
+                        stockDataBatches.add(stockData);
                     }
                 } catch (Exception e) {
                     log.error("CSV 라인 오류: {}", Arrays.toString(fields), e);
                 }
             }
 
-            stockMasterDataRepository.saveAll(stockMasterDataBatches);
-            log.info("{}에서 로드된 종목 수: {}", file.getName(), stockMasterDataBatches.size());
+            stockMasterDataRepository.saveAll(stockDataBatches);
+            log.info("{}에서 로드된 종목 수: {}", file.getName(), stockDataBatches.size());
 
         } catch (Exception e) {
             log.error("파일 읽기 실패: {}", file.getAbsolutePath(), e);
@@ -164,13 +164,13 @@ public class StockInfoService {
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND_BY_NAME));
     }
 
-    private StockResponse mapStockToResponse(StockMasterData stockMasterData) {
+    private StockResponse mapStockToResponse(StockData stockData) {
         return StockResponse.builder()
-                .shortCode(stockMasterData.getShortCode())
-                .shortName(stockMasterData.getShortName())
-                .market(stockMasterData.getMarket())
-                .stockType(stockMasterData.getStockType())
-                .faceValue(stockMasterData.getFaceValue())
+                .shortCode(stockData.getShortCode())
+                .shortName(stockData.getShortName())
+                .market(stockData.getMarket())
+                .stockType(stockData.getStockType())
+                .faceValue(stockData.getFaceValue())
                 .build();
     }
 }

@@ -5,7 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import realClassOne.chickenStock.member.entity.Member;
-import realClassOne.chickenStock.stock.entity.StockMasterData;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 
 import java.time.LocalDateTime;
@@ -14,9 +14,9 @@ import java.util.List;
 @Repository
 public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long> {
     List<TradeHistory> findByMember(Member member);
-    List<TradeHistory> findByStockData(StockMasterData stockData);
+    List<TradeHistory> findByStockData(StockData stockData);
     List<TradeHistory> findByMemberAndTradeType(Member member, TradeHistory.TradeType tradeType);
-    List<TradeHistory> findByMemberAndStockData(Member member, StockMasterData stockData);
+    List<TradeHistory> findByMemberAndStockData(Member member, StockData stockData);
 
     @Query("SELECT th FROM TradeHistory th WHERE th.member = :member AND th.tradedAt BETWEEN :startDate AND :endDate ORDER BY th.tradedAt DESC")
     List<TradeHistory> findByMemberAndTradedAtBetween(
@@ -27,7 +27,7 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
     @Query("SELECT th FROM TradeHistory th WHERE th.member = :member AND th.stockData = :stockData AND th.tradedAt BETWEEN :startDate AND :endDate ORDER BY th.tradedAt DESC")
     List<TradeHistory> findByMemberAndStockDataAndTradedAtBetween(
             @Param("member") Member member,
-            @Param("stockData") StockMasterData stockData,
+            @Param("stockData") StockData stockData,
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate);
 }

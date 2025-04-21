@@ -5,7 +5,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.stock.entity.PendingOrder;
-import realClassOne.chickenStock.stock.entity.StockMasterData;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 
 import java.util.List;
@@ -15,7 +15,7 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
 
     List<PendingOrder> findByMemberAndStatus(Member member, PendingOrder.OrderStatus status);
 
-    List<PendingOrder> findByStockDataAndStatus(StockMasterData stockData, PendingOrder.OrderStatus status);
+    List<PendingOrder> findByStockDataAndStatus(StockData stockData, PendingOrder.OrderStatus status);
 
     @Query("SELECT po FROM PendingOrder po WHERE po.stockData.shortCode = :stockCode AND po.status = :status")
     List<PendingOrder> findByStockCodeAndStatus(@Param("stockCode") String stockCode, @Param("status") PendingOrder.OrderStatus status);

@@ -24,7 +24,7 @@ public class PendingOrder {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "stock_data_id", nullable = false)
-    private StockMasterData stockData;
+    private StockData stockData;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "order_type", nullable = false)
@@ -51,7 +51,7 @@ public class PendingOrder {
         FAILED        // 실패함
     }
 
-    private PendingOrder(Member member, StockMasterData stockData, TradeHistory.TradeType orderType,
+    private PendingOrder(Member member, StockData stockData, TradeHistory.TradeType orderType,
                          Integer quantity, Long targetPrice, OrderStatus status) {
         this.member = member;
         this.stockData = stockData;
@@ -62,7 +62,7 @@ public class PendingOrder {
         this.createdAt = LocalDateTime.now();
     }
 
-    public static PendingOrder of(Member member, StockMasterData stockData, TradeHistory.TradeType orderType,
+    public static PendingOrder of(Member member, StockData stockData, TradeHistory.TradeType orderType,
                                   Integer quantity, Long targetPrice) {
         return new PendingOrder(member, stockData, orderType, quantity, targetPrice, OrderStatus.PENDING);
     }

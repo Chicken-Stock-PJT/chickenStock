@@ -8,8 +8,11 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
+import realClassOne.chickenStock.stock.entity.PendingOrder;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
+import realClassOne.chickenStock.stock.exception.StockErrorCode;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -78,6 +81,9 @@ public class Member {
     private List<TradeHistory> tradeHistories = new ArrayList<>();
 
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL)
+    private List<PendingOrder> pendingOrders = new ArrayList<>();
+
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL)
     private List<HoldingPosition> holdingPositions = new ArrayList<>();
 
     @OneToOne(mappedBy = "member", cascade = CascadeType.ALL)
@@ -128,6 +134,10 @@ public class Member {
         this.holdingPositions.add(holdingPosition);
     }
 
+    public void addPendingOrder(PendingOrder pendingOrder) {
+        this.pendingOrders.add(pendingOrder);
+    }
+
     public void setInvestmentSummary(InvestmentSummary investmentSummary) {
         this.investmentSummary = investmentSummary;
     }
@@ -141,9 +151,9 @@ public class Member {
     }
 
     public void subtractMemberMoney(Long amount) {
-//        if (this.memberMoney < amount) {
-//            throw new InsufficientBalanceException("잔액이 부족합니다");
-//        }
+        if (this.memberMoney < amount) {
+            throw new CustomException(StockErrorCode.INSUFFICIENT_BALANCE);
+        }
         this.memberMoney -= amount;
     }
 }

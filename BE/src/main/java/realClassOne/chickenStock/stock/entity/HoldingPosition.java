@@ -22,7 +22,7 @@ public class HoldingPosition {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "stock_data_id", nullable = false)
-    private StockMasterData stockData;
+    private StockData stockData;
 
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
@@ -36,7 +36,7 @@ public class HoldingPosition {
     @Column(name = "return_rate", nullable = false)
     private Double returnRate;
 
-    private HoldingPosition(Member member, StockMasterData stockData, Integer quantity,
+    private HoldingPosition(Member member, StockData stockData, Integer quantity,
                             Long averagePrice, Long currentProfit, Double returnRate) {
         this.member = member;
         this.stockData = stockData;
@@ -46,7 +46,7 @@ public class HoldingPosition {
         this.returnRate = returnRate;
     }
 
-    public static HoldingPosition of(Member member, StockMasterData stockData, Integer quantity,
+    public static HoldingPosition of(Member member, StockData stockData, Integer quantity,
                                      Long averagePrice, Long currentProfit, Double returnRate) {
         return new HoldingPosition(member, stockData, quantity, averagePrice, currentProfit, returnRate);
     }

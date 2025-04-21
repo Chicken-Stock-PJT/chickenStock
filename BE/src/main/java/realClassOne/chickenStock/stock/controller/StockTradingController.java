@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import realClassOne.chickenStock.stock.dto.common.PendingOrderDTO;
 import realClassOne.chickenStock.stock.dto.request.TradeRequestDTO;
+import realClassOne.chickenStock.stock.dto.response.OrderCancelResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.TradeResponseDTO;
 import realClassOne.chickenStock.stock.service.StockTradeService;
 
@@ -28,18 +29,17 @@ public class StockTradingController {
      */
     @PostMapping("/buy")
     public ResponseEntity<TradeResponseDTO> buyStock(
-            @RequestHeader("Member-Id") Long memberId,
             @RequestBody TradeRequestDTO request) {
 
-        log.info("매수 주문 요청 - 회원: {}, 종목: {}, 수량: {}, 시장가여부: {}",
-                memberId, request.getStockCode(), request.getQuantity(), request.getMarketOrder());
+        log.info("매수 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
+                request.getStockCode(), request.getQuantity(), request.getMarketOrder());
 
         // 시장가 주문인 경우 가격 설정 없이 처리
         if (Boolean.TRUE.equals(request.getMarketOrder())) {
             request.setPrice(null);
         }
 
-        TradeResponseDTO response = stockTradeService.buyStock(memberId, request);
+        TradeResponseDTO response = stockTradeService.buyStock(request);
         return ResponseEntity.ok(response);
     }
 
@@ -49,75 +49,49 @@ public class StockTradingController {
      */
     @PostMapping("/sell")
     public ResponseEntity<TradeResponseDTO> sellStock(
-            @RequestHeader("Member-Id") Long memberId,
             @RequestBody TradeRequestDTO request) {
 
-        log.info("매도 주문 요청 - 회원: {}, 종목: {}, 수량: {}, 시장가여부: {}",
-                memberId, request.getStockCode(), request.getQuantity(), request.getMarketOrder());
+        log.info("매도 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
+                request.getStockCode(), request.getQuantity(), request.getMarketOrder());
 
         // 시장가 주문인 경우 가격 설정 없이 처리
         if (Boolean.TRUE.equals(request.getMarketOrder())) {
             request.setPrice(null);
         }
 
-        TradeResponseDTO response = stockTradeService.sellStock(memberId, request);
+        TradeResponseDTO response = stockTradeService.sellStock(request);
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * 회원 기본금 초기화 API (3억)
-     */
+    // 회원 기본금 초기화 API (3억)
     @PostMapping("/initialize-money")
     public ResponseEntity<Object> initializeMemberMoney(
-            @RequestHeader("Member-Id") Long memberId) {
+            @RequestHeader("Authorization") String authorizationHeader) {
 
-        log.info("회원 기본금 초기화 요청 - 회원: {}", memberId);
-        stockTradeService.initializeMemberMoney(memberId);
-
-        return ResponseEntity.ok().body(
-                Map.of(
-                        "status", "success",
-                        "message", "회원 기본금이 3억원으로 초기화되었습니다.",
-                        "memberId", memberId
-                )
-        );
+        return ResponseEntity.ok(stockTradeService.initializeMemberMoney(authorizationHeader));
     }
 
-    /**
-     * 보류 중인 주문 조회 API
-     */
+    // 보류 중인 주문 조회 API
     @GetMapping("/pending-orders")
     public ResponseEntity<List<PendingOrderDTO>> getPendingOrders(
-            @RequestHeader("Member-Id") Long memberId) {
+            @RequestHeader("Authorization") String authorizationHeader) {
 
-        List<PendingOrderDTO> pendingOrders = stockTradeService.getPendingOrdersByMember(memberId);
+        List<PendingOrderDTO> pendingOrders = stockTradeService.getPendingOrdersByMember(authorizationHeader);
         return ResponseEntity.ok(pendingOrders);
     }
 
-    /**
-     * 주문 취소 API
-     */
-    @DeleteMapping("/cancel-order/{orderId}")
-    public ResponseEntity<Object> cancelOrder(
-            @RequestHeader("Member-Id") Long memberId,
+    // 주문 취소 API
+    @PostMapping("/cancel-order/{orderId}")
+    public ResponseEntity<OrderCancelResponseDTO> cancelOrder(
+            @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable Long orderId) {
 
-        boolean result = stockTradeService.cancelPendingOrder(memberId, orderId);
+        boolean result = stockTradeService.cancelPendingOrder(authorizationHeader, orderId);
 
         if (result) {
-            return ResponseEntity.ok().body(
-                    Map.of(
-                            "status", "success",
-                            "message", "주문이 성공적으로 취소되었습니다."
-                    )
-            );
+            return ResponseEntity.ok(OrderCancelResponseDTO.success());
         } else {
-            return ResponseEntity.badRequest().body(
-                    Map.of(
-                            "status", "error",
-                            "message", "주문 취소에 실패했습니다. 주문이 존재하지 않거나 이미 처리되었습니다."
-                    )
-            );
+            return ResponseEntity.badRequest().body(OrderCancelResponseDTO.fail());
         }
     }
 }

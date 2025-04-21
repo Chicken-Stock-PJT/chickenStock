@@ -7,10 +7,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "stock_master_data")
+@Table(name = "stock_data")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class StockMasterData {
+public class StockData {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -38,7 +38,7 @@ public class StockMasterData {
     @OneToMany(mappedBy = "stockData", cascade = CascadeType.ALL)
     private List<HoldingPosition> holdingPositions = new ArrayList<>();
 
-    private StockMasterData(String shortCode, String shortName, String market, String stockType, String faceValue) {
+    private StockData(String shortCode, String shortName, String market, String stockType, String faceValue) {
         this.shortCode = shortCode;
         this.shortName = shortName;
         this.market = market;
@@ -46,12 +46,12 @@ public class StockMasterData {
         this.faceValue = faceValue;
     }
 
-    public static StockMasterData of(String shortCode, String shortName, String market, String stockType, String faceValue) {
-        return new StockMasterData(shortCode, shortName, market, stockType, faceValue);
+    public static StockData of(String shortCode, String shortName, String market, String stockType, String faceValue) {
+        return new StockData(shortCode, shortName, market, stockType, faceValue);
     }
 
-    public static StockMasterData of(String shortCode, String shortName, String market) {
-        return new StockMasterData(shortCode, shortName, market, "일반", null);
+    public static StockData of(String shortCode, String shortName, String market) {
+        return new StockData(shortCode, shortName, market, "일반", null);
     }
 
     // 양방향 관계 관리를 위한 메서드 추가

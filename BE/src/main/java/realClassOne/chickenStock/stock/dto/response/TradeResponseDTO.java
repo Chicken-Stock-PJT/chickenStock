@@ -1,6 +1,6 @@
 package realClassOne.chickenStock.stock.dto.response;
 
-
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,12 +9,14 @@ import realClassOne.chickenStock.stock.entity.TradeHistory;
 
 import java.time.LocalDateTime;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class TradeResponseDTO {
     private Long tradeHistoryId;    // 거래 내역 ID
+    private Long orderId;           // 보류 주문 ID
     private String stockCode;       // 종목 코드
     private String stockName;       // 종목명
     private String tradeType;       // 거래 유형 (BUY, SELL)

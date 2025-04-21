@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
@@ -12,12 +11,14 @@ import realClassOne.chickenStock.member.entity.InvestmentSummary;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
+import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.dto.common.PendingOrderDTO;
 import realClassOne.chickenStock.stock.dto.request.TradeRequestDTO;
+import realClassOne.chickenStock.stock.dto.response.InitializeMoneyResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.TradeResponseDTO;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.PendingOrder;
-import realClassOne.chickenStock.stock.entity.StockMasterData;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
@@ -47,6 +48,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     private final PendingOrderRepository pendingOrderRepository;
     private final KiwoomWebSocketClient kiwoomWebSocketClient;
     private final StockSubscriptionService stockSubscriptionService;
+    private final JwtTokenProvider jwtTokenProvider;
 
     // 동시성 제어를 위한 락 추가
     private final Map<String, ReentrantLock> stockLocks = new ConcurrentHashMap<>();
@@ -73,14 +75,16 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     @Transactional
-    public TradeResponseDTO buyStock(Long memberId, TradeRequestDTO request) {
+    public TradeResponseDTO buyStock(TradeRequestDTO request) {
         // 입력값 검증
         validateTradeRequest(request);
+
+        Long memberId = request.getMemberId();
 
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        StockMasterData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND, "해당 종목을 찾을 수 없습니다: " + request.getStockCode()));
 
         // 동시성 제어를 위한 락 획득
@@ -147,14 +151,16 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     @Transactional
-    public TradeResponseDTO sellStock(Long memberId, TradeRequestDTO request) {
+    public TradeResponseDTO sellStock(TradeRequestDTO request) {
         // 입력값 검증
         validateTradeRequest(request);
+
+        Long memberId = request.getMemberId();
 
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        StockMasterData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
         // 동시성 제어를 위한 락 획득
@@ -269,7 +275,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     @Transactional
-    public void initializeMemberMoney(Long memberId) {
+    public InitializeMoneyResponseDTO initializeMemberMoney(String authorization) {
+
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(authorization);
+
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
@@ -290,9 +299,14 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             );
             // Member와 연관관계는 이미 InvestmentSummary.of() 메서드 내에서 설정됨
         }
+        return new InitializeMoneyResponseDTO(
+                "success",
+                "회원 기본금이 3억원으로 초기화되었습니다.",
+                memberId
+        );
     }
 
-    private TradeResponseDTO createPendingBuyOrder(Member member, StockMasterData stock, TradeRequestDTO request) {
+    private TradeResponseDTO createPendingBuyOrder(Member member, StockData stock, TradeRequestDTO request) {
         // 총 금액 계산 및 잔액 확보
         Long totalAmount = request.getPrice() * request.getQuantity();
 
@@ -339,7 +353,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         }
     }
 
-    private TradeResponseDTO createPendingSellOrder(Member member, StockMasterData stock, TradeRequestDTO request) {
+    private TradeResponseDTO createPendingSellOrder(Member member, StockData stock, TradeRequestDTO request) {
         // 보유 수량 확인
         HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, stock)
                 .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "해당 종목을 보유하고 있지 않습니다"));
@@ -364,6 +378,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             subscribeStockIfNeeded(request.getStockCode());
 
             TradeResponseDTO response = new TradeResponseDTO();
+            response.setOrderId(pendingOrder.getOrderId());
             response.setStockCode(stock.getShortCode());
             response.setStockName(stock.getShortName());
             response.setTradeType("SELL");
@@ -457,7 +472,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     // 포지션 업데이트 메서드 (오류 핸들링 추가)
-    private void updateHoldingPosition(Member member, StockMasterData stock, Integer quantity, Long price, TradeHistory.TradeType type) {
+    private void updateHoldingPosition(Member member, StockData stock, Integer quantity, Long price, TradeHistory.TradeType type) {
         try {
             Optional<HoldingPosition> optionalPosition = holdingPositionRepository.findByMemberAndStockData(member, stock);
 
@@ -619,7 +634,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             pendingOrderRepository.save(order);
 
             Member member = order.getMember();
-            StockMasterData stock = order.getStockData();
+            StockData stock = order.getStockData();
 
             // 거래 내역 생성
             long totalAmount = currentPrice * order.getQuantity();
@@ -681,7 +696,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             pendingOrderRepository.save(order);
 
             Member member = order.getMember();
-            StockMasterData stock = order.getStockData();
+            StockData stock = order.getStockData();
 
             // 실제 보유 수량 확인 (동시 처리 방지)
             HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, stock)
@@ -746,7 +761,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     @Transactional(readOnly = true)
-    public List<PendingOrderDTO> getPendingOrdersByMember(Long memberId) {
+    public List<PendingOrderDTO> getPendingOrdersByMember(String authorizationHeader) {
+
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(authorizationHeader);
+
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
@@ -759,7 +777,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     @Transactional
-    public boolean cancelPendingOrder(Long memberId, Long orderId) {
+    public boolean cancelPendingOrder(String authorizationHeader, Long orderId) {
+
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(authorizationHeader);
+
         // 동시성 문제 방지를 위해 쓰기 잠금으로 회원 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
@@ -882,8 +903,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     public Map<String, Long> getAllCurrentPrices() {
         Map<String, Long> prices = new HashMap<>();
 
-        List<StockMasterData> stocks = stockMasterDataRepository.findAll();
-        for (StockMasterData stock : stocks) {
+        List<StockData> stocks = stockMasterDataRepository.findAll();
+        for (StockData stock : stocks) {
             Long price = getCurrentStockPrice(stock.getShortCode());
             if (price != null) {
                 prices.put(stock.getShortCode(), price);

@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 public class InvestmentSummary {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "portfolio_id")
+    @Column(name = "investment_summary_id")
     private Long InvestmentSummaryId;
 
     @OneToOne(fetch = FetchType.LAZY)

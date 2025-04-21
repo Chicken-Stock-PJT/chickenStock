@@ -24,7 +24,7 @@ public class TradeHistory {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "stock_data_id", nullable = false)
-    private StockMasterData stockData;
+    private StockData stockData;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "trade_type", nullable = false)
@@ -45,7 +45,7 @@ public class TradeHistory {
     @Column(name = "traded_at", columnDefinition = "DATETIME(0)")
     private LocalDateTime tradedAt;
 
-    private TradeHistory(Member member, StockMasterData stockData, TradeType tradeType,
+    private TradeHistory(Member member, StockData stockData, TradeType tradeType,
                          Integer quantity, Long unitPrice, Long totalPrice, LocalDateTime tradedAt) {
         this.member = member;
         this.stockData = stockData;
@@ -56,7 +56,7 @@ public class TradeHistory {
         this.tradedAt = tradedAt;
     }
 
-    public static TradeHistory of(Member member, StockMasterData stockData, TradeType tradeType,
+    public static TradeHistory of(Member member, StockData stockData, TradeType tradeType,
                                   Integer quantity, Long unitPrice, Long totalPrice, LocalDateTime tradedAt) {
         return new TradeHistory(member, stockData, tradeType, quantity, unitPrice, totalPrice, tradedAt);
     }
