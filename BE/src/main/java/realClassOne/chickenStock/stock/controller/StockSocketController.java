@@ -2,23 +2,23 @@ package realClassOne.chickenStock.stock.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
 import realClassOne.chickenStock.stock.dto.request.StockSubscriptionRequestDTO;
-import realClassOne.chickenStock.stock.dto.response.StockSubscriptionResponseDTO;
 import realClassOne.chickenStock.stock.service.StockInfoService;
 import realClassOne.chickenStock.stock.service.StockSubscriptionService;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @RestController
 @RequestMapping(value = "/api/stocks")
 @RequiredArgsConstructor
 @Slf4j
-public class StockController {
+public class StockSocketController {
 
     private final StockInfoService stockInfoService;
     private final StockSubscriptionService stockSubscriptionService;
@@ -62,13 +62,17 @@ public class StockController {
         Set<String> subscribedStocks = stockSubscriptionService.getSubscribedStocks();
         return ResponseEntity.ok(subscribedStocks);
     }
-}
 
-
-
-//    @GetMapping("/register/{stockCode}")
-//    public ResponseEntity<String> registerStock(@PathVariable String stockCode) {
-//        kiwoomWebSocketClient.registerRealTimeData("0B", List.of(stockCode));
-//        kiwoomWebSocketClient.registerRealTimeData("0D", List.of(stockCode));
-//        return ResponseEntity.ok("종목 등록 완료: " + stockCode);
+//    @PostMapping("/subscribe-all")
+//    public ResponseEntity<Map<String, Object>> subscribeAllStocks() {
+//        log.info("모든 종목 일괄 구독 요청 받음");
+//        int successCount = stockSubscriptionService.registerAllStocksForSubscription();
+//
+//        Map<String, Object> response = new HashMap<>();
+//        response.put("status", "success");
+//        response.put("message", "일괄 구독 처리 완료");
+//        response.put("subscribedCount", successCount);
+//
+//        return ResponseEntity.ok(response);
 //    }
+}

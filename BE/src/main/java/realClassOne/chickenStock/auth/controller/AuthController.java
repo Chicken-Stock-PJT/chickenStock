@@ -47,31 +47,32 @@ public class AuthController {
     @PostMapping("/token/refresh-web")
     public ResponseEntity<WebTokenResponseDTO> refreshAccessToken(
             @CookieValue(name = "refreshToken", required = false) String refreshToken,
-            @CookieValue(name = "accessToken", required = false) String accessToken,
+            @CookieValue(name = "Authorization", required = false) String accessToken,
             HttpServletResponse response) {
         return ResponseEntity.ok(authService.refreshAccessTokenWeb(refreshToken, accessToken, response));
     }
 
     @PostMapping("/token/refresh-mobile")
     public ResponseEntity<TokenDto> refreshAccessTokenMobile(@RequestBody RefreshTokenRequestDTO request) {
-        return ResponseEntity.ok(authService.refreshAccessTokenMobile(request.getRefreshToken()));
+        return ResponseEntity.ok(authService.refreshAccessTokenMobile(request));
     }
 
     @PostMapping("/token/refresh-all-web")
     public ResponseEntity<WebTokenResponseDTO> refreshAllTokensWeb(
             @CookieValue(name = "refreshToken", required = false) String refreshToken,
+            @CookieValue(name = "Authorization", required = false) String accessToken,
             HttpServletResponse response) {
 
-        return ResponseEntity.ok(authService.refreshAllTokensWeb(refreshToken, response));
+        return ResponseEntity.ok(authService.refreshAllTokensWeb(refreshToken, accessToken, response));
     }
 
     @PostMapping("/token/refresh-all-mobile")
     public ResponseEntity<TokenDto> refreshAllTokensMobile(@RequestBody RefreshTokenRequestDTO request) {
-        return ResponseEntity.ok(authService.refreshAllTokensMobile(request.getRefreshToken()));
+        return ResponseEntity.ok(authService.refreshAllTokensMobile(request));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestHeader("refreshToken") String authorizationHeader) {
+    public ResponseEntity<Void> logout(@RequestHeader("Authorization") String authorizationHeader) {
         authService.logout(authorizationHeader);
         return ResponseEntity.noContent().build();
     }
