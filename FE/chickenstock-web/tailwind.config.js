@@ -35,6 +35,10 @@ export default {
           800: "#2C2C2C",
           900: "#1F1F1F",
         },
+        chart: {
+          red: "#FD4141",
+          blue: "#4170FD",
+        },
         danger: "#FF3728",
         warning: "#FFE949",
         info: "#4FA5FF",
