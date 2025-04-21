@@ -295,9 +295,24 @@ public class KiwoomWebSocketClient {
                     JsonNode values = dataItem.get("values");
 
                     if ("0B".equals(type)) {
+                        // 로그보기
+                        log.info("[실시간가격] 종목: {}, 현재가: {}, 전일대비: {}, 등락률: {}%, 체결시간: {}",
+                                stockCode,
+                                values.get("10").asText(),
+                                values.get("11").asText(),
+                                values.get("12").asText(),
+                                values.get("20").asText());
+
                         // 주식체결 데이터 처리
                         notifyStockPriceUpdate(stockCode, values);
                     } else if ("0D".equals(type)) {
+                        // 주식호가잔량 데이터 로그
+                        log.info("[호가잔량] 종목: {}, 시간: {}, 최우선매도호가: {}, 최우선매수호가: {}",
+                                stockCode,
+                                values.get("21").asText(),
+                                values.get("41").asText(),
+                                values.get("51").asText());
+
                         // 주식호가잔량 데이터 처리
                         notifyStockBidAskUpdate(stockCode, values);
                     }
