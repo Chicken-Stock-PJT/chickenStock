@@ -66,7 +66,7 @@ public class JwtTokenProvider {
     public TokenDto generateToken(Member member) {
 
         Map<String, Object> claims = new HashMap<>();
-        claims.put("memberPoint", member.getMemberPoint() != null ? member.getMemberPoint() : 0L);
+        claims.put("memberPoint", member.getMemberMoney() != null ? member.getMemberMoney() : 0L);
         claims.put("memberId", member.getMemberId());
         claims.put("nickname", member.getNickname() == null ? "" : member.getNickname());
 
@@ -109,7 +109,7 @@ public class JwtTokenProvider {
     public WebTokenResponseDTO generateAccessToken(Member member) {
         // 액세스 토큰에 담을 클레임 설정
         Map<String, Object> claims = new HashMap<>();
-        claims.put("memberPoint", member.getMemberPoint() != null ? member.getMemberPoint() : 0L);
+        claims.put("memberPoint", member.getMemberMoney() != null ? member.getMemberMoney() : 0L);
         claims.put("memberId", member.getMemberId());
         claims.put("nickname", member.getNickname() != null ? member.getNickname() : "");
 

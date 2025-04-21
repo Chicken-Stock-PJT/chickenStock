@@ -4,14 +4,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.common.exception.CustomException;
-import realClassOne.chickenStock.stock.entity.Stock;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
-import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor

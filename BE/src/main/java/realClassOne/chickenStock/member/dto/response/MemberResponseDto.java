@@ -26,7 +26,7 @@ public class MemberResponseDto {
                 .id(member.getMemberId())
                 .email(member.getEmail())
                 .name(member.getName())
-                .imageUrl(member.getImageUrl())
+                .imageUrl(member.getProfileImage())
                 .provider(member.getProvider())
                 .roles(member.getRoles())
                 .build();

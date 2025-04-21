@@ -9,15 +9,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
-import realClassOne.chickenStock.stock.entity.Stock;
+import realClassOne.chickenStock.stock.entity.StockMasterData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockRepository;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -107,7 +105,7 @@ public class StockInfoService {
 
             csvReader.skip(1); // 헤더 스킵
 
-            List<Stock> stockBatch = new ArrayList<>();
+            List<StockMasterData> stockMasterDataBatches = new ArrayList<>();
             String[] fields;
             while ((fields = csvReader.readNext()) != null) {
                 try {
@@ -121,23 +119,23 @@ public class StockInfoService {
                         // 단축코드 6자리 보정
                         shortCode = String.format("%06d", Integer.parseInt(shortCode));
 
-                        Stock stock = Stock.builder()
-                                .shortCode(shortCode)
-                                .shortName(shortName)
-                                .market(market)
-                                .stockType(stockType)
-                                .faceValue(faceValue)
-                                .build();
+                        StockMasterData stockMasterData = StockMasterData.of(
+                                shortCode,
+                                shortName,
+                                market,
+                                stockType,
+                                faceValue
+                        );
 
-                        stockBatch.add(stock);
+                        stockMasterDataBatches.add(stockMasterData);
                     }
                 } catch (Exception e) {
                     log.error("CSV 라인 오류: {}", Arrays.toString(fields), e);
                 }
             }
 
-            stockRepository.saveAll(stockBatch);
-            log.info("{}에서 로드된 종목 수: {}", file.getName(), stockBatch.size());
+            stockRepository.saveAll(stockMasterDataBatches);
+            log.info("{}에서 로드된 종목 수: {}", file.getName(), stockMasterDataBatches.size());
 
         } catch (Exception e) {
             log.error("파일 읽기 실패: {}", file.getAbsolutePath(), e);
@@ -166,13 +164,13 @@ public class StockInfoService {
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND_BY_NAME));
     }
 
-    private StockResponse mapStockToResponse(Stock stock) {
+    private StockResponse mapStockToResponse(StockMasterData stockMasterData) {
         return StockResponse.builder()
-                .shortCode(stock.getShortCode())
-                .shortName(stock.getShortName())
-                .market(stock.getMarket())
-                .stockType(stock.getStockType())
-                .faceValue(stock.getFaceValue())
+                .shortCode(stockMasterData.getShortCode())
+                .shortName(stockMasterData.getShortName())
+                .market(stockMasterData.getMarket())
+                .stockType(stockMasterData.getStockType())
+                .faceValue(stockMasterData.getFaceValue())
                 .build();
     }
 }
