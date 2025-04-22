@@ -17,12 +17,12 @@
 }
 
 a {
-  font-weight: 500;
+  font-weight: 300;
   color: theme("colors.gray.900");
   text-decoration: inherit;
 }
 a:hover {
-  color: theme("colors.primary.500");
+  color: theme("colors.primary.300");
   transition: color 0.1s ease;
 }
 
@@ -44,20 +44,28 @@ button {
   border: 1px solid transparent;
   padding: 0.6em 1.2em;
   font-size: 1em;
-  font-weight: 500;
+  font-weight: 300;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: theme("colors.gray.50");
+  /* border-color: theme("colors.gray.200"); */
   cursor: pointer;
   transition: border-color 0.25s;
 }
 button:hover {
-  border-color: #646cff;
+  border-color: theme("colors.primary.300");
+  color: theme("colors.primary.500");
 }
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+button:focus {
+  outline: none;
+  border-color: theme("colors.primary.300");
+  background-color: theme("colors.primary.300");
+  color: theme("colors.gray.800");
 }
-
+button:active {
+  border-color: theme("colors.primary.300");
+  background-color: theme("colors.primary.300");
+  color: theme("colors.gray.800");
+}
 
 /* 다크모드 */
 @media (prefers-color-scheme: dark) {
@@ -66,7 +74,7 @@ button:focus-visible {
     background-color: theme("colors.gray.900");
   }
   a {
-    font-weight: 500;
+    font-weight: 300;
     color: theme("colors.gray.50");
     text-decoration: inherit;
   }

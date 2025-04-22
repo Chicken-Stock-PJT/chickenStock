@@ -3,8 +3,18 @@ import { createRoot } from "react-dom/client";
 import "./styles/index.css";
 import App from "./App.tsx";
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-);
+async function prepare() {
+  if (process.env.NODE_ENV === "development") {
+    const { worker } = await import("../shared/libs/mocks/browser");
+    return worker.start();
+  }
+  return Promise.resolve();
+}
+
+prepare().then(() => {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+});
