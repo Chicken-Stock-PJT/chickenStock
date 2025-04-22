@@ -5,8 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
+import realClassOne.chickenStock.stock.dto.request.StockPriceRequestDTO;
 import realClassOne.chickenStock.stock.dto.request.StockSubscriptionRequestDTO;
+import realClassOne.chickenStock.stock.dto.response.StockPriceResponseDTO;
 import realClassOne.chickenStock.stock.service.StockInfoService;
+import realClassOne.chickenStock.stock.service.StockPriceService;
 import realClassOne.chickenStock.stock.service.StockSubscriptionService;
 
 import java.util.HashMap;
@@ -22,6 +25,7 @@ public class StockSocketController {
 
     private final StockInfoService stockInfoService;
     private final StockSubscriptionService stockSubscriptionService;
+    private final StockPriceService stockPriceService;
 
     @GetMapping("/all")
     public ResponseEntity<List<StockResponse>> getAllStocks() {
@@ -63,16 +67,10 @@ public class StockSocketController {
         return ResponseEntity.ok(subscribedStocks);
     }
 
-//    @PostMapping("/subscribe-all")
-//    public ResponseEntity<Map<String, Object>> subscribeAllStocks() {
-//        log.info("모든 종목 일괄 구독 요청 받음");
-//        int successCount = stockSubscriptionService.registerAllStocksForSubscription();
-//
-//        Map<String, Object> response = new HashMap<>();
-//        response.put("status", "success");
-//        response.put("message", "일괄 구독 처리 완료");
-//        response.put("subscribedCount", successCount);
-//
-//        return ResponseEntity.ok(response);
-//    }
+    @PostMapping("/ai-price")
+    public ResponseEntity<StockPriceResponseDTO> getQuickPrices(@RequestBody StockPriceRequestDTO requestDTO) {
+        log.info("주식 가격 조회 요청: {} 종목", requestDTO.getStockCodes() != null ? requestDTO.getStockCodes().size() : 0);
+        StockPriceResponseDTO response = stockPriceService.getQuickStockPrices(requestDTO);
+        return ResponseEntity.ok(response);
+    }
 }
