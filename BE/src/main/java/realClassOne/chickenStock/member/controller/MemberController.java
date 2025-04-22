@@ -22,5 +22,4 @@ public class MemberController {
     public ResponseEntity<MemberResponseDto> getCurrentUser() {
         return ResponseEntity.ok(memberService.getCurrentUser());
     }
-
 }

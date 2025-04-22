@@ -324,6 +324,9 @@ public class KiwoomWebSocketClient {
                     JsonNode values = dataItem.get("values");
 
                     if ("0B".equals(type)) {
+                        // 캐시에 최신 데이터 저장 (이 부분 추가)
+                        latestPriceDataCache.put(stockCode, values);
+
                         // 로그보기
                         log.info("[실시간가격] 종목: {}, 현재가: {}, 전일대비: {}, 등락률: {}%, 체결시간: {}",
                                 stockCode,

@@ -134,14 +134,18 @@ public class JwtTokenProvider {
     public Authentication getAuthentication(String token) {
         // 토큰 복호화
         Claims claims = parseClaims(token);
-        if (claims.get("auth") == null) {
-            throw new CustomException(SecurityErrorCode.MISSING_AUTHORITY);
-        }
 
-        // 클레임에서 권한 정보 가져오기
-        Collection<? extends GrantedAuthority> authorities = Arrays.stream(claims.get("auth").toString().split(","))
-                .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toList());
+        Collection<? extends GrantedAuthority> authorities;
+
+        // auth 클레임이 있으면 사용, 없으면 기본 권한 설정
+        if (claims.get("auth") != null) {
+            authorities = Arrays.stream(claims.get("auth").toString().split(","))
+                    .map(SimpleGrantedAuthority::new)
+                    .collect(Collectors.toList());
+        } else {
+            // 기본 권한 설정 (예: ROLE_USER)
+            authorities = Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"));
+        }
 
         // UserDetails 객체를 만들어서 Authentication 리턴
         UserDetails principal = new User(claims.getSubject(), "", authorities);
@@ -177,7 +181,6 @@ public class JwtTokenProvider {
             if (redisTokenBlacklistService.isBlacklisted(token)) {
                 throw new CustomException(SecurityErrorCode.INVALID_JWT_TOKEN);
             }
-
             Jwts.parser()
                     .setSigningKey(getSigningKey())
                     .build()
@@ -256,4 +259,12 @@ public class JwtTokenProvider {
             return 0;
         }
     }
+
+    public String resolveToken(String authorizationHeader) {
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            return authorizationHeader.substring(7);
+        }
+        return authorizationHeader;
+    }
+
 }

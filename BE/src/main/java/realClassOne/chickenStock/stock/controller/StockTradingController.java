@@ -23,10 +23,7 @@ public class StockTradingController {
 
     private final StockTradeService stockTradeService;
 
-    /**
-     * 주식 매수 주문 API
-     * 시장가 또는 지정가로 주문 가능
-     */
+    // 주식 매수 주문 API (* 시장가 또는 지정가로 주문 가능)
     @PostMapping("/buy")
     public ResponseEntity<TradeResponseDTO> buyStock(
             @RequestBody TradeRequestDTO request) {

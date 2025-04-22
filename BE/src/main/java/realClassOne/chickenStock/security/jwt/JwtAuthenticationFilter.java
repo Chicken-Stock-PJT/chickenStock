@@ -27,13 +27,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
+        String header = request.getHeader("Authorization");
+        System.out.println(">>> [JwtAuthFilter] Authorization header: " + header);
+
         // 로그아웃 요청인 경우 로직 탄 후 처리
         if (request.getMethod().equals("POST") && request.getRequestURI().endsWith("/api/auth/logout")) {
             System.out.println("로그아웃 요청 감지");
             filterChain.doFilter(request, response);
             return;
         }
-
         String token = resolveToken(request);
         if (StringUtils.hasText(token)) {
             // 블랙리스트 확인 (Redis)
@@ -43,8 +45,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 throw new CustomException(SecurityErrorCode.BLACKLISTED_JWT_TOKEN);
             } else if (jwtTokenProvider.validateToken(token)) {
                 // 토큰에서 Authentication 객체 가져오기
+                System.out.println("3");
                 Authentication authentication = jwtTokenProvider.getAuthentication(token);
                 // SecurityContext에 Authentication 객체 저장
+                System.out.println("4");
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }

@@ -15,7 +15,7 @@ public class PendingOrderScheduler {
     private final StockTradeService stockTradeService;
 
     // 5초마다 실행되는 지정가 주문 처리 트리거
-    @Scheduled(fixedRate = 5000)
+    @Scheduled(fixedRate = 5000000)
     public void triggerPendingOrderProcessing() {
         log.debug("PendingOrderScheduler 실행 - 지정가 주문 처리 시작");
         stockTradeService.processPendingOrders();
