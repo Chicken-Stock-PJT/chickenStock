@@ -5,7 +5,10 @@ const ChartBody = () => {
         {/* Chart will be rendered here */}
       </div>
       <div className="chart-body__info">
-        {/* Additional information will be displayed here */}
+        <h1 className="text-3xl font-bold text-gray-800">Stock Price Chart</h1>
+        <p className="mt-2 text-gray-600">
+          Visualize the stock price trends over time.
+        </p>
       </div>
     </div>
   );

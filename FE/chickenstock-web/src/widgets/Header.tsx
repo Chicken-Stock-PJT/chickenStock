@@ -7,8 +7,8 @@ const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   return (
-    <div className="flex items-center justify-between h-14 px-4 w-screen">
-      <div className="flex items-center">
+    <div className="flex items-center h-14 px-4 w-screen">
+      <div className="flex items-center w-1/3">
         <img
           src={logo}
           alt="Chicken Stock Logo"
@@ -18,12 +18,27 @@ const Header = () => {
           <h1 className="text-lg font-bold">Chicken Stock</h1>
         </Link>
       </div>
-      <div>
+
+      <div className="flex justify-center w-1/3">
         <nav className="flex space-x-6 items-center">
-          <NavLink to="/" className="text-base font-semibold">
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              `${
+                isActive ? "text-primary-400" : ""
+              } text-base font-semibold transition-colors duration-200`
+            }
+          >
             홈
           </NavLink>
-          <NavLink to="stocks" className="text-base font-semibold">
+          <NavLink
+            to="stocks"
+            className={({ isActive }) =>
+              `${
+                isActive ? "text-primary-400" : ""
+              } text-base font-semibold transition-colors duration-200`
+            }
+          >
             주식
           </NavLink>
           <div className="relative">
@@ -48,7 +63,8 @@ const Header = () => {
           </div>
         </nav>
       </div>
-      <div>auth</div>
+
+      <div className="flex justify-end w-1/3">auth</div>
     </div>
   );
 };
