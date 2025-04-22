@@ -15,6 +15,12 @@ import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
 import realClassOne.chickenStock.auth.service.AuthService;
+import realClassOne.chickenStock.auth.dto.request.EmailRequestDTO;
+import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
+import realClassOne.chickenStock.auth.service.EmailService;
+import realClassOne.chickenStock.auth.dto.response.EmailVerifyResponseDTO;
+import realClassOne.chickenStock.auth.dto.request.EmailVerifyRequestDTO;
+
 
 @Slf4j
 @RestController
@@ -23,10 +29,38 @@ import realClassOne.chickenStock.auth.service.AuthService;
 public class AuthController {
     // 로그인, 로그아웃, 토큰 갱신 등 인증 작업
     private final AuthService authService;
+    private final EmailService emailService;
 
     @PostMapping("/signup")
     public ResponseEntity<SignupResponseDTO> signup(@Valid @RequestBody SignupRequestDTO signupRequestDTO) {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.signup(signupRequestDTO));
+    }
+
+    // 이메일 인증 코드 전송
+    @PostMapping("/check-email")
+    public ResponseEntity<EmailCheckResponseDTO> checkEmail(@RequestBody EmailRequestDTO request) {
+        EmailCheckResponseDTO response = authService.checkEmailDuplicateAndRespond(request.getEmail());
+
+        if (!response.isSuccess()) {
+            return ResponseEntity.badRequest().body(response);
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/send-code")
+    public ResponseEntity<Void> sendCode(@RequestBody EmailRequestDTO request) {
+        emailService.sendVerificationCode(request.getEmail());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/verify-code")
+    public ResponseEntity<EmailVerifyResponseDTO> verifyCode(@RequestBody EmailVerifyRequestDTO request) {
+        EmailVerifyResponseDTO response = emailService.verifyEmailCodeAndRespond(request.getEmail(), request.getCode());
+
+        if (!response.isSuccess()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/exchange")
