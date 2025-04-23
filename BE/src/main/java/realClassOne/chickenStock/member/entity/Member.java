@@ -101,4 +101,8 @@ public class Member {
     public void updateImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
     }
+
+    public void updatePassword(String newPassword) {
+        this.password = newPassword;
+    }
 }

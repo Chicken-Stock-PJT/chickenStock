@@ -1,14 +1,16 @@
 package realClassOne.chickenStock.member.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
 import realClassOne.chickenStock.member.service.MemberService;
+import jakarta.validation.Valid;
+import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
@@ -21,6 +23,18 @@ public class MemberController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MemberResponseDto> getCurrentUser() {
         return ResponseEntity.ok(memberService.getCurrentUser());
+    }
+
+    // 비밀번호 변경
+    @PostMapping("/change-password")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> changePassword(
+        @RequestBody @Valid PasswordChangeRequestDTO requestDTO,
+        @RequestHeader("Authorization") String authorizationHeader) {
+        log.info("111111111111111111111111");
+        memberService.changePassword(requestDTO);
+
+        return ResponseEntity.ok("비밀번호가 성공적으로 변경되었습니다.");
     }
 
 }
