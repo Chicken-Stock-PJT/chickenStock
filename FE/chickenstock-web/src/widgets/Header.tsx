@@ -15,7 +15,7 @@ const Header = () => {
           className="h-7 w-7 mr-2 fill-current text-primary-400"
         />
         <Link to="/">
-          <h1 className="text-lg font-bold">Chicken Stock</h1>
+          <h1 className="text-lg font-bold">ChickenStock</h1>
         </Link>
       </div>
 

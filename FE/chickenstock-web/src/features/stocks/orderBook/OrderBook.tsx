@@ -1,13 +1,20 @@
 import OrderRow from "./OrderRow";
-
+import { mockOrderBookData } from "@/shared/libs/mocks/data";
 const OrderBook = () => {
   return (
-    <div className="w-full border rounded-lg bg-gray-100 p-4 flex flex-col gap-4">
-      <h1 className="text-3xl font-bold text-gray-800">Order</h1>
-      
-      <p>Order book content goes here.</p>
+    <div className="w-full border rounded-lg bg-white p-4 flex flex-col gap-4">
+      <div className="flex items-center justify-between mb-4">
+        <span className="font-bold text-gray-800">호가잔량</span>
+      </div>
       <div className="flex flex-col gap-4 items-center justify-center">
-        <OrderRow />
+        {mockOrderBookData.map((order) => (
+          <OrderRow
+            key={order.price}
+            price={order.price}
+            askVolume={order.askVolume}
+            bidVolume={order.bidVolume}
+          />
+        ))}
       </div>
     </div>
   );

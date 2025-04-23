@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { fluctuationRankingMockData, tradeRankingMockData, volumeRankingMockData } from "./data";
+import {
+  chartMockData,
+  fluctuationRankingMockData,
+  tradeRankingMockData,
+  volumeRankingMockData,
+} from "./data";
 
 export const handlers = [
   http.get("/api/stock/ranking/tradeAmount", () => {
@@ -10,5 +15,8 @@ export const handlers = [
   }),
   http.get("/api/stock/ranking/volume", () => {
     return HttpResponse.json(volumeRankingMockData);
+  }),
+  http.get("/api/stock/chart/all/:stockCode", () => {
+    return HttpResponse.json(chartMockData);
   }),
 ];

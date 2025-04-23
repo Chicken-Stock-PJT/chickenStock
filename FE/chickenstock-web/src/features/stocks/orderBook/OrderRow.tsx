@@ -1,9 +1,15 @@
-const OrderRow = () => {
+interface OrderRowProps {
+  price: number;
+  askVolume: number;
+  bidVolume: number;
+}
+
+const OrderRow = ({ price, askVolume, bidVolume }: OrderRowProps) => {
   return (
-    <div className="flex text-center gap-4 text-sm font-bold text-gray-500 mx-auto">
-      <div>매수호가잔량</div>
-      <div>호가</div>
-      <div>매도호가잔량</div>
+    <div className="flex w-full text-center text-sm font-bold text-gray-500 mx-auto justify-between items-center">
+      <span className="px-4">{askVolume}</span>
+      <span className="px-4">{price}</span>
+      <span className="px-4">{bidVolume}</span>
     </div>
   );
 };
