@@ -5,7 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import realClassOne.chickenStock.member.dto.request.NicknameChangeRequestDTO;
 import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
+import realClassOne.chickenStock.member.dto.response.NicknameChangeResponseDTO;
 import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
@@ -37,5 +39,17 @@ public class MemberController {
         PasswordChangeResponseDTO responseDTO = new PasswordChangeResponseDTO("비밀번호가 성공적으로 변경되었습니다.");
         return ResponseEntity.ok(responseDTO);
     }
+
+    // 닉네임 변경
+    @PatchMapping("/nickname")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<NicknameChangeResponseDTO> changeNickname(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @Valid @RequestBody NicknameChangeRequestDTO requestDTO
+    ) {
+        memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
+        return ResponseEntity.ok(NicknameChangeResponseDTO.of("닉네임이 성공적으로 변경되었습니다."));
+    }
+
 
 }

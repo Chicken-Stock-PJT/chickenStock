@@ -54,4 +54,23 @@ public class MemberService {
         member.updatePassword(encodedNewPassword);
     }
 
+    @Transactional
+    public void changeNickname(String authorizationHeader, String newNickname) {
+        String token = jwtTokenProvider.resolveToken(authorizationHeader);
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+        // 사용자 조회
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        // 닉네임 중복 여부 확인
+        if (memberRepository.existsByNickname(newNickname)) {
+            throw new CustomException(MemberErrorCode.DUPLICATE_NICKNAME);
+        }
+
+        // 닉네임 변경
+        member.changeNickname(newNickname);
+    }
+
+
 }
