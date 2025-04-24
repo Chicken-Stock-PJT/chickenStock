@@ -39,6 +39,9 @@ public class Member {
     @Column
     private String password;
 
+    @Column(name = "member_money")
+    private Long memberMoney;
+
     @Column
     private String imageUrl;
 

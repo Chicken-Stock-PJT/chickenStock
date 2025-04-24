@@ -45,10 +45,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 throw new CustomException(SecurityErrorCode.BLACKLISTED_JWT_TOKEN);
             } else if (jwtTokenProvider.validateToken(token)) {
                 // 토큰에서 Authentication 객체 가져오기
-                System.out.println("3");
+
                 Authentication authentication = jwtTokenProvider.getAuthentication(token);
                 // SecurityContext에 Authentication 객체 저장
-                System.out.println("4");
+
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }

@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
+import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
@@ -31,10 +32,10 @@ public class MemberController {
     public ResponseEntity<?> changePassword(
         @RequestBody @Valid PasswordChangeRequestDTO requestDTO,
         @RequestHeader("Authorization") String authorizationHeader) {
-        log.info("111111111111111111111111");
-        memberService.changePassword(requestDTO);
+        memberService.changePassword(authorizationHeader, requestDTO);
 
-        return ResponseEntity.ok("비밀번호가 성공적으로 변경되었습니다.");
+        PasswordChangeResponseDTO responseDTO = new PasswordChangeResponseDTO("비밀번호가 성공적으로 변경되었습니다.");
+        return ResponseEntity.ok(responseDTO);
     }
 
 }
