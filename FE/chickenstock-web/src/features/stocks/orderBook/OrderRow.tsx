@@ -6,10 +6,20 @@ interface OrderRowProps {
 
 const OrderRow = ({ price, askVolume, bidVolume }: OrderRowProps) => {
   return (
-    <div className="flex w-full text-center text-sm font-bold text-gray-500 mx-auto justify-between items-center">
-      <span className="px-4">{askVolume}</span>
+    <div
+      className={
+        askVolume
+          ? "mx-auto flex w-full items-center justify-between text-center text-chart-blue text-gray-500"
+          : "mx-auto flex w-full items-center justify-between text-center text-chart-red text-gray-500"
+      }
+    >
+      <span className="flex-1 bg-chart-blue bg-opacity-[50%] px-4 text-chart-blue">
+        {askVolume ? askVolume : ""}
+      </span>
       <span className="px-4">{price}</span>
-      <span className="px-4">{bidVolume}</span>
+      <span className="flex-1 bg-chart-red bg-opacity-[50%] px-4 text-chart-red">
+        {bidVolume ? bidVolume : ""}
+      </span>
     </div>
   );
 };

@@ -12,9 +12,7 @@ const Chart = ({ stockCode = "005930" }) => {
     const fetchChartData = async () => {
       setLoading(true);
       try {
-        const response = await fetch(
-          `/api/stock/chart/all/${stockCode}?chartType=DAILY`
-        );
+        const response = await fetch(`/api/stock/chart/all/${stockCode}?chartType=DAILY`);
         if (!response.ok) throw new Error("Failed to fetch chart data");
 
         const data: ChartResponse = await response.json();
@@ -33,7 +31,7 @@ const Chart = ({ stockCode = "005930" }) => {
   if (error) return <div>Error: {error}</div>;
 
   return (
-    <div className="w-full h-full border rounded-lg border border-gray-200 shadow-md flex flex-col gap-4 p-4 bg-white">
+    <div className="flex size-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-md">
       <ChartHeader stockCode={stockCode} chartData={chartData[0]} />
       <ChartBody chartData={chartData} />
     </div>

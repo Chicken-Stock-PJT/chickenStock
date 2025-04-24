@@ -15,9 +15,7 @@ const StockListItem = (props: StockProps) => {
       case "tradeAmount":
         return (
           <>
-            <div className="w-1/6 text-right">
-              {Number(props.tradeAmount).toLocaleString()}
-            </div>
+            <div className="w-1/6 text-right">{Number(props.tradeAmount).toLocaleString()}</div>
             <div className="w-1/6 text-right">
               {Number(props.currentTradeVolume).toLocaleString()}
             </div>
@@ -26,16 +24,10 @@ const StockListItem = (props: StockProps) => {
       case "volume":
         return (
           <>
-            <div className="w-1/6 text-right">
-              {Number(props.tradeVolume).toLocaleString()}
-            </div>
+            <div className="w-1/6 text-right">{Number(props.tradeVolume).toLocaleString()}</div>
             <div className="w-1/6 text-right">
               <span
-                className={
-                  props.fluctuationRate.startsWith("+")
-                    ? "text-red-500"
-                    : "text-blue-500"
-                }
+                className={props.fluctuationRate.startsWith("+") ? "text-red-500" : "text-blue-500"}
               >
                 {props.previousRatio}%
               </span>
@@ -58,10 +50,10 @@ const StockListItem = (props: StockProps) => {
 
   return (
     <div
-      className="flex items-center justify-between p-4 border-b cursor-pointer hover:bg-gray-50"
-      onClick={handleClick}
+      className="flex cursor-pointer items-center justify-between border-b p-4 hover:bg-gray-50"
+      onClick={() => void handleClick()}
     >
-      <div className="flex items-center gap-4 w-1/4">
+      <div className="flex w-1/4 items-center gap-4">
         <Heart
           className="cursor-pointer"
           fill={like ? "red" : "none"}
@@ -71,39 +63,23 @@ const StockListItem = (props: StockProps) => {
             setLike(!like);
           }}
         />
-        <div className="flex items-center gap-4 w-full">
-          <p className="min-w-[32px] text-center font-semibold text-gray-600">
-            {props.rank}
-          </p>
+        <div className="flex w-full items-center gap-4">
+          <p className="min-w-[32px] text-center font-semibold text-gray-600">{props.rank}</p>
           <div className="text-left">
             <div className="font-medium">{props.stockName}</div>
             <div className="text-sm text-gray-500">{props.stockCode}</div>
           </div>
         </div>
       </div>
+      <div className="w-1/6 text-right">{Number(props.currentPrice).toLocaleString()}</div>
       <div className="w-1/6 text-right">
-        {Number(props.currentPrice).toLocaleString()}
-      </div>
-      <div className="w-1/6 text-right">
-        <span
-          className={
-            props.fluctuationRate.startsWith("+")
-              ? "text-red-500"
-              : "text-blue-500"
-          }
-        >
+        <span className={props.fluctuationRate.startsWith("+") ? "text-red-500" : "text-blue-500"}>
           {(props.previousDayCompare.startsWith("-") ? "" : "+") +
             Number(props.previousDayCompare).toLocaleString()}
         </span>
       </div>
       <div className="w-1/6 text-right">
-        <span
-          className={
-            props.fluctuationRate.startsWith("+")
-              ? "text-red-500"
-              : "text-blue-500"
-          }
-        >
+        <span className={props.fluctuationRate.startsWith("+") ? "text-red-500" : "text-blue-500"}>
           {props.fluctuationRate}%
         </span>
       </div>

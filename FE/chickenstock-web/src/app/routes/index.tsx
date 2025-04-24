@@ -38,7 +38,7 @@ const router = createBrowserRouter([
             element: <StockList />,
           },
           {
-            path: ":id",
+            path: ":stockCode",
             element: <StockPage />,
           },
         ],

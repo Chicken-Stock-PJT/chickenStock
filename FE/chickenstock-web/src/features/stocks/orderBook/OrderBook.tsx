@@ -2,11 +2,11 @@ import OrderRow from "./OrderRow";
 import { mockOrderBookData } from "@/shared/libs/mocks/data";
 const OrderBook = () => {
   return (
-    <div className="w-full border rounded-lg bg-white p-4 flex flex-col gap-4">
-      <div className="flex items-center justify-between mb-4">
+    <div className="flex w-full flex-col gap-4 rounded-lg border bg-white p-4">
+      <div className="mb-4 flex items-center justify-between">
         <span className="font-bold text-gray-800">호가잔량</span>
       </div>
-      <div className="flex flex-col gap-4 items-center justify-center">
+      <div className="flex flex-col items-center justify-center gap-4">
         {mockOrderBookData.map((order) => (
           <OrderRow
             key={order.price}

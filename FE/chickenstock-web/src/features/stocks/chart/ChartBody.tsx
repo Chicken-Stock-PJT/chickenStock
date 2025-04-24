@@ -1,13 +1,13 @@
 import ReactApexChart from "react-apexcharts";
 
 interface ChartBodyProps {
-  chartData: Array<{
+  chartData: {
     date: string;
     currentPrice: string;
     openPrice: string;
     highPrice: string;
     lowPrice: string;
-  }>;
+  }[];
 }
 
 const ChartBody = ({ chartData }: ChartBodyProps) => {
@@ -23,7 +23,7 @@ const ChartBody = ({ chartData }: ChartBodyProps) => {
 
   const options = {
     chart: {
-      type: "candlestick",
+      type: "candlestick" as const,
       height: 400,
       toolbar: {
         show: true,
@@ -47,7 +47,7 @@ const ChartBody = ({ chartData }: ChartBodyProps) => {
       },
     },
     xaxis: {
-      type: "datetime",
+      type: "datetime" as const,
       labels: {
         formatter: function (value: string) {
           return new Date(value).toLocaleDateString("ko-KR", {
@@ -100,13 +100,8 @@ const ChartBody = ({ chartData }: ChartBodyProps) => {
   ];
 
   return (
-    <div className="w-full h-[400px]">
-      <ReactApexChart
-        options={options}
-        series={series}
-        type="candlestick"
-        height={400}
-      />
+    <div className="h-[400px] w-full">
+      <ReactApexChart options={options} series={series} type="candlestick" height={400} />
     </div>
   );
 };
