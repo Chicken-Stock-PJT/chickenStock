@@ -39,6 +39,9 @@ public class Member {
     @Column
     private String password;
 
+    @Column(name = "member_money")
+    private Long memberMoney;
+
     @Column
     private String imageUrl;
 
@@ -100,5 +103,13 @@ public class Member {
 
     public void updateImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
+    }
+
+    public void updatePassword(String newPassword) {
+        this.password = newPassword;
+    }
+
+    public void changeNickname(String nickname) {
+        this.nickname = nickname;
     }
 }
