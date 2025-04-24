@@ -31,7 +31,7 @@ const Chart = ({ stockCode = "005930" }) => {
   if (error) return <div>Error: {error}</div>;
 
   return (
-    <div className="flex size-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-md">
+    <div className="flex w-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4">
       <ChartHeader stockCode={stockCode} chartData={chartData[0]} />
       <ChartBody chartData={chartData} />
     </div>

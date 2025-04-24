@@ -15,7 +15,7 @@ const Trade = () => {
 
   const handlePriceType = (toLimitOrder: boolean) => {
     if (toLimitOrder) {
-      alert("준비중입니다.");
+      alert("지정가로 주문할 수 없는 주식입니다.");
       return;
     }
 
@@ -94,15 +94,31 @@ const Trade = () => {
   };
 
   return (
-    <div className="w-full rounded-lg border border-gray-200 bg-white p-4 text-left shadow-md">
+    <div className="w-full rounded-lg border border-gray-200 bg-white p-4 text-left">
       <Tabs defaultValue="buy" className="w-full">
         <div className="mb-4 flex items-center justify-between">
           <span className="font-bold text-gray-800">주문하기</span>
           <TabsList className="flex gap-1.5">
-            <TabsTrigger value="buy" className="w-full" onClick={() => setIsSell(true)}>
+            <TabsTrigger
+              value="buy"
+              className="
+                w-full 
+                text-gray-500 
+                data-[state=active]:text-chart-red
+                data-[state=active]:font-semibold
+              "
+            >
               매수
             </TabsTrigger>
-            <TabsTrigger value="sell" className="w-full" onClick={() => setIsSell(false)}>
+            <TabsTrigger
+              value="sell"
+              className="
+                w-full 
+                text-gray-500 
+                data-[state=active]:text-chart-blue
+                data-[state=active]:font-semibold
+              "
+            >
               매도
             </TabsTrigger>
           </TabsList>
@@ -168,7 +184,7 @@ const Trade = () => {
           <div className="relative flex items-center">
             <button
               onClick={handlePriceDecrease}
-              className="absolute left-2 p-1 text-gray-500 hover:text-primary-500"
+              className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:opacity-50 disabled:cursor-not-allowed"}`}
               disabled={!isLimitOrder}
             >
               <Minus size={16} />
@@ -188,7 +204,7 @@ const Trade = () => {
             />
             <button
               onClick={handlePriceIncrease}
-              className="absolute right-2 p-1 text-gray-500 hover:text-primary-500"
+              className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:opacity-50 disabled:cursor-not-allowed"}`}
               disabled={!isLimitOrder}
             >
               <Plus size={16} />

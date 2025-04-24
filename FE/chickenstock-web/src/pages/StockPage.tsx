@@ -8,24 +8,27 @@ const StockPage = () => {
   const stockCode = useParams().stockCode?.slice(0, 6);
 
   return (
-    <div className="flex grid max-h-screen grid-cols-12 gap-6 overflow-auto">
-      <div className="col-span-8 flex flex-col gap-4">
-        <div className="flex aspect-video w-full items-center justify-center rounded-lg border bg-gray-100">
-          <Chart stockCode={stockCode} />
+    <div className="px-[10px] flex absolute overflow-x-auto top-[60px] left-0 w-screen max-h-[calc(90vh)] flex-col overflow-hidden">
+      <div className="flex flex-1 grid grid-cols-12 gap-2 overflow-hidden">
+        <div className="col-span-8 flex flex-col gap-2 overflow-hidden">
+          <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
+            <Chart stockCode={stockCode} />
+          </div>
+          <div className="flex-1 overflow-auto">
+            <OrderBook />
+          </div>
         </div>
-        <div>
-          <OrderBook />
-        </div>
-      </div>
-      <div className="col-span-4 flex flex-col gap-4">
-        <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
-          <Trade />
-        </div>
-        <div>
-          <Status />
+        <div className="col-span-4 flex flex-col gap-2 overflow-hidden">
+          <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
+            <Trade />
+          </div>
+          <div className="flex-1 overflow-auto">
+            <Status />
+          </div>
         </div>
       </div>
     </div>
   );
 };
+
 export default StockPage;

@@ -19,7 +19,7 @@ const ChartHeader = ({ stockCode, chartData }: ChartHeaderProps) => {
   return (
     <div className="flex items-center gap-4">
       <img
-        className="w-20 rounded-2xl"
+        className="w-[78px] rounded-2xl"
         src={`https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${stockCode}.png`}
         alt=""
       />
