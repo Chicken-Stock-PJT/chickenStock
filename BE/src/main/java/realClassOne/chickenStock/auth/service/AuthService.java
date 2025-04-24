@@ -14,6 +14,7 @@ import realClassOne.chickenStock.auth.dto.common.TokenDto;
 import realClassOne.chickenStock.auth.dto.common.WebTokenResponseDTO;
 import realClassOne.chickenStock.auth.dto.request.ExchangeRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.LoginRequestDTO;
+import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
 import realClassOne.chickenStock.auth.exception.AuthErrorCode;
@@ -121,7 +122,7 @@ public class AuthService {
             return tokenDto;
         } else if ("web".equals(platform)) {
             // 쿠키에 토큰 추가
-            CookieUtils.addCookie(response, "accessToken", tokenDto.getAccessToken(),
+            CookieUtils.addCookie(response, "Authorization", tokenDto.getAccessToken(),
                     (int) (jwtConfig.getJwtAccessExpirationMs() / 1000));
             CookieUtils.addCookie(response, "refreshToken", tokenDto.getRefreshToken(),
                     (int) (jwtConfig.getJwtRefreshExpirationMs() / 1000));
@@ -146,7 +147,6 @@ public class AuthService {
 
         // 만료된 액세스 토큰에서 memberId 추출
         Long memberId = jwtTokenProvider.getMemberIdFromToken(accessToken);
-        System.out.println(memberId);
         if (memberId == null) {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
@@ -154,20 +154,28 @@ public class AuthService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        TokenDto tokenDto = jwtTokenProvider.generateToken(member);
+        // 저장된 리프레시 토큰과 비교
+        if (member.getRefreshToken() == null || !member.getRefreshToken().equals(refreshToken)) {
+            throw new CustomException(AuthErrorCode.INVALID_TOKEN);
+        }
 
-        CookieUtils.addCookie(response, "accessToken", tokenDto.getAccessToken(),
-                (int) (jwtConfig.getJwtAccessExpirationMs() / 1000));
-        CookieUtils.addCookie(response, "refreshToken", tokenDto.getRefreshToken(),
-                (int) (jwtConfig.getJwtRefreshExpirationMs() / 1000));
+        jwtTokenProvider.addToBlacklist(accessToken);
 
-        // 웹용 응답 생성
+        // 새 액세스 토큰만 발급 (Member 엔티티 변경 없음)
         WebTokenResponseDTO webTokenResponseDTO = jwtTokenProvider.generateAccessToken(member);
+
+        // 쿠키에 새 액세스 토큰만 추가
+        CookieUtils.addCookie(response, "Authorization", webTokenResponseDTO.getAccessToken(),
+                (int) (jwtConfig.getJwtAccessExpirationMs() / 1000));
+
         return webTokenResponseDTO;
     }
 
     @Transactional
-    public TokenDto refreshAccessTokenMobile(String refreshToken) {
+    public TokenDto refreshAccessTokenMobile(RefreshTokenRequestDTO request) {
+
+        String accessToken = request.getAccessToken();
+        String refreshToken = request.getRefreshToken();
 
         if (!jwtTokenProvider.validateToken(refreshToken)) {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
@@ -180,6 +188,12 @@ public class AuthService {
 
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        if (member.getRefreshToken() == null || !member.getRefreshToken().equals(refreshToken)) {
+            throw new CustomException(AuthErrorCode.INVALID_TOKEN);
+        }
+
+        jwtTokenProvider.addToBlacklist(accessToken);
 
         // 새 액세스 토큰만 발급 (리프레시 토큰은 재사용)
         WebTokenResponseDTO webTokenResponseDTO = jwtTokenProvider.generateAccessToken(member);
@@ -194,41 +208,51 @@ public class AuthService {
 
     // 완전히 새로운 토큰 세트 발급(웹)
     @Transactional
-    public WebTokenResponseDTO refreshAllTokensWeb(String refreshToken, HttpServletResponse response) {
+    public WebTokenResponseDTO refreshAllTokensWeb(String refreshToken, String accessToken, HttpServletResponse response) {
 
-        System.out.println("1");
         // 리프레시 토큰 검증
         if (!jwtTokenProvider.validateToken(refreshToken)) {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
 
-        System.out.println("2");
-
         Long memberId = jwtTokenProvider.getMemberIdFromToken(refreshToken);
         if (memberId == null) {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
-        System.out.println("3");
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
-        System.out.println("4");
-        // 기존 리프레시 토큰을 블랙리스트에 추가
+
+        if (member.getRefreshToken() == null || !member.getRefreshToken().equals(refreshToken)) {
+            throw new CustomException(AuthErrorCode.INVALID_TOKEN);
+        }
+
+        // 기존 토큰들 블랙리스트에 추가
+        jwtTokenProvider.addToBlacklist(accessToken);
+
         redisTokenBlacklistService.addToBlacklist(refreshToken, jwtTokenProvider.getExpirationTime(refreshToken));
-        System.out.println("5");
+
         TokenDto tokenDto = jwtTokenProvider.generateToken(member);
-        System.out.println("6");
-        CookieUtils.addCookie(response, "accessToken", tokenDto.getAccessToken(),
+
+        CookieUtils.addCookie(response, "Authorization", tokenDto.getAccessToken(),
                 (int) (jwtConfig.getJwtAccessExpirationMs() / 1000));
         CookieUtils.addCookie(response, "refreshToken", tokenDto.getRefreshToken(),
                 (int) (jwtConfig.getJwtRefreshExpirationMs() / 1000));
 
-        WebTokenResponseDTO webTokenResponseDTO = jwtTokenProvider.generateAccessToken(member);
+        // 웹용 응답 생성
+        WebTokenResponseDTO webTokenResponseDTO = WebTokenResponseDTO.builder()
+                .accessToken(tokenDto.getAccessToken())
+                .accessTokenExpiresIn(tokenDto.getAccessTokenExpiresIn())
+                .build();
+
         return webTokenResponseDTO;
     }
 
     // 완전히 새로운 토큰 세트 발급(모바일)
     @Transactional
-    public TokenDto refreshAllTokensMobile(String refreshToken) {
+    public TokenDto refreshAllTokensMobile(RefreshTokenRequestDTO request) {
+
+        String accessToken = request.getAccessToken();
+        String refreshToken = request.getRefreshToken();
 
         // 리프레시 토큰 검증
         if (!jwtTokenProvider.validateToken(refreshToken)) {
@@ -242,6 +266,12 @@ public class AuthService {
 
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        if (member.getRefreshToken() == null || !member.getRefreshToken().equals(refreshToken)) {
+            throw new CustomException(AuthErrorCode.INVALID_TOKEN);
+        }
+
+        jwtTokenProvider.addToBlacklist(accessToken);
 
         redisTokenBlacklistService.addToBlacklist(refreshToken, jwtTokenProvider.getExpirationTime(refreshToken));
 
@@ -251,31 +281,46 @@ public class AuthService {
     // 로그아웃
     @Transactional
     public void logout(String authorizationHeader) {
+
         if (authorizationHeader == null || authorizationHeader.isEmpty()) {
             throw new CustomException(CommonErrorCode.INVALID_INPUT_VALUE);
         }
 
-        String token = authorizationHeader.substring(7);
-
         try {
-            // 토큰을 블랙리스트에 추가
+            // Bearer 접두사 제거
+            String token = authorizationHeader;
+            if (authorizationHeader.startsWith("Bearer ")) {
+                token = authorizationHeader.substring(7);
+            }
+
+            // 토큰에서 memberId 추출
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+            if (memberId == null) {
+                throw new CustomException(AuthErrorCode.INVALID_TOKEN);
+            }
+
+            // 사용자 정보 조회
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+            // 액세스 토큰 블랙리스트에 추가
             jwtTokenProvider.addToBlacklist(token);
 
-            // 토큰에서 직접 memberId 추출
-            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
-            if (memberId != null) {
-                memberRepository.findById(memberId)
-                        .ifPresent(member -> {
-                            member.clearRefreshToken();
-                            memberRepository.save(member);
-                            System.out.println("5");
-                        });
+            // 리프레시 토큰이 있는 경우 함께 블랙리스트에 추가
+            if (member.getRefreshToken() != null) {
+                redisTokenBlacklistService.addToBlacklist(member.getRefreshToken(),
+                        jwtTokenProvider.getExpirationTime(member.getRefreshToken()));
+
+                // 멤버의 리프레시 토큰 초기화
+                member.clearRefreshToken();
+                memberRepository.save(member);
             }
 
             // 보안 컨텍스트 초기화
             SecurityContextHolder.clearContext();
 
         } catch (Exception e) {
+            log.error("로그아웃 처리 중 오류 발생: {}", e.getMessage());
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
     }
