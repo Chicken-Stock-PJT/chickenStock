@@ -26,6 +26,7 @@ public class StockTradingController {
     // 주식 매수 주문 API (* 시장가 또는 지정가로 주문 가능)
     @PostMapping("/buy")
     public ResponseEntity<TradeResponseDTO> buyStock(
+            @RequestHeader("Authorization") String authorizationHeader,
             @RequestBody TradeRequestDTO request) {
 
         log.info("매수 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
@@ -36,7 +37,7 @@ public class StockTradingController {
             request.setPrice(null);
         }
 
-        TradeResponseDTO response = stockTradeService.buyStock(request);
+        TradeResponseDTO response = stockTradeService.buyStock(authorizationHeader, request);
         return ResponseEntity.ok(response);
     }
 
@@ -46,6 +47,7 @@ public class StockTradingController {
      */
     @PostMapping("/sell")
     public ResponseEntity<TradeResponseDTO> sellStock(
+            @RequestHeader("Authorization") String authorizationHeader,
             @RequestBody TradeRequestDTO request) {
 
         log.info("매도 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
@@ -56,7 +58,7 @@ public class StockTradingController {
             request.setPrice(null);
         }
 
-        TradeResponseDTO response = stockTradeService.sellStock(request);
+        TradeResponseDTO response = stockTradeService.sellStock(authorizationHeader, request);
         return ResponseEntity.ok(response);
     }
 

@@ -8,7 +8,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TradeRequestDTO {
-    private Long memberId;
     private String stockCode;      // 종목 코드
     private Integer quantity;      // 거래 수량
     private Long price;            // 거래 희망 가격 (시장가 주문시 null 가능)

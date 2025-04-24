@@ -83,11 +83,13 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     @Transactional
-    public TradeResponseDTO buyStock(TradeRequestDTO request) {
+    public TradeResponseDTO buyStock(String authorizationHeader, TradeRequestDTO request) {
         // 입력값 검증
         validateTradeRequest(request);
 
-        Long memberId = request.getMemberId();
+        String token = jwtTokenProvider.resolveToken(authorizationHeader);
+
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
@@ -165,12 +167,94 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         }
     }
 
+    // 오버로딩
     @Transactional
-    public TradeResponseDTO sellStock(TradeRequestDTO request) {
+    public TradeResponseDTO buyStock(TradeRequestDTO request, Member member) {
         // 입력값 검증
         validateTradeRequest(request);
 
-        Long memberId = request.getMemberId();
+        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND, "해당 종목을 찾을 수 없습니다: " + request.getStockCode()));
+
+        // 동시성 제어를 위한 락 획득
+        ReentrantLock stockLock = getStockLock(request.getStockCode());
+        ReentrantLock memberLock = getMemberLock(member.getMemberId());
+
+        // 데드락 방지를 위해 항상 동일한 순서로 락 획득
+        memberLock.lock();
+        try {
+            stockLock.lock();
+            try {
+                // 시장가 주문인 경우 실시간 가격 조회
+                Long currentPrice;
+                if (Boolean.TRUE.equals(request.getMarketOrder())) {
+                    currentPrice = getCurrentStockPriceWithRetry(request.getStockCode());
+                    if (currentPrice == null) {
+                        failedTrades.incrementAndGet();
+                        throw new CustomException(StockErrorCode.PRICE_DATA_NOT_AVAILABLE);
+                    }
+                } else {
+                    // 지정가 주문 처리 - 여기에 들어오지 않아야 함
+                    return createErrorResponse("내부 로직 오류: 시장가 주문이 아닌 요청이 들어왔습니다.");
+                }
+
+                // 총 구매 금액 계산
+                Long totalAmount = currentPrice * request.getQuantity();
+
+                // 잔액 확인 - 재조회하여 최신 데이터로 확인
+                member = memberRepository.findById(member.getMemberId())
+                        .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+                if (member.getMemberMoney() < totalAmount) {
+                    failedTrades.incrementAndGet();
+                    throw new CustomException(StockErrorCode.INSUFFICIENT_BALANCE);
+                }
+
+                // 매수 처리
+                member.subtractMemberMoney(totalAmount);
+                memberRepository.save(member);
+
+                // 거래 내역 생성
+                TradeHistory tradeHistory = TradeHistory.of(
+                        member,
+                        stock,
+                        TradeHistory.TradeType.BUY,
+                        request.getQuantity(),
+                        currentPrice,
+                        totalAmount,
+                        LocalDateTime.now()
+                );
+                tradeHistoryRepository.save(tradeHistory);
+
+                // 포지션 업데이트
+                updateHoldingPosition(member, stock, request.getQuantity(), currentPrice, TradeHistory.TradeType.BUY);
+
+                // 투자 요약 업데이트
+                updateInvestmentSummary(member);
+
+                successfulTrades.incrementAndGet();
+                return TradeResponseDTO.fromTradeHistory(tradeHistory);
+            } catch (Exception e) {
+                log.error("매수 주문 처리 중 오류 발생", e);
+                failedTrades.incrementAndGet();
+                throw e;
+            } finally {
+                stockLock.unlock();
+            }
+        } finally {
+            memberLock.unlock();
+        }
+    }
+
+
+    @Transactional
+    public TradeResponseDTO sellStock(String authorizationHeader, TradeRequestDTO request) {
+        // 입력값 검증
+        validateTradeRequest(request);
+
+        String token = jwtTokenProvider.resolveToken(authorizationHeader);
+
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
@@ -207,6 +291,85 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 } else {
                     // 지정가 주문 처리
                     return createPendingSellOrder(member, stock, request);
+                }
+
+                // 총 판매 금액 계산
+                Long totalAmount = currentPrice * request.getQuantity();
+
+                // 매도 처리
+                member.addMemberMoney(totalAmount);
+                memberRepository.save(member);
+
+                // 거래 내역 생성
+                TradeHistory tradeHistory = TradeHistory.of(
+                        member,
+                        stock,
+                        TradeHistory.TradeType.SELL,
+                        request.getQuantity(),
+                        currentPrice,
+                        totalAmount,
+                        LocalDateTime.now()
+                );
+                tradeHistoryRepository.save(tradeHistory);
+
+                // 포지션 업데이트
+                updateHoldingPosition(member, stock, request.getQuantity(), currentPrice, TradeHistory.TradeType.SELL);
+
+                // 투자 요약 업데이트
+                updateInvestmentSummary(member);
+
+                successfulTrades.incrementAndGet();
+                return TradeResponseDTO.fromTradeHistory(tradeHistory);
+            } catch (Exception e) {
+                log.error("매도 주문 처리 중 오류 발생", e);
+                failedTrades.incrementAndGet();
+                throw e;
+            } finally {
+                stockLock.unlock();
+            }
+        } finally {
+            memberLock.unlock();
+        }
+    }
+
+    // 오버로딩
+    @Transactional
+    public TradeResponseDTO sellStock(TradeRequestDTO request, Member member) {
+        // 입력값 검증
+        validateTradeRequest(request);
+
+        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
+
+        // 동시성 제어를 위한 락 획득
+        ReentrantLock stockLock = getStockLock(request.getStockCode());
+        ReentrantLock memberLock = getMemberLock(member.getMemberId());
+
+        // 데드락 방지를 위해 항상 동일한 순서로 락 획득
+        memberLock.lock();
+        try {
+            stockLock.lock();
+            try {
+                // 보유 수량 확인 - 최신 데이터로 다시 조회
+                HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, stock)
+                        .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "해당 종목을 보유하고 있지 않습니다"));
+
+                if (position.getQuantity() < request.getQuantity()) {
+                    failedTrades.incrementAndGet();
+                    throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "보유 수량이 부족합니다");
+                }
+
+                // 시장가 주문인 경우 실시간 가격 조회
+                Long currentPrice;
+                if (Boolean.TRUE.equals(request.getMarketOrder())) {
+                    currentPrice = getCurrentStockPriceWithRetry(request.getStockCode());
+                    if (currentPrice == null) {
+                        failedTrades.incrementAndGet();
+                        throw new CustomException(StockErrorCode.PRICE_DATA_NOT_AVAILABLE);
+                    }
+                } else {
+                    // 지정가 주문 처리 - 여기에 들어오지 않아야 함
+                    return createErrorResponse("내부 로직 오류: 시장가 주문이 아닌 요청이 들어왔습니다.");
                 }
 
                 // 총 판매 금액 계산
@@ -363,13 +526,12 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
                 // 시장가와 동일한 buyStock 메서드 사용
                 TradeRequestDTO marketRequest = new TradeRequestDTO();
-                marketRequest.setMemberId(request.getMemberId());
                 marketRequest.setStockCode(request.getStockCode());
                 marketRequest.setQuantity(request.getQuantity());
                 marketRequest.setMarketOrder(true);
 
                 // buyStock 메서드 내부에서 트랜잭션 처리와 금액 차감이 이루어지므로 여기서는 별도 처리 없음
-                return buyStock(marketRequest);
+                return buyStock(marketRequest, member);
             }
 
             PendingOrder pendingOrder = null;
@@ -472,11 +634,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             if (currentPrice != null && currentPrice >= request.getPrice()) {
                 // 시장가와 동일한 sellStock 메서드 사용 (수정 필요)
                 TradeRequestDTO marketRequest = new TradeRequestDTO();
-                marketRequest.setMemberId(request.getMemberId());
                 marketRequest.setStockCode(request.getStockCode());
                 marketRequest.setQuantity(request.getQuantity());
                 marketRequest.setMarketOrder(true);
-                return sellStock(marketRequest);
+                return sellStock(marketRequest, member);
             }
 
             PendingOrder pendingOrder = null;
