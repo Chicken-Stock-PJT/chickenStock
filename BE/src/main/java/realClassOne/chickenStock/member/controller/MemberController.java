@@ -1,7 +1,6 @@
 package realClassOne.chickenStock.member.controller;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -13,7 +12,6 @@ import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 
-@Slf4j
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor

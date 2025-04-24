@@ -36,6 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
+
         String token = resolveToken(request);
         if (StringUtils.hasText(token)) {
             // 블랙리스트 확인 (Redis)
@@ -45,10 +46,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 throw new CustomException(SecurityErrorCode.BLACKLISTED_JWT_TOKEN);
             } else if (jwtTokenProvider.validateToken(token)) {
                 // 토큰에서 Authentication 객체 가져오기
-
                 Authentication authentication = jwtTokenProvider.getAuthentication(token);
                 // SecurityContext에 Authentication 객체 저장
-
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }

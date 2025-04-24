@@ -40,6 +40,14 @@ public class KiwoomWebSocketClient {
     // 종목별 구독자 수 관리
     private final Map<String, Integer> stockCodeSubscriberCount = new ConcurrentHashMap<>();
 
+    // 종목별 최신 가격 데이터 캐시
+    private final Map<String, JsonNode> latestPriceDataCache = new ConcurrentHashMap<>();
+
+    // 최신 가격 데이터 반환 메서드
+    public JsonNode getLatestStockPriceData(String stockCode) {
+        return latestPriceDataCache.get(stockCode);
+    }
+
     public interface StockDataListener {
         void onStockPriceUpdate(String stockCode, JsonNode data);
         void onStockBidAskUpdate(String stockCode, JsonNode data);
@@ -51,6 +59,27 @@ public class KiwoomWebSocketClient {
 
     public void removeListener(StockDataListener listener) {
         listeners.remove(listener);
+    }
+
+    // 기존 onStockPriceUpdate 메서드 내부에 추가할 코드 (data를 캐시에 저장)
+    public void processStockPriceUpdate(String stockCode, JsonNode data) {
+        try {
+            // 로그 데이터 (기존 코드)
+            log.info("[실시간가격] 종목: {}, 현재가: {}, 전일대비: {}, 등락률: {}%, 체결시간: {}",
+                    stockCode,
+                    data.get("10").asText(),
+                    data.get("11").asText(),
+                    data.get("12").asText(),
+                    data.get("20").asText());
+
+            // 최신 데이터를 캐시에 저장 (기존 코드)
+            latestPriceDataCache.put(stockCode, data);
+
+            // 주식체결 데이터 처리 (기존 코드)
+            notifyStockPriceUpdate(stockCode, data);
+        } catch (Exception e) {
+            log.error("실시간 데이터 처리 중 오류 발생", e);
+        }
     }
 
     @PostConstruct
@@ -295,6 +324,9 @@ public class KiwoomWebSocketClient {
                     JsonNode values = dataItem.get("values");
 
                     if ("0B".equals(type)) {
+                        // 캐시에 최신 데이터 저장 (이 부분 추가)
+                        latestPriceDataCache.put(stockCode, values);
+
                         // 로그보기
                         log.info("[실시간가격] 종목: {}, 현재가: {}, 전일대비: {}, 등락률: {}%, 체결시간: {}",
                                 stockCode,
@@ -355,6 +387,7 @@ public class KiwoomWebSocketClient {
             log.error("키움증권 WebSocket 재연결 시도 중 오류 발생", e);
         }
     }
+
 
     // WebSocket 연결 상태 확인
     public boolean isConnected() {

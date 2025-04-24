@@ -9,15 +9,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
-import realClassOne.chickenStock.stock.entity.Stock;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
-import realClassOne.chickenStock.stock.repository.StockRepository;
+import realClassOne.chickenStock.stock.repository.StockMasterDataRepository;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -31,7 +29,7 @@ public class StockInfoService {
     @Value("${app.stock.csv-path}")
     private String csvPath;
 
-    private final StockRepository stockRepository;
+    private final StockMasterDataRepository stockMasterDataRepository;
 
     @PostConstruct
     public void loadStockData() {
@@ -46,7 +44,7 @@ public class StockInfoService {
             log.info("파일 존재 여부 - stock2: {}", stock2File.exists());
 
             // 기존 데이터가 있는지 확인
-            long stockCount = stockRepository.count();
+            long stockCount = stockMasterDataRepository.count();
             if (stockCount > 0) {
                 log.info("이미 DB에 {}개의 종목 정보가 있습니다. CSV 로드를 건너뜁니다.", stockCount);
                 return;
@@ -65,7 +63,7 @@ public class StockInfoService {
                 log.error("stock2.csv 파일을 찾을 수 없습니다.");
             }
 
-            log.info("주식 종목 정보 로드 완료: {} 종목", stockRepository.count());
+            log.info("주식 종목 정보 로드 완료: {} 종목", stockMasterDataRepository.count());
         } catch (Exception e) {
             log.error("주식 종목 정보 로드 중 오류 발생", e);
         }
@@ -107,7 +105,7 @@ public class StockInfoService {
 
             csvReader.skip(1); // 헤더 스킵
 
-            List<Stock> stockBatch = new ArrayList<>();
+            List<StockData> stockDataBatches = new ArrayList<>();
             String[] fields;
             while ((fields = csvReader.readNext()) != null) {
                 try {
@@ -121,23 +119,23 @@ public class StockInfoService {
                         // 단축코드 6자리 보정
                         shortCode = String.format("%06d", Integer.parseInt(shortCode));
 
-                        Stock stock = Stock.builder()
-                                .shortCode(shortCode)
-                                .shortName(shortName)
-                                .market(market)
-                                .stockType(stockType)
-                                .faceValue(faceValue)
-                                .build();
+                        StockData stockData = StockData.of(
+                                shortCode,
+                                shortName,
+                                market,
+                                stockType,
+                                faceValue
+                        );
 
-                        stockBatch.add(stock);
+                        stockDataBatches.add(stockData);
                     }
                 } catch (Exception e) {
                     log.error("CSV 라인 오류: {}", Arrays.toString(fields), e);
                 }
             }
 
-            stockRepository.saveAll(stockBatch);
-            log.info("{}에서 로드된 종목 수: {}", file.getName(), stockBatch.size());
+            stockMasterDataRepository.saveAll(stockDataBatches);
+            log.info("{}에서 로드된 종목 수: {}", file.getName(), stockDataBatches.size());
 
         } catch (Exception e) {
             log.error("파일 읽기 실패: {}", file.getAbsolutePath(), e);
@@ -146,7 +144,7 @@ public class StockInfoService {
 
     @Transactional(readOnly = true)
     public List<StockResponse> getAllStocks() {
-        return stockRepository.findAll().stream()
+        return stockMasterDataRepository.findAll().stream()
                 .map(this::mapStockToResponse)
                 .collect(Collectors.toList());
     }
@@ -154,25 +152,25 @@ public class StockInfoService {
     @Transactional(readOnly = true)
     public StockResponse getStockByCode(String code) {
         String normalizedCode = normalizeShortCode(code);
-        return stockRepository.findById(normalizedCode)
+        return stockMasterDataRepository.findById(normalizedCode)
                 .map(this::mapStockToResponse)
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
     }
 
     @Transactional(readOnly = true)
     public StockResponse getStockByName(String name) {
-        return stockRepository.findByShortName(name)
+        return stockMasterDataRepository.findByShortName(name)
                 .map(this::mapStockToResponse)
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND_BY_NAME));
     }
 
-    private StockResponse mapStockToResponse(Stock stock) {
+    private StockResponse mapStockToResponse(StockData stockData) {
         return StockResponse.builder()
-                .shortCode(stock.getShortCode())
-                .shortName(stock.getShortName())
-                .market(stock.getMarket())
-                .stockType(stock.getStockType())
-                .faceValue(stock.getFaceValue())
+                .shortCode(stockData.getShortCode())
+                .shortName(stockData.getShortName())
+                .market(stockData.getMarket())
+                .stockType(stockData.getStockType())
+                .faceValue(stockData.getFaceValue())
                 .build();
     }
 }
