@@ -45,7 +45,7 @@ public class JwtTokenProvider {
         }
 
         // 또는 기존 시크릿을 사용하려면:
-         return Keys.hmacShaKeyFor(keyBytes);
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 
     // 1회용 토큰 코드 생성

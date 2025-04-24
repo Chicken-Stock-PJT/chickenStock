@@ -3,11 +3,14 @@ package realClassOne.chickenStock.member.controller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import realClassOne.chickenStock.member.dto.request.NicknameChangeRequestDTO;
 import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
+import realClassOne.chickenStock.member.dto.response.NicknameChangeResponseDTO;
+import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
 import realClassOne.chickenStock.member.service.MemberService;
+import jakarta.validation.Valid;
+import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 
 @RestController
 @RequestMapping("/api/members")
@@ -22,4 +25,26 @@ public class MemberController {
     public ResponseEntity<MemberResponseDto> getCurrentUser() {
         return ResponseEntity.ok(memberService.getCurrentUser());
     }
+
+    // 비밀번호 변경
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(
+        @RequestBody @Valid PasswordChangeRequestDTO requestDTO,
+        @RequestHeader("Authorization") String authorizationHeader) {
+        PasswordChangeResponseDTO response = memberService.changePassword(authorizationHeader, requestDTO);
+
+        return ResponseEntity.ok(response);
+    }
+
+    // 닉네임 변경
+    @PatchMapping("/nickname")
+    public ResponseEntity<NicknameChangeResponseDTO> changeNickname(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @Valid @RequestBody NicknameChangeRequestDTO requestDTO
+    ) {
+        NicknameChangeResponseDTO response = memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
+        return ResponseEntity.ok(response);
+    }
+
+
 }

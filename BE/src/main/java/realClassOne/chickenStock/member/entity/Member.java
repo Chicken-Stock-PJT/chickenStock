@@ -156,4 +156,12 @@ public class Member {
         }
         this.memberMoney -= amount;
     }
+
+    public void updatePassword(String newPassword) {
+        this.password = newPassword;
+    }
+
+    public void changeNickname(String nickname) {
+        this.nickname = nickname;
+    }
 }

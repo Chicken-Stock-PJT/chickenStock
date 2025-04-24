@@ -27,6 +27,7 @@ import realClassOne.chickenStock.member.entity.MemberRole;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
+import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
 
 import java.util.Collections;
 
@@ -78,6 +79,14 @@ public class AuthService {
                 .email(savedMember.getEmail())
                 .name(savedMember.getName())
                 .build();
+    }
+
+    // 이메일 중복 확인
+    public EmailCheckResponseDTO checkEmailDuplicateAndRespond(String email) {
+        if (memberRepository.existsByEmail(email)) {
+            return EmailCheckResponseDTO.of(false, "이미 가입된 이메일입니다.");
+        }
+        return EmailCheckResponseDTO.of(true, "사용 가능한 이메일입니다.");
     }
 
     // 로그인
