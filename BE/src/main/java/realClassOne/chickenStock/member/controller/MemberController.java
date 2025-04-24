@@ -30,25 +30,22 @@ public class MemberController {
 
     // 비밀번호 변경
     @PostMapping("/change-password")
-    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> changePassword(
         @RequestBody @Valid PasswordChangeRequestDTO requestDTO,
         @RequestHeader("Authorization") String authorizationHeader) {
-        memberService.changePassword(authorizationHeader, requestDTO);
+        PasswordChangeResponseDTO response = memberService.changePassword(authorizationHeader, requestDTO);
 
-        PasswordChangeResponseDTO responseDTO = new PasswordChangeResponseDTO("비밀번호가 성공적으로 변경되었습니다.");
-        return ResponseEntity.ok(responseDTO);
+        return ResponseEntity.ok(response);
     }
 
     // 닉네임 변경
     @PatchMapping("/nickname")
-    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<NicknameChangeResponseDTO> changeNickname(
             @RequestHeader("Authorization") String authorizationHeader,
             @Valid @RequestBody NicknameChangeRequestDTO requestDTO
     ) {
-        memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
-        return ResponseEntity.ok(NicknameChangeResponseDTO.of("닉네임이 성공적으로 변경되었습니다."));
+        NicknameChangeResponseDTO response = memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
+        return ResponseEntity.ok(response);
     }
 
 

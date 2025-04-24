@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.common.util.SecurityUtil;
 import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
+import realClassOne.chickenStock.member.dto.response.NicknameChangeResponseDTO;
+import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
@@ -34,7 +36,7 @@ public class MemberService {
         return MemberResponseDto.from(member);
     }
     @Transactional
-    public void changePassword(String authorizationHeader, PasswordChangeRequestDTO dto) {
+    public PasswordChangeResponseDTO changePassword(String authorizationHeader, PasswordChangeRequestDTO dto) {
 
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
@@ -52,10 +54,12 @@ public class MemberService {
 
         String encodedNewPassword = passwordEncoder.encode(dto.getNewPassword());
         member.updatePassword(encodedNewPassword);
+
+        return PasswordChangeResponseDTO.of("비밀번호가 성공적으로 변경되었습니다.");
     }
 
     @Transactional
-    public void changeNickname(String authorizationHeader, String newNickname) {
+    public NicknameChangeResponseDTO changeNickname(String authorizationHeader, String newNickname) {
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
@@ -70,6 +74,8 @@ public class MemberService {
 
         // 닉네임 변경
         member.changeNickname(newNickname);
+
+        return NicknameChangeResponseDTO.of("닉네임이 성공적으로 변경되었습니다.");
     }
 
 
