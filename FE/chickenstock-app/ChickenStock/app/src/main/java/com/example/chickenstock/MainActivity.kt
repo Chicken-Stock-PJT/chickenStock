@@ -14,20 +14,36 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.*
 import com.example.chickenstock.ui.theme.ChickenStockTheme
-import com.example.chickenstock.ui.screens.HomeScreen
-import com.example.chickenstock.ui.screens.MyPageScreen
+import com.example.chickenstock.navigation.NavGraph
+import com.example.chickenstock.navigation.Screen
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.remember
 import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chickenstock.R
+import com.example.chickenstock.ui.theme.Gray0
+import com.example.chickenstock.ui.theme.Gray700
+import com.example.chickenstock.ui.theme.SCDreamFontFamily
+
+class MainViewModel : ViewModel() {
+    private val _selectedIndex = mutableStateOf(0)
+    val selectedIndex: State<Int> = _selectedIndex
+
+    fun updateSelectedIndex(index: Int) {
+        _selectedIndex.value = index
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,15 +59,34 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val navController = rememberNavController()
     val currentBackStack by navController.currentBackStackEntryAsState()
-    val currentRoute = currentBackStack?.destination?.route ?: "home"
+    val currentRoute = currentBackStack?.destination?.route ?: Screen.Home.route
 
-    val tabList = listOf("home", "mypage")
-    val selectedIndex = tabList.indexOf(currentRoute).coerceAtLeast(0)
+    val tabList = listOf(Screen.Home.route, Screen.Stock.route, Screen.MyPage.route)
+    val selectedIndex by viewModel.selectedIndex
+
+    // 현재 라우트가 변경될 때 selectedIndex 업데이트
+    LaunchedEffect(currentRoute) {
+        // 상세 페이지인 경우 이전 라우트를 확인
+        val route = if (currentRoute.startsWith("stock_detail")) {
+            navController.previousBackStackEntry?.destination?.route ?: Screen.Home.route
+        } else {
+            currentRoute
+        }
+        val index = tabList.indexOf(route).coerceAtLeast(0)
+        viewModel.updateSelectedIndex(index)
+    }
+
+    // 첫 실행 시 애니메이션을 위한 상태
+    var isFirstLaunch by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        isFirstLaunch = false
+    }
 
     Scaffold(
+        containerColor = Gray0,
         topBar = {
             TopAppBar(
                 title = {},
@@ -59,46 +94,71 @@ fun MainScreen() {
                     Icon(
                         painter = painterResource(id = R.drawable.logo),
                         contentDescription = "Logo",
-                        tint = Color.Unspecified
+                        tint = Color.Unspecified,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .padding(start = 8.dp)
                     )
                 },
                 actions = {
                     IconButton(onClick = { /* 검색 기능 추가 */ }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search")
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = "Search",
+                            tint = Gray700,
+                            modifier = Modifier.size(30.dp)
+                        )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Gray0
+                )
             )
         },
         bottomBar = {
             AnimatedBottomBar(
                 selectedIndex = selectedIndex,
+                isFirstLaunch = isFirstLaunch,
                 onTabSelected = { index ->
                     val target = tabList[index]
-                    navController.navigate(target) {
-                        launchSingleTop = true
-                        restoreState = true
-                        popUpTo(navController.graph.startDestinationId) {
-                            saveState = true
+                    // 현재 라우트가 상세 페이지인 경우
+                    if (currentRoute.startsWith("stock_detail")) {
+                        // 이전 라우트를 확인
+                        val previousRoute = navController.previousBackStackEntry?.destination?.route ?: Screen.Home.route
+                        // 이전 라우트가 목표 라우트와 다른 경우에만 네비게이션
+                        if (previousRoute != target) {
+                            navController.navigate(target) {
+                                launchSingleTop = true
+                                popUpTo(navController.graph.startDestinationId) {
+                                    saveState = true
+                                }
+                            }
+                        }
+                    } else {
+                        // 일반적인 탭 전환
+                        navController.navigate(target) {
+                            launchSingleTop = true
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
+                            }
                         }
                     }
                 }
             )
         }
     ) { innerPadding ->
-        NavHost(
+        NavGraph(
             navController = navController,
-            startDestination = "home",
-            modifier = Modifier.padding(innerPadding)
-        ) {
-            composable("home") { HomeScreen() }
-            composable("mypage") { MyPageScreen() }
-        }
+            modifier = Modifier.padding(innerPadding),
+            viewModel = viewModel
+        )
     }
 }
 
 @Composable
 fun AnimatedBottomBar(
     selectedIndex: Int,
+    isFirstLaunch: Boolean,
     onTabSelected: (Int) -> Unit
 ) {
     val indicatorWidth = 60.dp
@@ -110,11 +170,12 @@ fun AnimatedBottomBar(
             .height(72.dp)
             .background(Color.White)
     ) {
-        val itemWidth = maxWidth / 2
+        val itemWidth = maxWidth / 3
         val centerOffset = (itemWidth - indicatorWidth) / 2
+        
         val indicatorOffset by animateDpAsState(
             targetValue = itemWidth * selectedIndex + centerOffset,
-            animationSpec = tween(durationMillis = 250),
+            animationSpec = tween(durationMillis = if (isFirstLaunch) 0 else 250),
             label = "indicatorOffset"
         )
 
@@ -131,12 +192,14 @@ fun AnimatedBottomBar(
         Row(modifier = Modifier.fillMaxSize()) {
             listOf(
                 Pair("홈", Icons.Filled.Home),
+                Pair("주식", Icons.Filled.ShowChart),
                 Pair("내 기록", Icons.Filled.Person)
             ).forEachIndexed { index, (label, icon) ->
                 val isSelected = index == selectedIndex
                 val iconColor by animateColorAsState(
                     targetValue = if (isSelected) Color.Red else Color.Black,
-                    animationSpec = tween(durationMillis = 200, delayMillis = 200)
+                    animationSpec = tween(durationMillis = if (isFirstLaunch) 0 else 200),
+                    label = "iconColor"
                 )
                 Box(
                     modifier = Modifier
@@ -156,7 +219,12 @@ fun AnimatedBottomBar(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(icon, contentDescription = label, tint = iconColor)
-                            Text(label, color = iconColor)
+                            Text(
+                                text = label,
+                                color = iconColor,
+                                fontSize = 12.sp,
+                                fontFamily = SCDreamFontFamily
+                            )
                         }
                     }
                 }
