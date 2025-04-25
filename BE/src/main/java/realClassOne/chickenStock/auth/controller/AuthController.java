@@ -36,7 +36,7 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.signup(signupRequestDTO));
     }
 
-    // 이메일 인증 코드 전송
+    // 이메일 중복 체크
     @PostMapping("/check-email")
     public ResponseEntity<EmailCheckResponseDTO> checkEmail(@RequestBody EmailRequestDTO request) {
         EmailCheckResponseDTO response = authService.checkEmailDuplicateAndRespond(request.getEmail());
@@ -47,12 +47,15 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    // 이메일 인증번호 전송 API
     @PostMapping("/send-code")
     public ResponseEntity<Void> sendCode(@RequestBody EmailRequestDTO request) {
         emailService.sendVerificationCode(request.getEmail());
         return ResponseEntity.ok().build();
     }
 
+
+    // 인증번호 확인 API
     @PostMapping("/verify-code")
     public ResponseEntity<EmailVerifyResponseDTO> verifyCode(@RequestBody EmailVerifyRequestDTO request) {
         EmailVerifyResponseDTO response = emailService.verifyEmailCodeAndRespond(request.getEmail(), request.getCode());
