@@ -99,7 +99,23 @@ const ChartBody = ({ chartData }: ChartBodyProps) => {
     tooltip: {
       enabled: true,
       shared: false,
-      custom: function ({ seriesIndex, dataPointIndex, w }: any) {
+      custom: function ({
+        seriesIndex,
+        dataPointIndex,
+        w,
+      }: {
+        seriesIndex: number;
+        dataPointIndex: number;
+        w: {
+          globals: {
+            seriesCandleO: number[][];
+            seriesCandleH: number[][];
+            seriesCandleL: number[][];
+            seriesCandleC: number[][];
+            seriesX: (string | number)[][];
+          };
+        };
+      }) {
         const o = w.globals.seriesCandleO[seriesIndex][dataPointIndex];
         const h = w.globals.seriesCandleH[seriesIndex][dataPointIndex];
         const l = w.globals.seriesCandleL[seriesIndex][dataPointIndex];
@@ -149,7 +165,7 @@ const ChartBody = ({ chartData }: ChartBodyProps) => {
   ];
 
   return (
-    <div className="h-[298px] w-100">
+    <div className="w-100 h-[298px]">
       <ReactApexChart options={options} series={series} type="candlestick" height={298} />
     </div>
   );

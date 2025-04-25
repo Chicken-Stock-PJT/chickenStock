@@ -1,7 +1,7 @@
 const StockListSkeleton = () => {
   return (
     <div className="animate-pulse">
-      {[...Array(10)].map((_, index) => (
+      {Array.from({ length: 10 }).map((_, index) => (
         <div key={index} className="flex items-center justify-between border-b p-4">
           <div className="flex w-1/4 items-center gap-6">
             <div className="size-6 rounded-full bg-gray-200"></div>

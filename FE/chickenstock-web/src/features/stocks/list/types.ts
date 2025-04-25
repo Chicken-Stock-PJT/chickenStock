@@ -39,6 +39,15 @@ export interface VolumeRankingItem extends Stock {
   tradeTurnoverRate: string; // 거래회전율
 }
 
+export interface StockListResponse {
+  rankingType: "TRADE_AMOUNT" | "FLUCTUATION_RATE" | "TRADE_VOLUME";
+  rankingItems: TradeAmountRankingItem[] | FluctutaionRankingItem[] | VolumeRankingItem[];
+  hasNext: boolean;
+  nextKey: string;
+  code: number;
+  message: string;
+}
+
 export type StockProps = {
   rankingType: RankingType;
   rank: number;

@@ -6,12 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "format": "prettier --write .",
     "lint": "eslint .",
     "preview": "vite preview",
     "preinstall": "npx only-allow pnpm"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.11",
+    "@radix-ui/react-separator": "^1.1.4",
+    "@radix-ui/react-slot": "^1.2.0",
     "@radix-ui/react-tabs": "^1.1.9",
+    "@radix-ui/react-tooltip": "^1.2.4",
     "@tailwindcss/vite": "^4.1.4",
     "apexcharts": "^4.6.0",
     "class-variance-authority": "^0.7.1",
