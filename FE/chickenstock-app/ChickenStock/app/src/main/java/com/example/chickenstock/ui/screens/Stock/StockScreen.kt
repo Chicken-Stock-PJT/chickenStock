@@ -1,4 +1,4 @@
-package com.example.chickenstock.ui.screens.Stock
+package com.example.chickenstock.ui.screens.stock
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,7 +48,6 @@ val dummyStocks = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StockScreen(
-    stockId: String,
     navController: NavHostController
 ) {
     var selectedMarketIndex by remember { mutableStateOf(0) }

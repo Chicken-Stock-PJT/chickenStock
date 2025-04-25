@@ -7,17 +7,19 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import com.example.chickenstock.ui.screens.Stock.StockScreen
-import com.example.chickenstock.ui.screens.Home.HomeScreen
-import com.example.chickenstock.ui.screens.MyPage.MyPageScreen
-import com.example.chickenstock.MainViewModel
+import com.example.chickenstock.ui.screens.stock.StockScreen
+import com.example.chickenstock.ui.screens.home.HomeScreen
+import com.example.chickenstock.ui.screens.mypage.MyPageScreen
+import com.example.chickenstock.viewmodel.MainViewModel
 import com.example.chickenstock.ui.screens.stock.StockDetailScreen
 import com.example.chickenstock.ui.components.StockItem
+import com.example.chickenstock.ui.screens.search.SearchScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Stock : Screen("stock")
     object MyPage : Screen("mypage")
+    object Search : Screen("search")
     object StockDetail : Screen("stock_detail/{stockCode}") {
         fun createRoute(stockCode: String) = "stock_detail/$stockCode"
     }
@@ -35,13 +37,16 @@ fun NavGraph(
         modifier = modifier
     ) {
         composable(Screen.Home.route) {
-            HomeScreen(navController, viewModel)
+            HomeScreen(navController = navController, viewModel = viewModel)
         }
         composable(Screen.Stock.route) {
-            StockScreen(stockId = "all", navController = navController)
+            StockScreen(navController = navController)
         }
         composable(Screen.MyPage.route) {
-            MyPageScreen()
+            MyPageScreen(navController = navController)
+        }
+        composable(Screen.Search.route) {
+            SearchScreen(navController = navController)
         }
         composable(
             route = Screen.StockDetail.route,

@@ -1,33 +1,41 @@
-package com.example.chickenstock.ui.screens.MyPage
+package com.example.chickenstock.ui.screens.mypage
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.example.chickenstock.ui.theme.Gray0
 import com.example.chickenstock.ui.theme.Gray700
 import com.example.chickenstock.ui.theme.SCDreamFontFamily
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MyPageScreen(modifier: Modifier = Modifier) {
+fun MyPageScreen(navController: NavController) {
     Scaffold(
         containerColor = Gray0,
         topBar = {
             TopAppBar(
-                title = { Text("마이페이지", color = Gray700, fontFamily = SCDreamFontFamily) },
+                title = {
+                    Text(
+                        text = "마이페이지",
+                        fontFamily = SCDreamFontFamily
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Gray0
                 )
             )
         }
-    ) { paddingValues ->
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(innerPadding)
         ) {
-            Text(text = "Welcome to My Page!", modifier = modifier)
+            // 마이페이지 화면 내용
+            Text("마이페이지 화면")
         }
     }
 } 
