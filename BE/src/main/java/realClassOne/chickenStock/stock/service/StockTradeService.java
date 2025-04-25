@@ -24,7 +24,7 @@ import realClassOne.chickenStock.stock.entity.TradeHistory;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 import realClassOne.chickenStock.stock.repository.PendingOrderRepository;
-import realClassOne.chickenStock.stock.repository.StockMasterDataRepository;
+import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
 public class StockTradeService implements KiwoomWebSocketClient.StockDataListener {
 
     private final MemberRepository memberRepository;
-    private final StockMasterDataRepository stockMasterDataRepository;
+    private final StockDataRepository stockDataRepository;
     private final TradeHistoryRepository tradeHistoryRepository;
     private final HoldingPositionRepository holdingPositionRepository;
     private final PendingOrderRepository pendingOrderRepository;
@@ -94,7 +94,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+        StockData stock = stockDataRepository.findByShortCode(request.getStockCode())
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND, "해당 종목을 찾을 수 없습니다: " + request.getStockCode()));
 
         // 동시성 제어를 위한 락 획득
@@ -173,7 +173,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         // 입력값 검증
         validateTradeRequest(request);
 
-        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+        StockData stock = stockDataRepository.findByShortCode(request.getStockCode())
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND, "해당 종목을 찾을 수 없습니다: " + request.getStockCode()));
 
         // 동시성 제어를 위한 락 획득
@@ -259,7 +259,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+        StockData stock = stockDataRepository.findByShortCode(request.getStockCode())
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
         // 동시성 제어를 위한 락 획득
@@ -338,7 +338,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         // 입력값 검증
         validateTradeRequest(request);
 
-        StockData stock = stockMasterDataRepository.findByShortCode(request.getStockCode())
+        StockData stock = stockDataRepository.findByShortCode(request.getStockCode())
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
         // 동시성 제어를 위한 락 획득
@@ -1202,7 +1202,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     public Map<String, Long> getAllCurrentPrices() {
         Map<String, Long> prices = new HashMap<>();
 
-        List<StockData> stocks = stockMasterDataRepository.findAll();
+        List<StockData> stocks = stockDataRepository.findAll();
         for (StockData stock : stocks) {
             Long price = getCurrentStockPrice(stock.getShortCode());
             if (price != null) {

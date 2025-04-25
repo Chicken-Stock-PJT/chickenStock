@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
-import realClassOne.chickenStock.stock.repository.StockMasterDataRepository;
+import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.util.Set;
@@ -16,7 +16,7 @@ import java.util.Set;
 public class StockSubscriptionService {
 
     private final KiwoomWebSocketClient kiwoomWebSocketClient;
-    private final StockMasterDataRepository stockMasterDataRepository;
+    private final StockDataRepository stockDataRepository;
 
     /**
      * 종목 코드를 등록하여 실시간 데이터 구독을 시작합니다.
