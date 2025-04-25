@@ -89,12 +89,13 @@ public class Member {
     @OneToOne(mappedBy = "member", cascade = CascadeType.ALL)
     private InvestmentSummary investmentSummary;
 
-    public static Member of(String email, String password, String name,
+    public static Member of(String email, String password, String nickname, String name,
                             String imageUrl, String provider,
                             String providerId, Set<MemberRole> roles) {
         Member member = new Member();
         member.email = email;
         member.password = password;
+        member.nickname = nickname;
         member.name = name;
         member.profileImage = imageUrl;
         member.provider = provider;

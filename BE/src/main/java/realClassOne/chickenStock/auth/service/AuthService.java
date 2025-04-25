@@ -74,6 +74,7 @@ public class AuthService {
         Member member = Member.of(
                 signupRequestDTO.getEmail(),
                 passwordEncoder.encode(signupRequestDTO.getPassword()),
+                signupRequestDTO.getNickname(),
                 signupRequestDTO.getName(),
                 null, // image
                 "local",
@@ -86,6 +87,7 @@ public class AuthService {
         return SignupResponseDTO.builder()
                 .id(savedMember.getMemberId())
                 .email(savedMember.getEmail())
+                .nickname(savedMember.getNickname())
                 .name(savedMember.getName())
                 .build();
     }

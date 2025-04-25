@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import realClassOne.chickenStock.common.util.RandomStringGenerator;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.entity.MemberRole;
 import realClassOne.chickenStock.member.repository.MemberRepository;
@@ -75,9 +76,31 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     }
 
     private Member registerNewMember(OAuth2UserRequest oAuth2UserRequest, OAuth2UserInfo oAuth2UserInfo) {
+        String provider = oAuth2UserRequest.getClientRegistration().getRegistrationId();
+
+        // 👉 prefix 설정 (K, G, N 등)
+        String prefix = switch (provider.toLowerCase()) {
+            case "kakao" -> "K";
+            case "google" -> "G";
+            case "naver" -> "N";
+            default -> "U";
+        };
+
+        // 👉 중복 없는 닉네임 생성
+        String nickname;
+        int retry = 0;
+        do {
+            nickname = RandomStringGenerator.generateWithPrefix(prefix, 10);
+            retry++;
+            if (retry > 10) {
+                throw new RuntimeException("닉네임 중복으로 인해 생성 실패");
+            }
+        } while (memberRepository.existsByNickname(nickname));
+
         Member member = Member.of(
                 oAuth2UserInfo.getEmail(),
                 null, // password는 소셜 로그인 시 필요 없으므로 null 처리
+                nickname,
                 oAuth2UserInfo.getName(),
                 oAuth2UserInfo.getImageUrl(),
                 oAuth2UserRequest.getClientRegistration().getRegistrationId(),
