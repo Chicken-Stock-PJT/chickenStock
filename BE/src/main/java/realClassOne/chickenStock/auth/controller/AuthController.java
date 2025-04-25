@@ -13,6 +13,7 @@ import realClassOne.chickenStock.auth.dto.request.ExchangeRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.LoginRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
+import realClassOne.chickenStock.auth.dto.response.PasswordResetResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
 import realClassOne.chickenStock.auth.service.AuthService;
 import realClassOne.chickenStock.auth.dto.request.EmailRequestDTO;
@@ -113,4 +114,13 @@ public class AuthController {
         authService.logout(authorizationHeader);
         return ResponseEntity.noContent().build();
     }
+
+    // 이메일 인증 성공 후, 임시 비밀번호 발급 요청
+    @PostMapping("/reset-password-by-code")
+    public ResponseEntity<PasswordResetResponseDTO> resetPasswordByCode(@RequestBody EmailRequestDTO request) {
+        PasswordResetResponseDTO response = authService.resetPasswordAfterVerification(request.getEmail());
+        return ResponseEntity.ok(response);
+    }
+
+
 }
