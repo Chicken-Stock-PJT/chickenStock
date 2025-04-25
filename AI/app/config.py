@@ -1,8 +1,18 @@
-from pydantic import BaseSettings
+import os
+from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # API 설정
-    BACKEND_API_URL: str = "http://localhost:8080/api"  # 백엔드 API URL
+    API_BASE_URL: str = "https://api.kiwoom.com"  # 키움증권 API 기본 URL
+    BACKEND_API_URL: str = "http://localhost:8080"  # 백엔드 API URL
+    
+    # 인증 설정
+    KIWOOM_API_KEY: str = os.getenv('KIWOOM_API_KEY', '')  # appkey
+    KIWOOM_API_SECRET: str = os.getenv('KIWOOM_API_SECRET', '')  # secretkey
+    
+    # 토큰 관리 설정
+    TOKEN_REFRESH_MARGIN: int = 300  # 토큰 만료 5분(300초) 전에 갱신
+    TOKEN_REFRESH_INTERVAL: int = 3600  # 토큰 갱신 검사 간격(최대 1시간)
     
     # 주식 거래 설정
     MIN_CONFIDENCE: float = 0.6  # 최소 신뢰도 (60% 이상일 때만 거래)
@@ -12,8 +22,9 @@ class Settings(BaseSettings):
     # 로깅 설정
     LOG_LEVEL: str = "INFO"
     
-    # 키움증권 API 설정
-    ACCOUNT_PASSWORD: str = ""  # 계좌 비밀번호 (환경변수로 설정 권장)
+    # HTTP 요청 설정
+    REQUEST_TIMEOUT: int = 30  # HTTP 요청 타임아웃(초)
+    MAX_RETRIES: int = 3  # 최대 재시도 횟수
     
     # 디버그 모드 (장 시간 외에도 동작)
     DEBUG_MODE: bool = False
@@ -21,5 +32,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = 'ignore'
 
 settings = Settings()
