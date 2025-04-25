@@ -1,4 +1,4 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/widgets/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 import OpenOrderItem from "./OpenOrderItem";
 import { FilledOrder, OpenOrder } from "./types";
 import FilledOrderItem from "./FilledOrderItem";

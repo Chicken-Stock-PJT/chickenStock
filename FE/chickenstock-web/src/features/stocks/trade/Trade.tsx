@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { Minus, Plus } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/widgets/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 
 const Trade = () => {
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
