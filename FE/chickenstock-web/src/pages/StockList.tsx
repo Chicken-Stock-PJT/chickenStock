@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import StockListIndex from "../features/stocks/list/StockListIndex";
 import StockListItem from "../features/stocks/list/StockListItem";
-import { MarketType, RankingType, StockProps } from "../features/stocks/list/types";
+import {
+  MarketType,
+  RankingType,
+  StockListResponse,
+  StockProps,
+} from "../features/stocks/list/types";
 import StockListHeader from "../features/stocks/list/StockListHeader";
 import StockListSkeleton from "../features/stocks/list/StockListSkeleton";
 
@@ -18,8 +23,14 @@ const StockList = () => {
         const response = await fetch(
           `/api/stock/ranking/${rankingType}?marketType=${marketType}&includeManagement=1`,
         );
-        const data = await response.json();
-        setStocks(data.rankingItems);
+        const data = (await response.json()) as StockListResponse;
+        const formattedStocks = data.rankingItems.map((item, index: number) => ({
+          ...item,
+          rankingType: rankingType.toLowerCase() as RankingType,
+          rank: index + 1,
+        }));
+
+        setStocks(formattedStocks as StockProps[]);
       } catch (error) {
         console.error("Error fetching stocks:", error);
       } finally {

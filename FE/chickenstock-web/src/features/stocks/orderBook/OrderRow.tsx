@@ -18,16 +18,16 @@ const OrderRow = ({ price, askVolume, bidVolume, max, isCurrentPrice = false }: 
   return (
     <div
       className={`
-        grid grid-cols-3 h-8 relative
+        relative grid h-8 grid-cols-3
         ${isCurrentPrice ? "bg-blue-50" : "hover:bg-gray-50"}
         ${isPurchase ? "text-chart-red" : "text-chart-blue"}
       `}
     >
       {/* 매수 영역 */}
-      <div className="flex items-center justify-end relative pr-6">
+      <div className="relative flex items-center justify-end pr-6">
         {bidVolume > 0 && (
           <div
-            className="bg-chart-red bg-opacity-20 h-full absolute top-0 right-0 z-0 rounded-l-sm"
+            className="absolute right-0 top-0 z-0 h-full rounded-l-sm bg-chart-red bg-opacity-20"
             style={{ width: `${(bidVolume / max) * 100}%` }}
           ></div>
         )}
@@ -46,10 +46,10 @@ const OrderRow = ({ price, askVolume, bidVolume, max, isCurrentPrice = false }: 
       </div>
 
       {/* 매도 영역 */}
-      <div className="flex items-center justify-start relative pl-6">
+      <div className="relative flex items-center justify-start pl-6">
         {askVolume > 0 && (
           <div
-            className="bg-chart-blue bg-opacity-20 h-full absolute top-0 left-0 z-0 rounded-r-sm"
+            className="absolute left-0 top-0 z-0 h-full rounded-r-sm bg-chart-blue bg-opacity-20"
             style={{ width: `${(askVolume / max) * 100}%` }}
           ></div>
         )}

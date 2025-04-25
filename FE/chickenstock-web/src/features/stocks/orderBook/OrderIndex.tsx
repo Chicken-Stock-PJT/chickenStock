@@ -1,9 +1,9 @@
 const OrderIndex = () => {
   return (
-    <div className="sticky top-0 bg-white z-20 py-2 border-b border-gray-200 grid grid-cols-3 text-sm font-bold text-gray-500">
-      <span className="text-right pr-6">매수호가잔량</span>
+    <div className="sticky top-0 z-20 grid grid-cols-3 border-b border-gray-200 bg-white py-2 text-sm font-bold text-gray-500">
+      <span className="pr-6 text-right">매수호가잔량</span>
       <span className="text-center">호가</span>
-      <span className="text-left pl-6">매도호가잔량</span>
+      <span className="pl-6 text-left">매도호가잔량</span>
     </div>
   );
 };

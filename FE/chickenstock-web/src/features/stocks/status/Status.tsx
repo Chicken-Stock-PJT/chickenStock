@@ -1,4 +1,4 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 import OpenOrderItem from "./OpenOrderItem";
 import { FilledOrder, OpenOrder } from "./types";
 import FilledOrderItem from "./FilledOrderItem";
@@ -85,7 +85,7 @@ const Status = () => {
   return (
     <div className="flex h-full flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
       <Tabs defaultValue="filled" className="flex h-full flex-col">
-        <TabsList className="flex gap-1.5 mb-2">
+        <TabsList className="mb-2 flex gap-1.5">
           <TabsTrigger value="filled" className="w-full">
             체결내역
           </TabsTrigger>
@@ -97,9 +97,9 @@ const Status = () => {
         {/* 체결내역 컨텐츠 */}
         <TabsContent value="filled" className="flex-1 overflow-auto">
           {filledTrades.length ? (
-            filledTrades.map((order, idx) => <FilledOrderItem order={order} idx={idx} />)
+            filledTrades.map((order, idx) => <FilledOrderItem key={idx} order={order} idx={idx} />)
           ) : (
-            <div className="flex items-center justify-center h-full text-sm text-gray-500">
+            <div className="flex h-full items-center justify-center text-sm text-gray-500">
               체결 내역이 없습니다.
             </div>
           )}
@@ -108,9 +108,9 @@ const Status = () => {
         {/* 미체결내역 컨텐츠 */}
         <TabsContent value="unfilled" className="flex-1 overflow-auto">
           {openOrders.length ? (
-            openOrders.map((order, idx) => <OpenOrderItem order={order} idx={idx} />)
+            openOrders.map((order, idx) => <OpenOrderItem key={idx} order={order} idx={idx} />)
           ) : (
-            <div className="flex items-center justify-center h-full text-sm text-gray-500">
+            <div className="flex h-full items-center justify-center text-sm text-gray-500">
               체결 내역이 없습니다.
             </div>
           )}

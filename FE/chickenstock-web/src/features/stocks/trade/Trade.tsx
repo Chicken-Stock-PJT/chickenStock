@@ -1,9 +1,8 @@
 import { useState, useRef } from "react";
 import { Minus, Plus } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 
 const Trade = () => {
-  const [isSell, setIsSell] = useState<boolean>(true); // true: 매도, false: 매수
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
   const [quantity, setQuantity] = useState<number>(1); // 수량
   const currentPrice = 150000; // 현재 가격 (예시로 100000으로 설정, 실제로는 API에서 받아와야 함)
@@ -104,8 +103,8 @@ const Trade = () => {
               className="
                 w-full 
                 text-gray-500 
-                data-[state=active]:text-chart-red
                 data-[state=active]:font-semibold
+                data-[state=active]:text-chart-red
               "
             >
               매수
@@ -115,8 +114,8 @@ const Trade = () => {
               className="
                 w-full 
                 text-gray-500 
-                data-[state=active]:text-chart-blue
                 data-[state=active]:font-semibold
+                data-[state=active]:text-chart-blue
               "
             >
               매도
@@ -184,7 +183,7 @@ const Trade = () => {
           <div className="relative flex items-center">
             <button
               onClick={handlePriceDecrease}
-              className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:opacity-50 disabled:cursor-not-allowed"}`}
+              className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
               disabled={!isLimitOrder}
             >
               <Minus size={16} />
@@ -204,7 +203,7 @@ const Trade = () => {
             />
             <button
               onClick={handlePriceIncrease}
-              className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:opacity-50 disabled:cursor-not-allowed"}`}
+              className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
               disabled={!isLimitOrder}
             >
               <Plus size={16} />
@@ -218,10 +217,10 @@ const Trade = () => {
         </div>
         <TabsContent value="buy">
           <button
-            className="w-full rounded-lg bg-primary-400 py-3 
-        text-white drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
+            className="w-full rounded-lg bg-primary-300 py-3 
+        text-gray-900 drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
         transition-all
-        duration-200 hover:bg-primary-300 active:scale-[0.98] active:bg-primary-500
+        duration-200 hover:bg-primary-400 active:scale-[0.98]
         active:shadow-inner"
             onClick={() => {
               // 매수 신청 로직
@@ -237,15 +236,14 @@ const Trade = () => {
         </TabsContent>
         <TabsContent value="sell">
           <button
-            className="w-full rounded-lg bg-primary-400 py-3 
-        text-white drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
+            className="w-full rounded-lg bg-primary-300 py-3 
+        text-gray-900 drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
         transition-all
-        duration-200 hover:bg-primary-300 active:scale-[0.98] active:bg-primary-500
+        duration-200 hover:bg-primary-400 active:scale-[0.98]
         active:shadow-inner"
             onClick={() => {
               // 매도 신청 로직
               console.log("매도 신청", {
-                isSell,
                 quantity,
                 price,
                 isLimitOrder,

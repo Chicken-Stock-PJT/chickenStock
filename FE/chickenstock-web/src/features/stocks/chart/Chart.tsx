@@ -3,7 +3,11 @@ import ChartBody from "./ChartBody";
 import ChartHeader from "./ChartHeader";
 import { ChartData, ChartResponse } from "./types";
 
-const Chart = ({ stockCode = "005930" }) => {
+interface ChartProps {
+  stockCode?: string;
+}
+
+const Chart = ({ stockCode = "005930" }: ChartProps) => {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,9 +18,11 @@ const Chart = ({ stockCode = "005930" }) => {
       try {
         const response = await fetch(`/api/stock/chart/all/${stockCode}?chartType=DAILY`);
         if (!response.ok) throw new Error("Failed to fetch chart data");
+        console.log(response);
 
-        const data: ChartResponse = await response.json();
+        const data = (await response.json()) as ChartResponse;
         setChartData(data.chartData);
+        return;
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
       } finally {
@@ -24,7 +30,7 @@ const Chart = ({ stockCode = "005930" }) => {
       }
     };
 
-    fetchChartData();
+    void fetchChartData();
   }, [stockCode]);
 
   if (loading) return <div>Loading...</div>;

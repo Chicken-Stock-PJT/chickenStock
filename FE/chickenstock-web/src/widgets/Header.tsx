@@ -1,10 +1,11 @@
 import { Search } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import logo from "../assets/logoImg.svg";
 
 const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div className="flex h-14 w-screen items-center px-4">
@@ -64,7 +65,9 @@ const Header = () => {
         </nav>
       </div>
 
-      <div className="flex w-1/3 justify-end">auth</div>
+      <div className="flex w-1/3 justify-end" onClick={() => void navigate("mypage/profile")}>
+        auth
+      </div>
     </div>
   );
 };

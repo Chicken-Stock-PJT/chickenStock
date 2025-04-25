@@ -8,8 +8,8 @@ const StockPage = () => {
   const stockCode = useParams().stockCode?.slice(0, 6);
 
   return (
-    <div className="px-[10px] flex absolute overflow-x-auto top-[60px] left-0 w-screen max-h-[calc(90vh)] flex-col overflow-hidden">
-      <div className="flex flex-1 grid grid-cols-12 gap-2 overflow-hidden">
+    <div className="absolute left-0 top-[60px] flex max-h-[calc(90vh)] w-screen flex-col overflow-hidden overflow-x-auto px-[10px]">
+      <div className="flex grid flex-1 grid-cols-12 gap-2 overflow-hidden">
         <div className="col-span-8 flex flex-col gap-2 overflow-hidden">
           <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
             <Chart stockCode={stockCode} />
