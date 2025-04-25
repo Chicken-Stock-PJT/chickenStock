@@ -21,6 +21,8 @@ import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
 import realClassOne.chickenStock.auth.service.EmailService;
 import realClassOne.chickenStock.auth.dto.response.EmailVerifyResponseDTO;
 import realClassOne.chickenStock.auth.dto.request.EmailVerifyRequestDTO;
+import realClassOne.chickenStock.auth.dto.request.NicknameCheckRequestDTO;
+import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
 
 @Slf4j
 @RestController
@@ -119,4 +121,15 @@ public class AuthController {
         PasswordResetResponseDTO response = authService.resetPasswordAfterVerification(request.getEmail());
         return ResponseEntity.ok(response);
     }
+
+    // 닉네임 중복 체크
+    @PostMapping("/check-nickname")
+    public ResponseEntity<NicknameCheckResponseDTO> checkNickname(
+            @RequestBody @Valid NicknameCheckRequestDTO request) {
+
+        NicknameCheckResponseDTO response = authService.checkNickname(request.getNickname());
+        return ResponseEntity.ok(response);
+    }
+
+
 }
