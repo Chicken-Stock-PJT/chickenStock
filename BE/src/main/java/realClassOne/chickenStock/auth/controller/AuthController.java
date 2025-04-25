@@ -9,18 +9,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.auth.dto.common.TokenDto;
 import realClassOne.chickenStock.auth.dto.common.WebTokenResponseDTO;
-import realClassOne.chickenStock.auth.dto.request.ExchangeRequestDTO;
-import realClassOne.chickenStock.auth.dto.request.LoginRequestDTO;
-import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
-import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
-import realClassOne.chickenStock.auth.dto.response.PasswordResetResponseDTO;
-import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
+import realClassOne.chickenStock.auth.dto.request.*;
+import realClassOne.chickenStock.auth.dto.response.*;
 import realClassOne.chickenStock.auth.service.AuthService;
-import realClassOne.chickenStock.auth.dto.request.EmailRequestDTO;
-import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
 import realClassOne.chickenStock.auth.service.EmailService;
-import realClassOne.chickenStock.auth.dto.response.EmailVerifyResponseDTO;
-import realClassOne.chickenStock.auth.dto.request.EmailVerifyRequestDTO;
 
 
 @Slf4j
@@ -116,6 +108,15 @@ public class AuthController {
     @PostMapping("/reset-password-by-code")
     public ResponseEntity<PasswordResetResponseDTO> resetPasswordByCode(@RequestBody EmailRequestDTO request) {
         PasswordResetResponseDTO response = authService.resetPasswordAfterVerification(request.getEmail());
+        return ResponseEntity.ok(response);
+    }
+
+    // 닉네임 중복 체크
+    @PostMapping("/check-nickname")
+    public ResponseEntity<NicknameCheckResponseDTO> checkNickname(
+            @RequestBody @Valid NicknameCheckRequestDTO request) {
+
+        NicknameCheckResponseDTO response = authService.checkNickname(request.getNickname());
         return ResponseEntity.ok(response);
     }
 

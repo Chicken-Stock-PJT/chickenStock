@@ -16,6 +16,7 @@ import realClassOne.chickenStock.auth.dto.request.ExchangeRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.LoginRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
+import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.PasswordResetResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
 import realClassOne.chickenStock.auth.exception.AuthErrorCode;
@@ -35,6 +36,7 @@ import realClassOne.chickenStock.auth.service.EmailService;
 
 import java.util.Collections;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -358,6 +360,19 @@ public class AuthService {
         verificationCodeRepository.removeVerified(email);
 
         return PasswordResetResponseDTO.of("임시 비밀번호가 이메일로 전송되었습니다.");
+    }
+
+    // 한글, 영어, 숫자만 가능하고, 최대 10자
+    private final Pattern nicknamePattern = Pattern.compile("^[a-zA-Z0-9가-힣]{1,10}$");
+
+    public NicknameCheckResponseDTO checkNickname(String nickname) {
+        if (!nicknamePattern.matcher(nickname).matches()) {
+            throw new CustomException(AuthErrorCode.INVALID_NICKNAME_FORMAT);
+        }
+
+        boolean isDuplicate = memberRepository.existsByNickname(nickname);
+        String message = isDuplicate ? "이미 사용 중인 닉네임입니다." : "사용 가능한 닉네임입니다.";
+        return NicknameCheckResponseDTO.of(isDuplicate, message);
     }
 
 
