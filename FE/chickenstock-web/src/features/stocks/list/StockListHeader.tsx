@@ -17,32 +17,32 @@ const StockListHeader = ({
     {
       id: "tradeAmount",
       name: "거래대금",
-      icon: <DollarSign className="w-4 h-4" />,
+      icon: <DollarSign className="size-4" />,
     },
     {
       id: "volume",
       name: "거래량",
-      icon: <BarChart3 className="w-4 h-4" />,
+      icon: <BarChart3 className="size-4" />,
     },
     {
       id: "fluctuationRate",
       name: "등락률",
-      icon: <TrendingUp className="w-4 h-4" />,
+      icon: <TrendingUp className="size-4" />,
     },
   ];
 
   return (
-    <div className="bg-white shadow-sm rounded-lg p-4 mb-4 text-left">
+    <div className="mb-4 rounded-lg bg-white p-4 text-left shadow-sm">
       <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <span className="text-sm font-medium text-gray-500 w-20">시장</span>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <span className="w-20 text-sm font-medium text-gray-500">시장</span>
           <div className="flex gap-2">
             {marketTypes.map((type) => (
               <button
                 key={type.id}
                 className={`
-                    flex-1 sm:flex-none px-4 py-2 rounded-full text-sm font-medium
-                    transition-all duration-200 ease-in-out
+                    flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all
+                    duration-200 ease-in-out sm:flex-none
                     ${
                       marketType === type.id
                         ? "bg-primary-300 text-gray-800 shadow-md"
@@ -57,18 +57,16 @@ const StockListHeader = ({
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <span className="text-sm font-medium text-gray-500 w-20">
-            정렬 기준
-          </span>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <span className="w-20 text-sm font-medium text-gray-500">정렬 기준</span>
           <div className="flex gap-2">
             {rankingTypes.map((type) => (
               <button
                 key={type.id}
                 className={`
-                    flex-1 sm:flex-none px-4 py-2 rounded-full text-sm font-medium
-                    transition-all duration-200 ease-in-out
-                    inline-flex items-center justify-center gap-2
+                    inline-flex flex-1 items-center justify-center gap-2 rounded-full px-4
+                    py-2 text-sm font-medium
+                    transition-all duration-200 ease-in-out sm:flex-none
                     ${
                       rankingType === type.id
                         ? "bg-primary-300 text-gray-800 shadow-md"

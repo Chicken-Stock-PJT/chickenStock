@@ -7,40 +7,55 @@ const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   return (
-    <div className="flex items-center justify-between h-14 px-4 w-screen">
-      <div className="flex items-center">
+    <div className="flex h-14 w-screen items-center px-4">
+      <div className="flex w-1/3 items-center">
         <img
           src={logo}
           alt="Chicken Stock Logo"
-          className="h-7 w-7 mr-2 fill-current text-primary-400"
+          className="mr-2 size-7 fill-current text-primary-400"
         />
         <Link to="/">
-          <h1 className="text-lg font-bold">Chicken Stock</h1>
+          <h1 className="text-lg font-bold">ChickenStock</h1>
         </Link>
       </div>
-      <div>
-        <nav className="flex space-x-6 items-center">
-          <NavLink to="/" className="text-base font-semibold">
+
+      <div className="flex w-1/3 justify-center">
+        <nav className="flex items-center space-x-6">
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              `${
+                isActive ? "text-primary-400" : ""
+              } text-base font-semibold transition-colors duration-200`
+            }
+          >
             홈
           </NavLink>
-          <NavLink to="stocks" className="text-base font-semibold">
+          <NavLink
+            to="stocks"
+            className={({ isActive }) =>
+              `${
+                isActive ? "text-primary-400" : ""
+              } text-base font-semibold transition-colors duration-200`
+            }
+          >
             주식
           </NavLink>
           <div className="relative">
             <div
-              className={`flex items-center text-gray-800 bg-gray-100 rounded-full transition-all duration-300 ease-in-out ${
+              className={`flex items-center rounded-full bg-gray-100 text-gray-800 transition-all duration-300 ease-in-out ${
                 isSearchOpen ? "w-64" : "w-10"
               }`}
             >
               <Search
                 size={28}
                 onClick={() => setIsSearchOpen(!isSearchOpen)}
-                className="p-1.5 rounded-full text-gray-400 hover:text-primary transition-colors duration-200"
+                className="rounded-full p-1.5 text-gray-400 transition-colors duration-200 hover:text-primary"
               />
               <input
                 type="text"
                 placeholder="검색어를 입력하세요"
-                className={`bg-transparent outline-none ml-3 ${
+                className={`ml-3 bg-transparent outline-none ${
                   isSearchOpen ? "w-48 opacity-100" : "w-0 opacity-0"
                 } transition-all duration-300`}
               />
@@ -48,7 +63,8 @@ const Header = () => {
           </div>
         </nav>
       </div>
-      <div>auth</div>
+
+      <div className="flex w-1/3 justify-end">auth</div>
     </div>
   );
 };

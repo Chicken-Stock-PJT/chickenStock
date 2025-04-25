@@ -32,12 +32,12 @@ const StockListIndex = ({ rankingType }: StockListIndexProps) => {
   };
 
   return (
-    <div className="flex items-center justify-between p-4 bg-primary-50 rounded-t-lg text-gray-700">
+    <div className="flex items-center justify-between rounded-t-lg bg-primary-50 p-4 text-gray-700">
       {getColumns().map((column) => (
         <div
           key={column.id}
           className={`${column.width} ${
-            column.id === "stock" ? "text-left pl-[84px]" : "text-right"
+            column.id === "stock" ? "pl-[84px] text-left" : "text-right"
           }`}
         >
           {column.label}

@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import StockListIndex from "../features/stocks/list/StockListIndex";
 import StockListItem from "../features/stocks/list/StockListItem";
-import {
-  MarketType,
-  RankingType,
-  StockProps,
-} from "../features/stocks/list/types";
+import { MarketType, RankingType, StockProps } from "../features/stocks/list/types";
 import StockListHeader from "../features/stocks/list/StockListHeader";
 import StockListSkeleton from "../features/stocks/list/StockListSkeleton";
 
@@ -20,7 +16,7 @@ const StockList = () => {
       setLoading(true);
       try {
         const response = await fetch(
-          `/api/stock/ranking/${rankingType}?marketType=${marketType}&includeManagement=1`
+          `/api/stock/ranking/${rankingType}?marketType=${marketType}&includeManagement=1`,
         );
         const data = await response.json();
         setStocks(data.rankingItems);
@@ -31,7 +27,7 @@ const StockList = () => {
       }
     };
 
-    fetchStocks();
+    void fetchStocks();
   }, [marketType, rankingType]);
 
   return (
@@ -46,14 +42,16 @@ const StockList = () => {
       {loading ? (
         <StockListSkeleton />
       ) : (
-        stocks.map((stock, index) => (
-          <StockListItem
-            key={index}
-            {...stock}
-            rankingType={rankingType}
-            rank={index + 1}
-          />
-        ))
+        stocks.map((stock, index) => {
+          // rankingType에 따라 props를 올바르게 타입 지정
+          const stockWithRank = {
+            ...stock,
+            rank: index + 1,
+            rankingType, // 명시적으로 rankingType 지정
+          } as StockProps; // StockProps로 타입 단언
+
+          return <StockListItem key={stock.stockCode} {...stockWithRank} />;
+        })
       )}
     </div>
   );
