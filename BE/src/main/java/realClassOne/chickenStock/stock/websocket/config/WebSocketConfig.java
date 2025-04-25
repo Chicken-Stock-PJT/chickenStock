@@ -16,7 +16,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(stockWebSocketHandler, "/ws/stock")
+        registry.addHandler(stockWebSocketHandler, "/api/ws/stock")
                 .setAllowedOrigins("*"); // 실제 환경에서는 보안을 위해 특정 오리진만 허용하는 것이 좋습니다.
     }
 }

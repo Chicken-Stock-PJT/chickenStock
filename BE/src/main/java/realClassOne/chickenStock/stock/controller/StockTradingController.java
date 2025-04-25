@@ -12,10 +12,9 @@ import realClassOne.chickenStock.stock.dto.response.TradeResponseDTO;
 import realClassOne.chickenStock.stock.service.StockTradeService;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
-@RequestMapping("/api/trading")
+@RequestMapping("/api/stock/trading")
 @RequiredArgsConstructor
 @Slf4j
 public class StockTradingController {
