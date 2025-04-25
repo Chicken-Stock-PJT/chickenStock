@@ -15,7 +15,8 @@ public enum AuthErrorCode implements ErrorCode {
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "AUTH-E004", "접근 권한이 없습니다"),
     INVALID_PLATFORM(HttpStatus.BAD_REQUEST, "AUTH-E005", "유효하지 않은 플랫폼입니다"),
     REDIS_OPERATION_FAILED(HttpStatus.FORBIDDEN, "AUTH-E006", "레디스 값이 비었습니다g"),
-    VERIFICATION_NOT_COMPLETED(HttpStatus.BAD_REQUEST, "AUTH-E007", "이메일 인증이 완료되지 않았습니다.");
+    VERIFICATION_NOT_COMPLETED(HttpStatus.BAD_REQUEST, "AUTH-E007", "이메일 인증이 완료되지 않았습니다."),
+    INVALID_NICKNAME_FORMAT(HttpStatus.BAD_REQUEST, "AUTH-E008", "닉네임은 최대 10자, 한글/영어/숫자만 사용할 수 있습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
