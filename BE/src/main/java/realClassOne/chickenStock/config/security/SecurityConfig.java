@@ -36,6 +36,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 세션 사용 안할것임.
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/api/auth/**", "/oauth2/**", "/login/oauth2/code/**").permitAll() // 로그인, 리디렉션 접근 열기.
                         .requestMatchers("/api/auth/signup/file").permitAll()
                         .requestMatchers("/api/**").permitAll() // 일단 전부 열음.

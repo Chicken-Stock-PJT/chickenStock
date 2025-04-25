@@ -16,7 +16,6 @@ import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
 public class MemberController {
-    // 회원 정보조회/ 수정, 탈퇴, 프로필 관리 등 기타 회원 데이터 관련 API
 
     private final MemberService memberService;
 
@@ -45,6 +44,4 @@ public class MemberController {
         NicknameChangeResponseDTO response = memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
         return ResponseEntity.ok(response);
     }
-
-
 }

@@ -13,10 +13,6 @@ import java.util.List;
 
 @Repository
 public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long> {
-    List<TradeHistory> findByMember(Member member);
-    List<TradeHistory> findByStockData(StockData stockData);
-    List<TradeHistory> findByMemberAndTradeType(Member member, TradeHistory.TradeType tradeType);
-    List<TradeHistory> findByMemberAndStockData(Member member, StockData stockData);
 
     @Query("SELECT th FROM TradeHistory th WHERE th.member = :member AND th.tradedAt BETWEEN :startDate AND :endDate ORDER BY th.tradedAt DESC")
     List<TradeHistory> findByMemberAndTradedAtBetween(

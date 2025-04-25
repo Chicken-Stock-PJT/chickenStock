@@ -22,7 +22,6 @@ import realClassOne.chickenStock.auth.service.EmailService;
 import realClassOne.chickenStock.auth.dto.response.EmailVerifyResponseDTO;
 import realClassOne.chickenStock.auth.dto.request.EmailVerifyRequestDTO;
 
-
 @Slf4j
 @RestController
 @RequestMapping("/api/auth")
@@ -54,7 +53,6 @@ public class AuthController {
         emailService.sendVerificationCode(request.getEmail());
         return ResponseEntity.ok().build();
     }
-
 
     // 인증번호 확인 API
     @PostMapping("/verify-code")
@@ -121,6 +119,4 @@ public class AuthController {
         PasswordResetResponseDTO response = authService.resetPasswordAfterVerification(request.getEmail());
         return ResponseEntity.ok(response);
     }
-
-
 }

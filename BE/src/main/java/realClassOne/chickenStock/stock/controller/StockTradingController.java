@@ -1,6 +1,5 @@
 package realClassOne.chickenStock.stock.controller;
 
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +28,6 @@ public class StockTradingController {
             @RequestHeader("Authorization") String authorizationHeader,
             @RequestBody TradeRequestDTO request) {
 
-        log.info("매수 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
-                request.getStockCode(), request.getQuantity(), request.getMarketOrder());
-
         // 시장가 주문인 경우 가격 설정 없이 처리
         if (Boolean.TRUE.equals(request.getMarketOrder())) {
             request.setPrice(null);
@@ -49,9 +45,6 @@ public class StockTradingController {
     public ResponseEntity<TradeResponseDTO> sellStock(
             @RequestHeader("Authorization") String authorizationHeader,
             @RequestBody TradeRequestDTO request) {
-
-        log.info("매도 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
-                request.getStockCode(), request.getQuantity(), request.getMarketOrder());
 
         // 시장가 주문인 경우 가격 설정 없이 처리
         if (Boolean.TRUE.equals(request.getMarketOrder())) {

@@ -157,13 +157,6 @@ public class StockInfoService {
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
     }
 
-    @Transactional(readOnly = true)
-    public StockResponse getStockByName(String name) {
-        return stockDataRepository.findByShortName(name)
-                .map(this::mapStockToResponse)
-                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND_BY_NAME));
-    }
-
     private StockResponse mapStockToResponse(StockData stockData) {
         return StockResponse.builder()
                 .shortCode(stockData.getShortCode())

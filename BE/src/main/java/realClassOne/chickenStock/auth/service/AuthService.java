@@ -30,8 +30,6 @@ import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
-import realClassOne.chickenStock.auth.service.EmailService;
-
 
 import java.util.Collections;
 import java.util.UUID;
@@ -359,6 +357,4 @@ public class AuthService {
 
         return PasswordResetResponseDTO.of("임시 비밀번호가 이메일로 전송되었습니다.");
     }
-
-
 }

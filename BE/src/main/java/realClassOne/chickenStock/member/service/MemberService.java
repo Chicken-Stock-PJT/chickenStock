@@ -25,7 +25,6 @@ public class MemberService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
 
-
     @Transactional(readOnly = true)
     public MemberResponseDto getCurrentUser() {
         String email = SecurityUtil.getCurrentUserEmail();
@@ -77,6 +76,4 @@ public class MemberService {
 
         return NicknameChangeResponseDTO.of("닉네임이 성공적으로 변경되었습니다.");
     }
-
-
 }

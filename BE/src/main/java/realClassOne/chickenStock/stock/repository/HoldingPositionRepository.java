@@ -13,6 +13,4 @@ import java.util.Optional;
 public interface HoldingPositionRepository extends JpaRepository<HoldingPosition, Long> {
     Optional<HoldingPosition> findByMemberAndStockData(Member member, StockData stockData);
     List<HoldingPosition> findByMember(Member member);
-    List<HoldingPosition> findByStockData(StockData stockData);
-    void deleteByMemberAndStockData(Member member, StockData stockData);
 }

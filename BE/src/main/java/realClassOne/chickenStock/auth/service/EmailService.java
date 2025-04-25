@@ -19,7 +19,6 @@ public class EmailService {
     private final JavaMailSender mailSender;
     private final VerificationCodeRepository verificationCodeRepository;
 
-
     // 인증번호 저장소 (나중에 Redis로 바꾸면 더 좋아요)
     private final Map<String, String> authCodeStorage = new HashMap<>();
 
@@ -91,7 +90,4 @@ public class EmailService {
 
         mailSender.send(message);
     }
-
-
-
 }

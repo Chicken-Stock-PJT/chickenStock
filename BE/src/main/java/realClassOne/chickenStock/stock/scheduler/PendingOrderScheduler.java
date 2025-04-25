@@ -6,7 +6,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import realClassOne.chickenStock.stock.service.StockTradeService;
 
-
 @Slf4j
 @Component
 @RequiredArgsConstructor
