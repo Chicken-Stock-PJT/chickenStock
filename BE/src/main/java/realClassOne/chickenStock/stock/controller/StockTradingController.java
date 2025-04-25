@@ -54,14 +54,6 @@ public class StockTradingController {
         return ResponseEntity.ok(response);
     }
 
-    // 회원 기본금 초기화 API (3억)
-    @PostMapping("/initialize-money")
-    public ResponseEntity<Object> initializeMemberMoney(
-            @RequestHeader("Authorization") String authorizationHeader) {
-
-        return ResponseEntity.ok(stockTradeService.initializeMemberMoney(authorizationHeader));
-    }
-
     // 보류 중인 주문 조회 API
     @GetMapping("/pending-orders")
     public ResponseEntity<List<PendingOrderDTO>> getPendingOrders(

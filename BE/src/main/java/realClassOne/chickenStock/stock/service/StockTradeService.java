@@ -472,8 +472,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             Member member = memberRepository.findById(memberId)
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            // 3억으로 초기화 (300,000,000)
-            member.updateMemberMoney(300_000_000L);
+            // 1억으로 초기화 (100,000,000)
+            member.updateMemberMoney(100_000_000L);
             memberRepository.save(member);
 
             log.info("회원 ID: {}의 자산을 3억으로 초기화했습니다.", memberId);
@@ -491,7 +491,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             }
             return new InitializeMoneyResponseDTO(
                     "success",
-                    "회원 기본금이 3억원으로 초기화되었습니다.",
+                    "회원 기본금이 1억원으로 초기화되었습니다.",
                     memberId
             );
         } finally {

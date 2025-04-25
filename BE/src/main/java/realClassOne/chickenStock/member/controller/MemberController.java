@@ -11,6 +11,7 @@ import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
+import realClassOne.chickenStock.stock.service.StockTradeService;
 
 @RestController
 @RequestMapping("/api/members")
@@ -18,6 +19,7 @@ import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 public class MemberController {
 
     private final MemberService memberService;
+    private final StockTradeService stockTradeService;
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
@@ -43,5 +45,13 @@ public class MemberController {
     ) {
         NicknameChangeResponseDTO response = memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
         return ResponseEntity.ok(response);
+    }
+
+    // 회원 기본금 초기화 API (1억)
+    @PostMapping("/initialize-money")
+    public ResponseEntity<Object> initializeMemberMoney(
+            @RequestHeader("Authorization") String authorizationHeader) {
+
+        return ResponseEntity.ok(stockTradeService.initializeMemberMoney(authorizationHeader));
     }
 }
