@@ -1,7 +1,11 @@
+import MyAsset from "./ui/MyAsset";
+import UserInfo from "./ui/UserInfo";
+
 const Profile = () => {
   return (
-    <div>
-      <h1>프로필</h1>
+    <div className="space-y-6">
+      <UserInfo />
+      <MyAsset />
     </div>
   );
 };

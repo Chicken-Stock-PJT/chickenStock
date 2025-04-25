@@ -5,7 +5,7 @@ export const SIDEBAR_CONFIG = [
     group: "내 정보",
     menus: [
       { title: "프로필", url: "/mypage/profile", icon: User },
-      { title: "정보수정", url: "/mypage/edit", icon: Settingsgit  },
+      { title: "정보수정", url: "/mypage/edit", icon: Settings },
       { title: "활동기록", url: "/mypage/history", icon: Calendar },
     ],
   },
