@@ -3,11 +3,11 @@ import { MySidebar } from "@/widgets/sidebar/ui/MySideBar";
 
 export const MyPageLayout = () => {
   return (
-    <div className="absolute left-0 top-[56px] flex max-h-[calc(90vh)] w-screen overflow-hidden overflow-x-auto">
+    <div className="absolute left-0 top-[56px] flex w-screen overflow-hidden overflow-x-auto">
       <aside>
         <MySidebar />
       </aside>
-      <main className="flex-1 p-6 mt-2 ">
+      <main className="mt-2 flex-1 p-6 ">
         <Outlet />
       </main>
     </div>

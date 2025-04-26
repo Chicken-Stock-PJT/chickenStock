@@ -6,14 +6,13 @@ import StockPage from "@/pages/StockPage";
 import StockList from "@/pages/StockList";
 import Profile from "@/features/mypage/Profile";
 import MyPage from "@/pages/mypage";
-import EditInfo from "@/features/mypage/EditInfo";
-import History from "@/features/mypage/History";
+import ProfileEdit from "@/features/mypage/ProfileEdit";
+// import History from "@/features/mypage/History";
 import Portfolio from "@/features/mypage/Portfolio";
 import Watchlist from "@/features/mypage/Watchlist";
 import Transactions from "@/features/mypage/Transactions";
 // import LoginPage from "@/pages/LoginPage";
 // import SignupPage from "@/pages/SignupPage";
-// import DashboardPage from "@/pages/DashboardPage";
 
 const router = createBrowserRouter([
   {
@@ -38,17 +37,18 @@ const router = createBrowserRouter([
         element: <MyPage />,
         children: [
           {
-            path: "profile",
+            path: "",
             element: <Profile />,
           },
           {
             path: "edit",
-            element: <EditInfo />,
+            element: <ProfileEdit />,
           },
-          {
-            path: "history",
-            element: <History />,
-          },
+          // 커뮤니티 기능 추가 시 주석 해제
+          // {
+          //   path: "history",
+          //   element: <History />,
+          // },
           {
             path: "portfolio",
             element: <Portfolio />,

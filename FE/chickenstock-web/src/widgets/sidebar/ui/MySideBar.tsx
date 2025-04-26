@@ -29,7 +29,7 @@ export const MySidebar = () => {
                     <SidebarMenuItem key={menuIdx}>
                       <SidebarMenuButton asChild isActive={pathname === menu.url}>
                         <a href={menu.url}>
-                          <menu.icon className="mr-2 h-4 w-4" />
+                          <menu.icon className="mr-2 size-4" />
                           {menu.title}
                         </a>
                       </SidebarMenuButton>
