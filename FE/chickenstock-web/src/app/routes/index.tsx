@@ -6,7 +6,7 @@ import StockPage from "@/pages/StockPage";
 import StockList from "@/pages/StockList";
 import Profile from "@/features/mypage/Profile";
 import MyPage from "@/pages/mypage";
-import EditInfo from "@/features/mypage/EditInfo";
+import ProfileEdit from "@/features/mypage/ProfileEdit";
 import History from "@/features/mypage/History";
 import Portfolio from "@/features/mypage/Portfolio";
 import Watchlist from "@/features/mypage/Watchlist";
@@ -43,7 +43,7 @@ const router = createBrowserRouter([
           },
           {
             path: "edit",
-            element: <EditInfo />,
+            element: <ProfileEdit />,
           },
           {
             path: "history",

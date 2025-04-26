@@ -8,7 +8,7 @@ const Header = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="flex h-14 w-screen items-center px-4">
+    <div className="sticky top-0 z-50 flex h-14 w-screen items-center bg-white px-4">
       <div className="flex w-1/3 items-center">
         <img
           src={logo}
