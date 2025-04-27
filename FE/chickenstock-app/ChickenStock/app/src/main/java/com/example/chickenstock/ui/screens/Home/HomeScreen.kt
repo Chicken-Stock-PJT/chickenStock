@@ -44,6 +44,7 @@ fun HomeScreen(
     var selectedSortIndex by remember { mutableStateOf(0) }
 
     Scaffold(
+        containerColor = Color.White
     ) { innerPadding ->
         Column(
             modifier = Modifier

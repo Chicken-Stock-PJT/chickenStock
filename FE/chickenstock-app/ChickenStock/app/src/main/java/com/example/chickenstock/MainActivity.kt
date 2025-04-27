@@ -39,6 +39,7 @@ import com.example.chickenstock.ui.theme.Gray0
 import com.example.chickenstock.ui.theme.Gray700
 import com.example.chickenstock.ui.theme.SCDreamFontFamily
 import com.example.chickenstock.viewmodel.MainViewModel
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,14 +66,16 @@ fun SearchTopAppBar(
     onBackClick: () -> Unit,
     onSearchIconClick: () -> Unit
 ) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    
     val iconOffsetX by animateDpAsState(
-        targetValue = if (isSearchExpanded) (-160).dp else 0.dp,
+        targetValue = if (isSearchExpanded) (-45).dp else 0.dp,
         animationSpec = tween(300),
         label = "iconOffsetX"
     )
 
     val textFieldWidth by animateDpAsState(
-        targetValue = if (isSearchExpanded) 200.dp else 0.dp,
+        targetValue = if (isSearchExpanded) 300.dp else 0.dp,
         animationSpec = tween(300),
         label = "textFieldWidth"
     )
@@ -105,12 +108,16 @@ fun SearchTopAppBar(
                 label = "logo-back-button"
             ) { expanded ->
                 if (expanded) {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = { 
+                        keyboardController?.hide() // 키보드 숨기기
+                        onBackClick() 
+                    }) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "뒤로가기",
                             tint = Gray700,
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier
+                                .size(30.dp)
                         )
                     }
                 } else {
@@ -146,7 +153,7 @@ fun SearchTopAppBar(
                 // 검색창 (아이콘 오른쪽에서 확장됨)
                 Box(
                     modifier = Modifier
-                        .offset(x = iconOffsetX + 40.dp)
+                        .offset(x = iconOffsetX + 40.dp, y = 3.dp)  // 수직 위치 조정
                         .width(textFieldWidth)
                         .height(40.dp)
                         .graphicsLayer(alpha = alpha)
