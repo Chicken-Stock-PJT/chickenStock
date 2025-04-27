@@ -8,6 +8,7 @@ import realClassOne.chickenStock.member.dto.request.NicknameChangeRequestDTO;
 import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
 import realClassOne.chickenStock.member.dto.response.NicknameChangeResponseDTO;
 import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
+import realClassOne.chickenStock.member.dto.response.SimpleMemberProfileResponseDTO;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
@@ -44,6 +45,14 @@ public class MemberController {
     ) {
         NicknameChangeResponseDTO response = memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
         return ResponseEntity.ok(response);
+    }
+
+    // 간단 회원 정보 조회
+    @GetMapping("/simple-profile")
+    public ResponseEntity<SimpleMemberProfileResponseDTO> getSimpleProfile(
+            @RequestHeader("Authorization") String authorizationHeader) {
+        SimpleMemberProfileResponseDTO responseDTO = memberService.getSimpleProfile(authorizationHeader);
+        return ResponseEntity.ok(responseDTO);
     }
 
 
