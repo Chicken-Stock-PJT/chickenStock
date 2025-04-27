@@ -27,6 +27,7 @@ import realClassOne.chickenStock.stock.repository.PendingOrderRepository;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
+import realClassOne.chickenStock.stock.websocket.handler.PortfolioWebSocketHandler;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -51,6 +52,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     private final KiwoomWebSocketClient kiwoomWebSocketClient;
     private final StockSubscriptionService stockSubscriptionService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final PortfolioWebSocketHandler portfolioWebSocketHandler;
 
     // 동시성 제어를 위한 락 추가
     private final Map<String, ReentrantLock> stockLocks = new ConcurrentHashMap<>();
@@ -966,6 +968,14 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             log.info("지정가 매수 주문 체결: 주문ID={}, 종목={}, 수량={}, 가격={}",
                     order.getOrderId(), stock.getShortCode(), order.getQuantity(), currentPrice);
 
+            try {
+                // 포트폴리오 웹소켓을 통해 업데이트 알림
+                portfolioWebSocketHandler.sendFullPortfolioUpdate(member.getMemberId());
+            } catch (Exception e) {
+                // 포트폴리오 업데이트 실패는 거래 처리에 영향을 주지 않도록 예외 처리
+                log.warn("주문 체결 후 포트폴리오 업데이트 알림 실패: {}", e.getMessage());
+            }
+
             successfulTrades.incrementAndGet();
         } catch (Exception e) {
             log.error("지정가 매수 주문 체결 중 오류 발생: {}", e.getMessage(), e);
@@ -1036,6 +1046,14 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
             log.info("지정가 매도 주문 체결: 주문ID={}, 종목={}, 수량={}, 가격={}",
                     order.getOrderId(), stock.getShortCode(), order.getQuantity(), currentPrice);
+
+            try {
+                // 포트폴리오 웹소켓을 통해 업데이트 알림
+                portfolioWebSocketHandler.sendFullPortfolioUpdate(member.getMemberId());
+            } catch (Exception e) {
+                // 포트폴리오 업데이트 실패는 거래 처리에 영향을 주지 않도록 예외 처리
+                log.warn("주문 체결 후 포트폴리오 업데이트 알림 실패: {}", e.getMessage());
+            }
 
             successfulTrades.incrementAndGet();
         } catch (Exception e) {

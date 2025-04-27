@@ -11,6 +11,8 @@ import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
+import realClassOne.chickenStock.stock.dto.response.PortfolioResponseDTO;
+import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.service.StockTradeService;
 
 @RestController
@@ -20,6 +22,7 @@ public class MemberController {
 
     private final MemberService memberService;
     private final StockTradeService stockTradeService;
+    private final PortfolioService portfolioService;
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
@@ -53,5 +56,15 @@ public class MemberController {
             @RequestHeader("Authorization") String authorizationHeader) {
 
         return ResponseEntity.ok(stockTradeService.initializeMemberMoney(authorizationHeader));
+    }
+
+    // 보유 주식 포트폴리오 조회 API
+    // REST API로 초기 데이터를 제공하고, 실시간 업데이트는 웹소켓으로 전송
+    @GetMapping("/portfolio")
+    public ResponseEntity<PortfolioResponseDTO> getPortfolio(
+            @RequestHeader("Authorization") String authorizationHeader) {
+
+        PortfolioResponseDTO portfolioDTO = portfolioService.getPortfolio(authorizationHeader);
+        return ResponseEntity.ok(portfolioDTO);
     }
 }
