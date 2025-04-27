@@ -5,9 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.member.dto.request.NicknameChangeRequestDTO;
-import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
-import realClassOne.chickenStock.member.dto.response.NicknameChangeResponseDTO;
-import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
+import realClassOne.chickenStock.member.dto.response.*;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
@@ -67,4 +65,70 @@ public class MemberController {
         PortfolioResponseDTO portfolioDTO = portfolioService.getPortfolio(authorizationHeader);
         return ResponseEntity.ok(portfolioDTO);
     }
+
+    /*
+        아래 내용 수정 필요
+     */
+
+    /*
+
+    // 관심종목 조회 API
+    @GetMapping("/watchlist")
+    public ResponseEntity<WatchListResponseDTO> getWatchList(
+            @RequestHeader("Authorization") String authorizationHeader) {
+        WatchListResponseDTO response = memberService.getWatchList(authorizationHeader);
+        return ResponseEntity.ok(response);
+    }
+
+    // 관심종목 추가 API
+    @PostMapping("/watchlist/{stockCode}")
+    public ResponseEntity<WatchListResponseDTO> addToWatchList(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable String stockCode) {
+        WatchListResponseDTO response = memberService.addToWatchList(authorizationHeader, stockCode);
+        return ResponseEntity.ok(response);
+    }
+
+    // 관심종목 삭제 API
+    @DeleteMapping("/watchlist/{stockCode}")
+    public ResponseEntity<WatchListResponseDTO> removeFromWatchList(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable String stockCode) {
+        WatchListResponseDTO response = memberService.removeFromWatchList(authorizationHeader, stockCode);
+        return ResponseEntity.ok(response);
+    }
+
+    // 자산 비중 조회 API
+    @GetMapping("/asset-allocation")
+    public ResponseEntity<AssetAllocationResponseDTO> getAssetAllocation(
+            @RequestHeader("Authorization") String authorizationHeader) {
+        AssetAllocationResponseDTO response = memberService.getAssetAllocation(authorizationHeader);
+        return ResponseEntity.ok(response);
+    }
+
+    // 상세 자산 비중 조회 API
+    @GetMapping("/asset-allocation/detail")
+    public ResponseEntity<AssetAllocationResponseDTO> getDetailedAssetAllocation(
+            @RequestHeader("Authorization") String authorizationHeader) {
+        AssetAllocationResponseDTO response = memberService.getDetailedAssetAllocation(authorizationHeader);
+        return ResponseEntity.ok(response);
+    }
+
+    // 전체 수익률 조회 API
+    @GetMapping("/return-rate")
+    public ResponseEntity<ReturnRateResponseDTO> getOverallReturnRate(
+            @RequestHeader("Authorization") String authorizationHeader) {
+        ReturnRateResponseDTO response = memberService.getOverallReturnRate(authorizationHeader);
+        return ResponseEntity.ok(response);
+    }
+
+    // 기간별 수익률 조회 API
+    @GetMapping("/return-rate/period")
+    public ResponseEntity<ReturnRateResponseDTO> getPeriodReturnRate(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @RequestParam(required = false, defaultValue = "all") String period) {
+        ReturnRateResponseDTO response = memberService.getPeriodReturnRate(authorizationHeader, period);
+        return ResponseEntity.ok(response);
+    }
+    */
 }
