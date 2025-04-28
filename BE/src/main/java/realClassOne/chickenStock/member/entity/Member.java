@@ -101,7 +101,7 @@ public class Member {
         member.provider = provider;
         member.providerId = providerId;
         member.roles = roles;
-        member.memberMoney = 0L; // 초기 금액 설정
+        member.memberMoney = 100000000L; // 초기 금액 설정
         return member;
     }
 

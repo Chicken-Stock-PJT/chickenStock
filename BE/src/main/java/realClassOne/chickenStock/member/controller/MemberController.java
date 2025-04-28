@@ -69,9 +69,6 @@ public class MemberController {
     /*
         아래 내용 수정 필요
      */
-
-    /*
-
     // 관심종목 조회 API
     @GetMapping("/watchlist")
     public ResponseEntity<WatchListResponseDTO> getWatchList(
@@ -85,8 +82,8 @@ public class MemberController {
     public ResponseEntity<WatchListResponseDTO> addToWatchList(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable String stockCode) {
-        WatchListResponseDTO response = memberService.addToWatchList(authorizationHeader, stockCode);
-        return ResponseEntity.ok(response);
+        memberService.addToWatchList(authorizationHeader, stockCode);
+        return ResponseEntity.ok().build();
     }
 
     // 관심종목 삭제 API
@@ -94,8 +91,8 @@ public class MemberController {
     public ResponseEntity<WatchListResponseDTO> removeFromWatchList(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable String stockCode) {
-        WatchListResponseDTO response = memberService.removeFromWatchList(authorizationHeader, stockCode);
-        return ResponseEntity.ok(response);
+        memberService.removeFromWatchList(authorizationHeader, stockCode);
+        return ResponseEntity.ok().build();
     }
 
     // 자산 비중 조회 API
@@ -130,5 +127,4 @@ public class MemberController {
         ReturnRateResponseDTO response = memberService.getPeriodReturnRate(authorizationHeader, period);
         return ResponseEntity.ok(response);
     }
-    */
 }

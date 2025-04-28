@@ -108,7 +108,8 @@ public class PortfolioService {
 
             try {
                 if (priceData != null && priceData.has("10")) {
-                    currentPrice = Long.parseLong(priceData.get("10").asText().replace(",", ""));
+                    String priceStr = priceData.get("10").asText().replace(",", "").replace("+", "").replace("-", "").trim();
+                    currentPrice = Long.parseLong(priceStr);
                 } else {
                     log.warn("종목 {}의 현재가 정보를 찾을 수 없습니다", stockCode);
                 }

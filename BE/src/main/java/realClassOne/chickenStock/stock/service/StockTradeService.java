@@ -751,8 +751,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             if (priceData != null && priceData.has("10")) {
                 // 현재가 필드("10")에서 값을 추출하고 숫자로 변환
 //                String currentPriceStr = priceData.get("10").asText().replace(",", "");
-                String currentPriceStr = priceData.get("10").asText().replace(",", "").replace("+", "").replace("-", "");
-
+                String currentPriceStr = priceData.get("10").asText().replace(",", "").replace("+", "").replace("-", "").trim();
                 try {
                     return Long.parseLong(currentPriceStr);
                 } catch (NumberFormatException e) {
@@ -873,7 +872,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         // 실시간 가격 업데이트 시 지정가 주문 체결 확인
         try {
             if (data != null && data.has("10")) {
-                String priceStr = data.get("10").asText().replace(",", "");
+                String priceStr = data.get("10").asText().replace(",", "").replace("+", "").replace("-", "").trim();
                 try {
                     Long currentPrice = Long.parseLong(priceStr);
                     checkAndExecutePendingOrders(stockCode, currentPrice);

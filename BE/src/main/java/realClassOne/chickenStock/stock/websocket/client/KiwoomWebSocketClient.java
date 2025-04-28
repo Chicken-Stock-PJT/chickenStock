@@ -342,8 +342,8 @@ public class KiwoomWebSocketClient {
                         log.info("[호가잔량] 종목: {}, 시간: {}, 최우선매도호가: {}, 최우선매수호가: {}",
                                 stockCode,
                                 values.get("21").asText(),
-                                values.get("41").asText(),
-                                values.get("51").asText());
+                                values.get("41").asText().trim(),  // 공백 제거
+                                values.get("51").asText().replace("-", "").trim());  // 음수 부호 및 공백 제거
 
                         // 주식호가잔량 데이터 처리
                         notifyStockBidAskUpdate(stockCode, values);

@@ -100,7 +100,7 @@ public class StockInfoService {
     }
 
     private void loadStocksFromFile(File file) {
-        try (InputStreamReader isr = new InputStreamReader(new FileInputStream(file), "EUC-KR"); // 인코딩 수정
+        try (InputStreamReader isr = new InputStreamReader(new FileInputStream(file), "EUC-KR");
              CSVReader csvReader = new CSVReader(isr)) {
 
             csvReader.skip(1); // 헤더 스킵
@@ -116,8 +116,8 @@ public class StockInfoService {
                         String stockType = fields[9].trim().isEmpty() ? "일반" : fields[9].trim();
                         String faceValue = fields[10].trim();
 
-                        // 단축코드 6자리 보정
-                        shortCode = String.format("%06d", Integer.parseInt(shortCode));
+                        // 단축코드 정규화 (문자 포함된 코드도 처리)
+                        shortCode = normalizeShortCodeWithChars(shortCode);
 
                         StockData stockData = StockData.of(
                                 shortCode,
@@ -139,6 +139,29 @@ public class StockInfoService {
 
         } catch (Exception e) {
             log.error("파일 읽기 실패: {}", file.getAbsolutePath(), e);
+        }
+    }
+
+    // 문자가 포함된 단축코드도 처리하는 메소드
+    private String normalizeShortCodeWithChars(String code) {
+        code = code.trim();
+        // 숫자만 있는 경우
+        if (code.matches("^\\d+$")) {
+            return String.format("%06d", Integer.parseInt(code));
+        }
+        // 숫자와 문자가 혼합된 경우 (예: "00104K")
+        else {
+            // 숫자 부분과 문자 부분 분리
+            String numPart = code.replaceAll("[^0-9]", "");
+            String charPart = code.replaceAll("[0-9]", "");
+
+            // 숫자 부분을 0으로 패딩
+            int digitCount = 6 - charPart.length();
+            if (digitCount > 0) {
+                numPart = String.format("%0" + digitCount + "d", Integer.parseInt(numPart));
+            }
+
+            return numPart + charPart;
         }
     }
 
