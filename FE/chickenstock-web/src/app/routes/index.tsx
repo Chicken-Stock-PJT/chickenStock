@@ -7,13 +7,11 @@ import StockList from "@/pages/StockList";
 import Profile from "@/features/mypage/Profile";
 import MyPage from "@/pages/mypage";
 import ProfileEdit from "@/features/mypage/ProfileEdit";
-// import History from "@/features/mypage/History";
 import Portfolio from "@/features/mypage/Portfolio";
 import Watchlist from "@/features/mypage/Watchlist";
 import Transactions from "@/features/mypage/Transactions";
 import SignupPage from "@/pages/SignupPage";
-// import LoginPage from "@/pages/LoginPage";
-// import SignupPage from "@/pages/SignupPage";
+import LoginPage from "@/pages/LoginPage";
 
 const router = createBrowserRouter([
   {
@@ -25,10 +23,10 @@ const router = createBrowserRouter([
         path: "",
         element: <HomePage />,
       },
-      //   {
-      //     path: "login",
-      //     element: <LoginPage />,
-      //   },
+      {
+        path: "login",
+        element: <LoginPage />,
+      },
       {
         path: "signup",
         element: <SignupPage />,
