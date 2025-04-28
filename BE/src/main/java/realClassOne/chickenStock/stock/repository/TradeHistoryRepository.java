@@ -17,6 +17,8 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
     List<TradeHistory> findByStockData(StockData stockData);
     List<TradeHistory> findByMemberAndTradeType(Member member, TradeHistory.TradeType tradeType);
     List<TradeHistory> findByMemberAndStockData(Member member, StockData stockData);
+    List<TradeHistory> findByMemberAndTradeTypeOrderByCreatedAtAsc(Member member, TradeHistory.TradeType tradeType);
+
 
     @Query("SELECT th FROM TradeHistory th WHERE th.member = :member AND th.tradedAt BETWEEN :startDate AND :endDate ORDER BY th.tradedAt DESC")
     List<TradeHistory> findByMemberAndTradedAtBetween(
