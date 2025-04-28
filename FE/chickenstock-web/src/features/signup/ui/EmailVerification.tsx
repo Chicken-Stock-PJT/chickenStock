@@ -1,19 +1,32 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
 import { Input } from "@/shared/libs/ui/input";
 import { Label } from "@/shared/libs/ui/label";
 import { Loader2 } from "lucide-react";
+import { authApi } from "../api";
 
 interface VerificationStepProps {
   email: string;
   onSubmit: () => void;
 }
 
+const initialSendCode = async (email: string) => {
+  try {
+    await authApi.sendCode(email);
+  } catch (err) {
+    // 에러는 sendCode 내부에서 처리됨
+  }
+};
+
 export default function EmailVerification({ email, onSubmit }: VerificationStepProps) {
   const [verificationCode, setVerificationCode] = useState("");
   const [error, setError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
+
+  useEffect(() => {
+    initialSendCode(email);
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,33 +35,26 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
       setError("인증코드를 입력해주세요.");
       return;
     }
-    onSubmit();
-    // try {
-    //   setIsVerifying(true);
-    //   // api
 
-    //   await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      setIsVerifying(true);
 
-    //   // If verification is successful
-    //   onSubmit();
-    // } catch (err) {
-    //   setError("인증에 실패했습니다. 코드를 다시 확인해주세요.");
-    //   console.log(err);
-    // } finally {
-    //   setIsVerifying(false);
-    // }
+      const result = await authApi.verifyCode(email, verificationCode);
+      if (result.success) {
+        onSubmit();
+      }
+    } catch (err) {
+      setError("인증에 실패했습니다. 코드를 다시 확인해주세요.");
+      console.log(err);
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleResendCode = async () => {
     try {
       setIsResending(true);
-      // Here you would call your API to resend verification code
-      // await api.resendVerificationCode(email);
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Show success message
+      await initialSendCode(email);
       alert("인증코드가 재발송되었습니다.");
     } catch (err) {
       setError("인증코드 재발송에 실패했습니다.");

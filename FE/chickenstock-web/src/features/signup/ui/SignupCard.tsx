@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import EmailVerification from "./EmailVerification";
 import SignupForm from "./SignupForm";
 import { useState } from "react";
+import { authApi } from "../api";
 
 interface SignupForm {
   email: string;
@@ -26,15 +27,17 @@ const SignupCard = () => {
     setStep(2);
   };
 
-  // async로 변경
-  const handleVerificationSubmit = () => {
+  const handleVerificationSubmit = async () => {
     // // 회원가입 api 요청
-    // try {
-    //   // api
+    try {
+      const response = await authApi.signup(formData);
+
+      console.log(response);
+    } catch (err) {
+      alert(err);
+    }
+
     void navigate("/login");
-    // } catch (error) {
-    //   console.error("Signup failed:", error);
-    // }
     console.log(formData);
   };
 

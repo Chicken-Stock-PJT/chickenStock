@@ -7,7 +7,7 @@ import tailwindPlugin from "eslint-plugin-tailwindcss";
 import reactRefresh from "eslint-plugin-react-refresh";
 import reactPlugin from "eslint-plugin-react";
 import { fixupPluginRules } from "@eslint/compat";
-// import * as tanstackQueryPlugin from "@tanstack/eslint-plugin-query";
+import * as tanstackQueryPlugin from "@tanstack/eslint-plugin-query";
 
 // const tsconfigRootDir = new URL('.', import.meta.url).pathname;
 
@@ -36,7 +36,7 @@ export default tseslint.config(
     plugins: {
       react: reactPlugin,
       "react-hooks": fixupPluginRules(reactHooksPlugin),
-      // "@tanstack/query": tanstackQueryPlugin,
+      "@tanstack/query": tanstackQueryPlugin,
       "react-refresh": reactRefresh,
     },
     settings: { react: { version: "detect" } },
@@ -44,7 +44,7 @@ export default tseslint.config(
       ...reactPlugin.configs["recommended"].rules,
       ...reactPlugin.configs["jsx-runtime"].rules,
       ...reactHooksPlugin.configs.recommended.rules,
-      // ...tanstackQueryPlugin.configs.recommended.rules,
+      ...tanstackQueryPlugin.configs.recommended.rules,
       "tailwindcss/no-custom-classname": "off",
       "tailwindcss/no-contradicting-classname": "off",
 

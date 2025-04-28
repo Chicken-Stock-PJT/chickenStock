@@ -2,8 +2,9 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
 import { Input } from "@/shared/libs/ui/input";
 import { Label } from "@/shared/libs/ui/label";
-import { AlertCircle, Loader2, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { SignupData } from "../model/types";
+import { authApi } from "../api";
 
 interface SignupFormProps {
   onSubmit: (data: SignupData) => void;
@@ -115,18 +116,15 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
   }, [nickname]);
 
   // 이메일 중복검사
-  const validateEmail = () => {
+  const validateEmail = async () => {
     if (emailError) return;
     // 이메일 중복 검사 (API 호출)
     try {
       // API 호출
-      // const response = await apiClient.checkEmailDuplicate(email);
+      const response = await authApi.checkEmail(email);
 
-      // 중복 체크 시뮬레이션 (랜덤)
-      const isDuplicate = Math.random() > 0.8;
-
-      if (isDuplicate) {
-        setEmailError("이미 사용 중인 이메일입니다.");
+      if (!response.success) {
+        setEmailError(response.message);
         return false;
       }
 
@@ -143,17 +141,14 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
   };
 
   // 닉네임 중복검사
-  const validateNickname = () => {
+  const validateNickname = async () => {
     if (nicknameError) return;
+
     try {
-      // 실제 구현에서는 API 호출로 대체
-      // const response = await apiClient.checkNicknameDuplicate(nickname);
+      const response = await authApi.checkNickname(nickname);
 
-      // 중복 체크 시뮬레이션 (랜덤)
-      const isDuplicate = Math.random() > 0.8;
-
-      if (isDuplicate) {
-        setNicknameError("이미 사용 중인 닉네임입니다.");
+      if (!response.duplicate) {
+        setNicknameError(response.message);
         return false;
       }
 
@@ -164,9 +159,6 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
       console.error("닉네임 중복 확인 오류:", error);
       return false;
     }
-
-    setNicknameError(""); // 에러 초기화
-    return true;
   };
 
   // 이름 유효성 검사
@@ -325,13 +317,6 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
         </div>
         {password2Error && <p className="mt-1 text-xs text-red-600">{password2Error}</p>}
       </div>
-
-      {/* {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )} */}
 
       <Button type="submit" className="w-full">
         {/* <Button className="w-full"> */}
