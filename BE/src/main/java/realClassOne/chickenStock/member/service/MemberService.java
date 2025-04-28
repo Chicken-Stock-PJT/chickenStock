@@ -107,7 +107,7 @@ public class MemberService {
         String nickname = member.getNickname();
         String memberMoney = member.getMemberMoney() != null ? member.getMemberMoney().toString() : "0";
         String returnRate = String.valueOf(averageReturnRate);
-        String isOauth = member.getProvider() != null ? "true" : "false";
+        String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
 
         return SimpleMemberProfileResponseDTO.of(nickname, memberMoney, returnRate, isOauth);
     }
