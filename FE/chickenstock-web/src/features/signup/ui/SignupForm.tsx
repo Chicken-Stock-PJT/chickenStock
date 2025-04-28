@@ -1,13 +1,15 @@
-import React, { useState } from "react";
-
-import { useSignupStore } from "../model/store";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
 import { Input } from "@/shared/libs/ui/input";
 import { Label } from "@/shared/libs/ui/label";
-import { Alert, AlertDescription } from "@/shared/libs/ui/alert";
 import { AlertCircle, Loader2, Eye, EyeOff } from "lucide-react";
+import { SignupData } from "../model/types";
 
-export default function SignupForm() {
+interface SignupFormProps {
+  onSubmit: (data: SignupData) => void;
+}
+
+export default function SignupForm({ onSubmit }: SignupFormProps) {
   // 상태
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -16,54 +18,192 @@ export default function SignupForm() {
   const [password2, setPassword2] = useState("");
 
   const [showPassword1, setShowPassword1] = useState(false);
-  const [showpassword2, setShowpassword2] = useState(false);
+  const [showPassword2, setShowPassword2] = useState(false);
 
-  const emailError = false;
-  const nameError = false;
-  const nicknameError = false;
-  const passwordError = false;
+  const [emailError, setEmailError] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [nicknameError, setNicknameError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [password2Error, setPassword2Error] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // form 제출
+    if (!email.trim()) {
+      setEmailError("이메일을 입력해주세요.");
+    }
+
+    if (!nickname.trim()) {
+      setNicknameError("닉네임을 입력해주세요.");
+    }
+
+    if (!name.trim()) {
+      setNameError("이름을 입력해주세요.");
+    }
+
+    if (!password1.trim()) {
+      setPasswordError("비밀번호를 입력해주세요.");
+    }
+
+    if (!password2.trim()) {
+      setPassword2Error("비밀번호를 재입력해주세요.");
+    }
+
+    if (!emailError && !nameError && !nicknameError && !passwordError && !password2Error) {
+      onSubmit({
+        email,
+        name,
+        nickname,
+        password: password1,
+      });
+    }
   };
 
-  // 입력 핸들러 함수들
+  // 입력 핸들러
   const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     setEmail(e.target.value);
   };
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     setName(e.target.value);
   };
 
   const handleNicknameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     setNickname(e.target.value);
   };
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     setPassword1(e.target.value);
   };
 
   const handlepassword2Change = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     setPassword2(e.target.value);
   };
 
-  // 이메일, 닉네임: 중복검사 + 유효성
+  // 이메일 유효성검사
+  useEffect(() => {
+    if (!email) return;
 
-  // 유효성검사
-  const handleValidateEmail = () => {
-    return;
+    const emailRegex = /^[a-z0-9._%+-]{1,}@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
+    if (!emailRegex.test(email)) {
+      setEmailError("올바른 이메일 형식이 아닙니다.");
+      return;
+    }
+    setEmailError("");
+  }, [email]);
+
+  // 닉네임 유효성 검사
+  useEffect(() => {
+    console.log(nickname);
+    if (!nickname) return;
+
+    if (nickname.includes(" ")) {
+      setNicknameError("닉네임에 공백을 포함할 수 없습니다.");
+      return;
+    }
+
+    if (nickname.length < 2 || nickname.length > 10) {
+      setNicknameError("닉네임은 2~10자 사이여야 합니다.");
+      return;
+    }
+    setNicknameError("");
+  }, [nickname]);
+
+  // 이메일 중복검사
+  const validateEmail = () => {
+    if (emailError) return;
+    // 이메일 중복 검사 (API 호출)
+    try {
+      // API 호출
+      // const response = await apiClient.checkEmailDuplicate(email);
+
+      // 중복 체크 시뮬레이션 (랜덤)
+      const isDuplicate = Math.random() > 0.8;
+
+      if (isDuplicate) {
+        setEmailError("이미 사용 중인 이메일입니다.");
+        return false;
+      }
+
+      setEmailError(""); // 에러 초기화
+      return true;
+    } catch (error) {
+      setEmailError("이메일 중복 확인 중 오류가 발생했습니다.");
+      console.error("이메일 중복 확인 오류:", error);
+      return false;
+    }
+
+    setEmailError(""); // 에러 초기화
+    return true;
   };
 
-  const handleValidateName = () => {
-    return;
+  // 닉네임 중복검사
+  const validateNickname = () => {
+    if (nicknameError) return;
+    try {
+      // 실제 구현에서는 API 호출로 대체
+      // const response = await apiClient.checkNicknameDuplicate(nickname);
+
+      // 중복 체크 시뮬레이션 (랜덤)
+      const isDuplicate = Math.random() > 0.8;
+
+      if (isDuplicate) {
+        setNicknameError("이미 사용 중인 닉네임입니다.");
+        return false;
+      }
+
+      setNicknameError(""); // 에러 초기화
+      return true;
+    } catch (error) {
+      setNicknameError("닉네임 중복 확인 중 오류가 발생했습니다.");
+      console.error("닉네임 중복 확인 오류:", error);
+      return false;
+    }
+
+    setNicknameError(""); // 에러 초기화
+    return true;
   };
 
-  const handleValidateNickname = () => {
-    return;
-  };
+  // 이름 유효성 검사
+  useEffect(() => {
+    if (!name) return;
+
+    if (name.length < 2) {
+      setNameError("이름은 최소 2자 이상이어야 합니다.");
+      return;
+    }
+
+    setNameError(""); // 에러 초기화
+  }, [name]);
+
+  // 비밀번호 유효성 검사
+  useEffect(() => {
+    if (!password1) return;
+
+    const passwordRegex = /^((?=.*\d)(?=.*[a-zA-z])(?=.*[\W_]).{8,16})$/;
+    if (!passwordRegex.test(password1)) {
+      setPasswordError("영문, 숫자, 특수문자를 조합해서 입력해주세요. (8~16자)");
+      return;
+    }
+
+    setPasswordError(""); // 에러 초기화
+  }, [password1]);
+
+  // 비밀번호 확인
+  useEffect(() => {
+    console.log(password1 === password2, password1, password2);
+    if (password1 !== password2) {
+      setPassword2Error("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    setPassword2Error(""); // 에러 초기화
+  }, [password1, password2]);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 text-left">
@@ -78,7 +218,7 @@ export default function SignupForm() {
             placeholder="이메일"
             required
             className={`block w-full ${emailError ? "border-red-500" : ""}`}
-            onBlur={handleValidateEmail}
+            onBlur={validateEmail}
           />
         </div>
         {emailError ? <p className="mt-1 text-xs text-red-600">{emailError}</p> : <></>}
@@ -116,7 +256,7 @@ export default function SignupForm() {
             onChange={handleNicknameChange}
             placeholder="닉네임"
             className={`block w-full ${nicknameError ? "border-red-500" : ""}`}
-            onBlur={handleValidateNickname}
+            onBlur={validateNickname}
           />
         </div>
         {nicknameError ? (
@@ -166,7 +306,7 @@ export default function SignupForm() {
           <Input
             id="password2"
             name="password2"
-            type={showpassword2 ? "text" : "password"}
+            type={showPassword2 ? "text" : "password"}
             required
             value={password2}
             onChange={handlepassword2Change}
@@ -174,15 +314,16 @@ export default function SignupForm() {
           />
           <div
             className="absolute inset-y-0 right-0 flex cursor-pointer items-center px-3"
-            onClick={() => setShowpassword2(!showpassword2)}
+            onClick={() => setShowPassword2(!showPassword2)}
           >
-            {showpassword2 ? (
+            {showPassword2 ? (
               <EyeOff className="size-5 text-gray-400" />
             ) : (
               <Eye className="size-5 text-gray-400" />
             )}
           </div>
         </div>
+        {password2Error && <p className="mt-1 text-xs text-red-600">{password2Error}</p>}
       </div>
 
       {/* {error && (
@@ -192,8 +333,8 @@ export default function SignupForm() {
         </Alert>
       )} */}
 
-      {/* <Button type="submit" className="w-full" disabled={isLoading || isCheckingEmail}> */}
-      <Button className="w-full">
+      <Button type="submit" className="w-full">
+        {/* <Button className="w-full"> */}
         다음
         {/* {isLoading || isCheckingEmail ? (
           <>
