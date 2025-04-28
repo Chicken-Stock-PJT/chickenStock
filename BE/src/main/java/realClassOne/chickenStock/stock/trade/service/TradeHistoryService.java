@@ -70,6 +70,9 @@ public class TradeHistoryService {
             for (TradeHistory buy : buyHistories) {
                 if (buy.getQuantity() == 0) continue;
 
+                // 종목이 다르면 스킵
+                if (!buy.getStockData().getShortCode().equals(sell.getStockData().getShortCode())) continue;
+
                 int availableQuantity = buy.getQuantity();
                 int matchedQuantity = Math.min(availableQuantity, remainingSellQuantity);
 
