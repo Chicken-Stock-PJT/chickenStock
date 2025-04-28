@@ -17,6 +17,7 @@ import realClassOne.chickenStock.stock.service.StockTradeService;
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
 public class MemberController {
+    // 회원 정보조회/ 수정, 탈퇴, 프로필 관리 등 기타 회원 데이터 관련 API
 
     private final MemberService memberService;
     private final StockTradeService stockTradeService;
@@ -47,6 +48,15 @@ public class MemberController {
         NicknameChangeResponseDTO response = memberService.changeNickname(authorizationHeader, requestDTO.getNickname());
         return ResponseEntity.ok(response);
     }
+
+    // 간단 회원 정보 조회
+    @GetMapping("/simple-profile")
+    public ResponseEntity<SimpleMemberProfileResponseDTO> getSimpleProfile(
+            @RequestHeader("Authorization") String authorizationHeader) {
+        SimpleMemberProfileResponseDTO responseDTO = memberService.getSimpleProfile(authorizationHeader);
+        return ResponseEntity.ok(responseDTO);
+    }
+
 
     // 회원 기본금 초기화 API (1억)
     @PostMapping("/initialize-money")

@@ -66,6 +66,9 @@ public class TradeHistory {
         this.createdAt = LocalDateTime.now();
     }
 
+    public void setQuantity(int i) {
+    }
+
     public enum TradeType {
         BUY, SELL
     }
