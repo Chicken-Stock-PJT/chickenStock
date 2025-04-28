@@ -21,7 +21,7 @@ const LoginCard = () => {
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     // try {
     //   const response = await axios.post("/api/login", formData);
