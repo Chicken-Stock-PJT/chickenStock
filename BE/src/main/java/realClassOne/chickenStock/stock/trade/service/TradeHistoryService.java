@@ -9,9 +9,8 @@ import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
-import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
-import realClassOne.chickenStock.stock.repository.StockMasterDataRepository;
+import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 import realClassOne.chickenStock.stock.trade.dto.response.TradeHistoryDTO;
@@ -26,9 +25,9 @@ public class TradeHistoryService {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final TradeHistoryRepository tradeHistoryRepository;
-    private final StockMasterDataRepository stockMasterDataRepository;
     private final HoldingPositionRepository holdingPositionRepository;
     private final MemberRepository memberRepository;
+    private final StockDataRepository stockDataRepository;
 
     public TradeHistoriesResponse getTradeHistories(String authorizationHeader) {
         // 토큰에서 memberId 추출
@@ -44,7 +43,7 @@ public class TradeHistoryService {
 
         List<TradeHistoryDTO> tradeHistoryDtos = histories.stream()
                 .map(history -> {
-                    StockData stockData = stockMasterDataRepository.findByShortCode(history.getStockData().getShortCode())
+                    StockData stockData = stockDataRepository.findByShortCode(history.getStockData().getShortCode())
                             .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
                     return new TradeHistoryDTO(
                             stockData.getShortName(),
