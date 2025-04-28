@@ -1,7 +1,8 @@
 import { Search } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import logo from "../assets/logoImg.svg";
+import logo from "../../assets/logoImg.svg";
+import SearchModal from "./SearchModal";
 
 const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -65,9 +66,11 @@ const Header = () => {
         </nav>
       </div>
 
-      <div className="flex w-1/3 justify-end" onClick={() => void navigate("mypage/profile")}>
+      <div className="flex w-1/3 justify-end" onClick={() => void navigate("mypage")}>
         auth
       </div>
+      {/* 검색 모달 */}
+      <SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />
     </div>
   );
 };
