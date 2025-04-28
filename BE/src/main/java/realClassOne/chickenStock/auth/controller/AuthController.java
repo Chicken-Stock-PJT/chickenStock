@@ -15,15 +15,14 @@ import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.PasswordResetResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
-import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
+import realClassOne.chickenStock.auth.service.AuthService;
 import realClassOne.chickenStock.auth.dto.request.EmailRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
+import realClassOne.chickenStock.auth.service.EmailService;
 import realClassOne.chickenStock.auth.dto.response.EmailVerifyResponseDTO;
 import realClassOne.chickenStock.auth.dto.request.EmailVerifyRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.NicknameCheckRequestDTO;
-import realClassOne.chickenStock.auth.service.AuthService;
-import realClassOne.chickenStock.auth.service.EmailService;
-
+import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
 
 @Slf4j
 @RestController
@@ -39,7 +38,7 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.signup(signupRequestDTO));
     }
 
-    // 이메일 인증 코드 전송
+    // 이메일 중복 체크
     @PostMapping("/check-email")
     public ResponseEntity<EmailCheckResponseDTO> checkEmail(@RequestBody EmailRequestDTO request) {
         EmailCheckResponseDTO response = authService.checkEmailDuplicateAndRespond(request.getEmail());
@@ -50,12 +49,14 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    // 이메일 인증번호 전송 API
     @PostMapping("/send-code")
     public ResponseEntity<Void> sendCode(@RequestBody EmailRequestDTO request) {
         emailService.sendVerificationCode(request.getEmail());
         return ResponseEntity.ok().build();
     }
 
+    // 인증번호 확인 API
     @PostMapping("/verify-code")
     public ResponseEntity<EmailVerifyResponseDTO> verifyCode(@RequestBody EmailVerifyRequestDTO request) {
         EmailVerifyResponseDTO response = emailService.verifyEmailCodeAndRespond(request.getEmail(), request.getCode());

@@ -26,7 +26,8 @@ public enum StockErrorCode implements ErrorCode {
     ORDER_EXECUTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E016", "주문 체결 처리에 실패했습니다"),
     INVALID_ORDER_OPERATION(HttpStatus.BAD_REQUEST, "STOCK-E017", "유효하지 않은 주문 처리입니다"),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "STOCK-E018", "유효하지 않은 요청입니다."),
-    POSITION_UPDATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E019", "포지션 업데이트에 실패했습니다");
+    POSITION_UPDATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E019", "포지션 업데이트에 실패했습니다"),
+    OPERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E020", "관심종목 삭제 중 오류가 발생했습니다");
 
     private final HttpStatus httpStatus;
     private final String code;

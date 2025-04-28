@@ -266,5 +266,4 @@ public class JwtTokenProvider {
         }
         return authorizationHeader;
     }
-
 }

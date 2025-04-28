@@ -1,6 +1,5 @@
 package realClassOne.chickenStock.stock.controller;
 
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -13,10 +12,9 @@ import realClassOne.chickenStock.stock.dto.response.TradeResponseDTO;
 import realClassOne.chickenStock.stock.service.StockTradeService;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
-@RequestMapping("/api/trading")
+@RequestMapping("/api/stock/trading")
 @RequiredArgsConstructor
 @Slf4j
 public class StockTradingController {
@@ -28,9 +26,6 @@ public class StockTradingController {
     public ResponseEntity<TradeResponseDTO> buyStock(
             @RequestHeader("Authorization") String authorizationHeader,
             @RequestBody TradeRequestDTO request) {
-
-        log.info("매수 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
-                request.getStockCode(), request.getQuantity(), request.getMarketOrder());
 
         // 시장가 주문인 경우 가격 설정 없이 처리
         if (Boolean.TRUE.equals(request.getMarketOrder())) {
@@ -50,9 +45,6 @@ public class StockTradingController {
             @RequestHeader("Authorization") String authorizationHeader,
             @RequestBody TradeRequestDTO request) {
 
-        log.info("매도 주문 요청 - 종목: {}, 수량: {}, 시장가여부: {}",
-                request.getStockCode(), request.getQuantity(), request.getMarketOrder());
-
         // 시장가 주문인 경우 가격 설정 없이 처리
         if (Boolean.TRUE.equals(request.getMarketOrder())) {
             request.setPrice(null);
@@ -60,14 +52,6 @@ public class StockTradingController {
 
         TradeResponseDTO response = stockTradeService.sellStock(authorizationHeader, request);
         return ResponseEntity.ok(response);
-    }
-
-    // 회원 기본금 초기화 API (3억)
-    @PostMapping("/initialize-money")
-    public ResponseEntity<Object> initializeMemberMoney(
-            @RequestHeader("Authorization") String authorizationHeader) {
-
-        return ResponseEntity.ok(stockTradeService.initializeMemberMoney(authorizationHeader));
     }
 
     // 보류 중인 주문 조회 API
