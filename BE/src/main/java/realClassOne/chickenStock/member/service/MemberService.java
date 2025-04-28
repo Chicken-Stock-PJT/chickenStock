@@ -9,12 +9,17 @@ import realClassOne.chickenStock.common.util.SecurityUtil;
 import realClassOne.chickenStock.member.dto.response.MemberResponseDto;
 import realClassOne.chickenStock.member.dto.response.NicknameChangeResponseDTO;
 import realClassOne.chickenStock.member.dto.response.PasswordChangeResponseDTO;
+import realClassOne.chickenStock.member.dto.response.SimpleMemberProfileResponseDTO;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
+import realClassOne.chickenStock.stock.entity.HoldingPosition;
+import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
+
+import java.util.List;
 
 @Slf4j
 @Service
@@ -24,6 +29,8 @@ public class MemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final HoldingPositionRepository holdingPositionRepository;
+
 
 
     @Transactional(readOnly = true)
@@ -78,5 +85,31 @@ public class MemberService {
         return NicknameChangeResponseDTO.of("닉네임이 성공적으로 변경되었습니다.");
     }
 
+
+    public SimpleMemberProfileResponseDTO getSimpleProfile(String authorizationHeader) {
+        String token = jwtTokenProvider.resolveToken(authorizationHeader);
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        List<HoldingPosition> holdingPositions = holdingPositionRepository.findAllByMember_MemberId(memberId);
+
+        // 수익률 평균 계산
+        double averageReturnRate = 0.0;
+        if (holdingPositions != null && !holdingPositions.isEmpty()) {
+            averageReturnRate = holdingPositions.stream()
+                    .mapToDouble(HoldingPosition::getReturnRate)
+                    .average()
+                    .orElse(0.0);
+        }
+
+        String nickname = member.getNickname();
+        String memberMoney = member.getMemberMoney() != null ? member.getMemberMoney().toString() : "0";
+        String returnRate = String.valueOf(averageReturnRate);
+        String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
+
+        return SimpleMemberProfileResponseDTO.of(nickname, memberMoney, returnRate, isOauth);
+    }
 
 }
