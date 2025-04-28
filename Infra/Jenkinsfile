@@ -5,6 +5,7 @@ pipeline {
         DOCKER_REGISTRY = credentials('docker-registry-credentials')
         ENV_FILE_ENT = credentials('env-file-credentials-ENT')
         ENVIRO_FILE = credentials('enviro-file-dc')
+        BACKEND_ENV_FILE = credentials('backend-env-file-credentials')
         JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
     }
 
@@ -19,11 +20,13 @@ pipeline {
             steps {
                 withCredentials([
                 file(credentialsId: 'env-file-credentials-ENT', variable: 'ENV_FILE_ENT'),
+                file(credentialsId: 'backend-env-file-credentials', variable: 'BACKEND_ENV_FILE')
                 ]) {
                     sh '''
                       mkdir -p BE/src/main/resources
                       chmod -R 700 BE/src/main/resources
                       cp $ENV_FILE_ENT BE/src/main/resources/application.yml
+                      cp $BACKEND_ENV_FILE BE/.env
                     '''
                 }
             }
