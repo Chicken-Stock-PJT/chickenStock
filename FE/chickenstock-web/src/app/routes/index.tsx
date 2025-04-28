@@ -11,6 +11,7 @@ import ProfileEdit from "@/features/mypage/ProfileEdit";
 import Portfolio from "@/features/mypage/Portfolio";
 import Watchlist from "@/features/mypage/Watchlist";
 import Transactions from "@/features/mypage/Transactions";
+import SignupPage from "@/pages/SignupPage";
 // import LoginPage from "@/pages/LoginPage";
 // import SignupPage from "@/pages/SignupPage";
 
@@ -28,10 +29,10 @@ const router = createBrowserRouter([
       //     path: "login",
       //     element: <LoginPage />,
       //   },
-      //   {
-      //     path: "signup",
-      //     element: <SignupPage />,
-      //   },
+      {
+        path: "signup",
+        element: <SignupPage />,
+      },
       {
         path: "mypage",
         element: <MyPage />,
