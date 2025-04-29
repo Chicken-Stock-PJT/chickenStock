@@ -4,15 +4,23 @@ import { Input } from "@/shared/libs/ui/input";
 import googleLogin from "@/assets/google.svg";
 import kakaoLogin from "@/assets/kakao.svg";
 import naverLogin from "@/assets/naver.svg";
-import { Link } from "react-router-dom";
-import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { useAuthStore } from "@/shared/store/auth";
 
 const LoginCard = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
+
+  useEffect(() => {
+    const { accessToken } = useAuthStore.getState();
+    if (accessToken) {
+      void useAuthStore.getState().getSimpleProfile();
+    }
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -22,16 +30,16 @@ const LoginCard = () => {
     }));
   };
 
-  const handleSubmit = async(e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       const response = await useAuthStore.getState().login(formData.email, formData.password);
       useAuthStore.getState().setAccessToken(response.accessToken);
       await useAuthStore.getState().getSimpleProfile();
-      window.location.href = '/';
+      void navigate("/");
     } catch (err) {
       console.error(err);
-      alert('로그인에 실패했습니다.');
+      alert("로그인에 실패했습니다.");
     }
   };
 
@@ -41,7 +49,7 @@ const LoginCard = () => {
         <CardTitle className="text-2xl">로그인</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={(e) => void handleSubmit(e)}>
           <div className="mt-6 flex flex-col gap-2">
             <Input
               id="email"

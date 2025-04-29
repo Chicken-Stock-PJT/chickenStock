@@ -53,7 +53,7 @@ apiClient.interceptors.response.use(
   (response: AxiosResponse): AxiosResponse => {
     return response;
   },
-  async (error: AxiosError): Promise<any> => {
+  async (error: AxiosError): Promise<AxiosResponse | AxiosError> => {
     const originalRequest = error.config as ExtendedAxiosRequestConfig;
 
     // 401 에러이고 재시도되지 않은 요청인 경우
@@ -73,8 +73,9 @@ apiClient.interceptors.response.use(
             }
             return apiClient(originalRequest);
           })
-          .catch((err) => {
-            return Promise.reject(err);
+          .catch((err: unknown) => {
+            const errorMessage = err instanceof Error ? err.message : "Unknown error";
+            return Promise.reject(new Error(errorMessage));
           });
       }
 
@@ -116,12 +117,13 @@ apiClient.interceptors.response.use(
         processQueue(refreshError as AxiosError);
 
         // 로그아웃 처리 - 토큰 갱신에 실패했으므로 사용자를 로그아웃시킴
-        useAuthStore.getState().logout();
+        void useAuthStore.getState().logout();
+        console.log("로그아웃 처리");
 
         // 로그인 페이지로 리다이렉트 등의 추가 작업
         window.location.href = "/login"; // 또는 React Router를 사용하여 리다이렉트
 
-        return Promise.reject(refreshError);
+        return Promise.reject(refreshError as AxiosError);
       } finally {
         isRefreshing = false;
       }

@@ -67,17 +67,21 @@ const Header = () => {
           </div>
         </nav>
       </div>
-      {
-        simpleProfile ? (
-          <div className="flex w-1/3 justify-end cursor-pointer" onClick={() => void navigate("mypage")}>
-            {simpleProfile.nickname}
-          </div>
-        ) : (
-          <div className="flex w-1/3 justify-end cursor-pointer" onClick={() => void navigate("login")}>
-            로그인
-          </div>
-        )
-      }
+      {simpleProfile ? (
+        <div
+          className="flex w-1/3 cursor-pointer justify-end"
+          onClick={() => void navigate("mypage")}
+        >
+          {simpleProfile.nickname}
+        </div>
+      ) : (
+        <div
+          className="flex w-1/3 cursor-pointer justify-end"
+          onClick={() => void navigate("login")}
+        >
+          로그인
+        </div>
+      )}
       <SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />
     </div>
   );
