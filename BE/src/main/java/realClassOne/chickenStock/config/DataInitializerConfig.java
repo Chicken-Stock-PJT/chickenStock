@@ -38,7 +38,7 @@ public class DataInitializerConfig {
                         "귀요미AI",
                         null, // 기본 프로필 이미지 사용
                         "local",
-                        "local",
+                        null,
                         roles
                 );
 
