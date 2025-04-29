@@ -66,7 +66,7 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 text-left">
+    <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6 text-left">
       <div className="mb-4 text-center">
         <h3 className="text-lg font-medium">이메일 인증</h3>
         <p className="text-sm text-gray-500">{email}로 전송된 인증코드를 입력해주세요.</p>
@@ -103,7 +103,7 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
           type="button"
           variant="outline"
           className="w-full"
-          onClick={handleResendCode}
+          onClick={() => void handleResendCode()}
           disabled={isVerifying || isResending}
         >
           {isResending ? (

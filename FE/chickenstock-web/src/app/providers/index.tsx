@@ -1,4 +1,4 @@
-import { queryClient } from "@/shared/queryClient";
+import { queryClient } from "@/shared/api/queryClient";
 import { Query, QueryClientProvider as TanStackQueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { AxiosError } from "axios";

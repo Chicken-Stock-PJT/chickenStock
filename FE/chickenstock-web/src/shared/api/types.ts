@@ -3,7 +3,7 @@ import { AxiosRequestConfig } from "axios";
 // 응답 인터셉터 | 큐에 있는 요청들을 위한 인터페이스
 export interface QueueItem {
   resolve: (value: string | PromiseLike<string>) => void;
-  reject: (reason?: any) => void;
+  reject: (reason?: unknown) => void;
 }
 
 export interface RefreshAccessTokenResponse {
