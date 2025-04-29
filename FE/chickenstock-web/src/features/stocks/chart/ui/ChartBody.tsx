@@ -59,12 +59,8 @@ const ChartBody = ({ chartData, onLoadMore }: ChartBodyProps) => {
         type: "xy" as const, // x축과 y축 모두 pan 가능
       },
       events: {
-        scrolled: function (
-          chartContext: unknown,
-          { xaxis }: { xaxis: { min: number; max: number } },
-        ) {
+        scrolled: function ({ xaxis }: { xaxis: { min: number; max: number } }) {
           const minDate = new Date(xaxis.min);
-          const maxDate = new Date(xaxis.max);
 
           // 현재 보이는 범위의 데이터 중 가장 오래된 데이터의 날짜
           const oldestVisibleData = formattedData[0]?.x;
@@ -76,6 +72,21 @@ const ChartBody = ({ chartData, onLoadMore }: ChartBodyProps) => {
             (oldestVisibleData.getTime() - minDate.getTime()) / (24 * 60 * 60 * 1000) < 5
           ) {
             // YYYYMMDD 형식으로 변환
+            const startDate = minDate.toISOString().slice(0, 10).replace(/-/g, "");
+            const endDate = oldestVisibleData.toISOString().slice(0, 10).replace(/-/g, "");
+
+            void onLoadMore(startDate, endDate);
+          }
+        },
+        zoomed: function ({ xaxis }: { xaxis: { min: number; max: number } }) {
+          // 줌 이벤트에서도 동일한 로직 적용
+          const minDate = new Date(xaxis.min);
+          const oldestVisibleData = formattedData[0]?.x;
+
+          if (
+            minDate < oldestVisibleData &&
+            (oldestVisibleData.getTime() - minDate.getTime()) / (24 * 60 * 60 * 1000) < 5
+          ) {
             const startDate = minDate.toISOString().slice(0, 10).replace(/-/g, "");
             const endDate = oldestVisibleData.toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -120,8 +131,8 @@ const ChartBody = ({ chartData, onLoadMore }: ChartBodyProps) => {
         },
       },
       floating: false,
-      forceNiceScale: true,
-      tickAmount: 8,
+      forceNiceScale: true, // 좋은 스케일 강제로 사용
+      tickAmount: 8, // y축 눈금 수
     },
     tooltip: {
       enabled: true,
