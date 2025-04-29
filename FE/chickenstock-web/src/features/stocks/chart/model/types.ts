@@ -37,6 +37,8 @@ export interface ChartHeaderProps {
   priceChange: string; // 전일대비 변동 금액 (오늘 가격 - 어제 가격, 단위: 원)
   changeRate: string; // 등락률 (전일대비 변동률, 단위: %)
   currentPrice: string;
+  onChartTypeChange: (type: string) => void;
+  selectedChartType: string;
 }
 
 // 차트 바디

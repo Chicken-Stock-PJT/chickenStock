@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import ChartBody from "./ChartBody";
 import ChartHeader from "./ChartHeader";
-import { ChartData, ChartResponse } from "../model/types";
-import apiClient from "@/shared/api/axios";
+import { ChartData } from "../model/types";
 import { getStockChartData } from "../api";
 
 interface ChartProps {
@@ -15,13 +14,6 @@ interface ChartProps {
   };
 }
 
-interface ChartRequest {
-  chartType: string;
-  stockCode: string;
-  hasNext: boolean;
-  nextKey: string;
-}
-
 const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: ChartProps) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +21,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [chartType, setChartType] = useState<string>("DAILY");
   const [hasNext, setHasNext] = useState(false);
   const [nextKey, setNextKey] = useState("");
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -51,13 +44,13 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     void fetchData();
   }, [stockCode, chartType]);
 
-  const handleLoadMore = async (startDate: string, endDate: string) => {
+  const handleLoadMore = async () => {
     try {
       // API 호출로 추가 데이터 가져오기
       const response = await getStockChartData({
         stockCode,
         chartType,
-        hasNext: true,
+        hasNext,
         nextKey: nextKey,
       });
       // 새로운 데이터를 기존 데이터 앞에 추가 (과거 데이터이므로)
@@ -67,6 +60,13 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     } catch (error) {
       console.error("Failed to load more data:", error);
     }
+  };
+
+  const handleChartTypeChange = (type: string) => {
+    setChartType(type);
+    setChartData([]);
+    setHasNext(false);
+    setNextKey("");
   };
 
   if (loading) return <div>Loading...</div>;
@@ -81,6 +81,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         currentPrice={priceData?.currentPrice ?? "0"}
         priceChange={priceData?.priceChange ?? "0"}
         changeRate={priceData?.changeRate ?? "0"}
+        onChartTypeChange={handleChartTypeChange}
       />
       <ChartBody chartData={chartData} onLoadMore={handleLoadMore} />
     </div>
