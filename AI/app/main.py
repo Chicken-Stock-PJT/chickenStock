@@ -1,8 +1,7 @@
 import asyncio
 import logging
-from typing import Dict
-from datetime import datetime, timedelta
-from typing import List
+from typing import Dict, List
+from datetime import datetime
 from pydantic import BaseModel
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
@@ -10,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.kiwoom_api import KiwoomAPI
+from app.auth_client import AuthClient
 from app.ai_trading import TradingModel
 from app.backend_client import BackendClient
 
@@ -37,15 +37,10 @@ app.add_middleware(
 )
 
 # 글로벌 변수
+auth_client = None
 kiwoom_api = None
 trading_model = None
 backend_client = None
-
-# 토큰 관리
-token_info = {
-    "token": None,
-    "expires_at": None
-}
 
 # 서비스 상태 추적
 service_status = {
@@ -53,110 +48,118 @@ service_status = {
     "start_time": None,
 }
 
-# 최근 거래 정보를 위한 모델 정의
-class TradeInfo(BaseModel):
-    symbol: str
-    name: str
-    type: str  # "buy" 또는 "sell"
-    price: float
-    quantity: int
-    amount: float
-    date_time: datetime
-    status: str
-
-# 최근 거래 내역 저장 (메모리에 임시 저장)
-recent_trades = []
+# 로그인 요청 모델
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+    platform: str = "mobile"
 
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행"""
+    global auth_client
+    
     logger.info("애플리케이션 시작 중...")
+    
+    # 인증 클라이언트 초기화
+    auth_client = AuthClient()
+    await auth_client.initialize()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """애플리케이션 종료 시 실행"""
     logger.info("애플리케이션 종료 중...")
+    
     if service_status["is_running"]:
         await stop_trading_service()
+    
+    # 인증 클라이언트 종료
+    if auth_client:
+        await auth_client.close()
 
-# 토큰 저장소 (인메모리)
-token_info = {
-    "token": None,
-    "expires_at": None
-}
-
-@app.post("/auth/request-token")
-async def request_token():
-    """키움증권 API에서 새로운 접근 토큰 요청"""
-    global token_info
+@app.post("/auth/login")
+async def login(login_request: LoginRequest):
+    """백엔드 API 로그인"""
+    global auth_client
+    
+    if not auth_client:
+        auth_client = AuthClient()
+        await auth_client.initialize()
     
     try:
-        logger.info("키움증권 API 접근 토큰 발급 요청")
+        success = await auth_client.login(login_request.email, login_request.password)
         
-        # 임시 세션 생성
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            auth_data = {
-                "grant_type": "client_credentials",
-                "appkey": settings.KIWOOM_API_KEY,
-                "secretkey": settings.KIWOOM_API_SECRET
+        if success:
+            return {
+                "success": True,
+                "message": "로그인 성공",
+                "expires_at": auth_client.access_token_expires_at.isoformat() if auth_client.access_token_expires_at else None
             }
-            
-            # 실제 키움증권 API 엔드포인트로 요청
-            async with session.post(f"{settings.API_BASE_URL}/oauth2/token", json=auth_data) as response:
-                if response.status != 200:
-                    logger.error(f"토큰 발급 실패: HTTP {response.status}")
-                    return {"success": False, "message": f"토큰 발급 실패: HTTP {response.status}"}
-                
-                result = await response.json()
-                logger.info(f"토큰 발급 응답: {result}")
-                
-                # 응답 형식 확인 및 토큰 저장
-                if result.get("token"):
-                    token_info["token"] = result["token"]
-                    
-                    # 만료 시간 설정 (일반적으로 API 응답에 포함)
-                    if result.get("expires_in"):
-                        from datetime import datetime, timedelta
-                        token_info["expires_at"] = datetime.now() + timedelta(seconds=int(result["expires_in"]))
-                    
-                    logger.info("접근 토큰 갱신 성공")
-                    return {
-                        "success": True, 
-                        "message": "토큰 발급 성공",
-                        "expires_at": token_info["expires_at"].isoformat() if token_info["expires_at"] else None
-                    }
-                else:
-                    logger.error(f"토큰 발급 실패: 유효한 응답이 아님 - {result}")
-                    return {"success": False, "message": "토큰 발급 실패: 유효한 응답이 아님"}
-    
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail="로그인 실패: 이메일 또는 비밀번호가 일치하지 않습니다."
+            )
     except Exception as e:
-        logger.error(f"토큰 발급 중 오류: {str(e)}")
-        return {"success": False, "message": f"토큰 발급 중 오류: {str(e)}"}
+        logger.error(f"로그인 중 오류: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"로그인 중 오류: {str(e)}"
+        )
 
-@app.get("/auth/token-status")
-async def get_token_status():
-    """현재 저장된 토큰 상태 확인"""
-    from datetime import datetime
+@app.get("/auth/status")
+async def get_auth_status():
+    """현재 인증 상태 확인"""
+    global auth_client
     
-    is_valid = token_info["token"] is not None
-    is_expired = False
-    
-    if token_info["expires_at"]:
-        is_expired = datetime.now() >= token_info["expires_at"]
-        is_valid = is_valid and not is_expired
+    if not auth_client:
+        return {
+            "is_authenticated": False,
+            "message": "인증 클라이언트가 초기화되지 않았습니다."
+        }
     
     return {
-        "has_token": token_info["token"] is not None,
-        "is_valid": is_valid,
-        "is_expired": is_expired,
-        "expires_at": token_info["expires_at"].isoformat() if token_info["expires_at"] else None
+        "is_authenticated": auth_client.is_authenticated,
+        "access_token_expires_at": auth_client.access_token_expires_at.isoformat() if auth_client.access_token_expires_at else None
     }
 
-# get_valid_token 함수 수정 - 토큰 자동 갱신 없이 저장된 토큰만 반환
-async def get_valid_token():
-    """저장된 접근 토큰 반환"""
-    return token_info["token"]
+@app.post("/auth/refresh")
+async def refresh_token():
+    """액세스 토큰 갱신"""
+    global auth_client
+    
+    if not auth_client:
+        raise HTTPException(
+            status_code=401,
+            detail="인증 클라이언트가 초기화되지 않았습니다."
+        )
+    
+    if not auth_client.refresh_token:
+        raise HTTPException(
+            status_code=401,
+            detail="리프레시 토큰이 없습니다. 다시 로그인해주세요."
+        )
+    
+    try:
+        success = await auth_client.refresh_access_token()
+        
+        if success:
+            return {
+                "success": True,
+                "message": "토큰 갱신 성공",
+                "expires_at": auth_client.access_token_expires_at.isoformat() if auth_client.access_token_expires_at else None
+            }
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail="토큰 갱신 실패"
+            )
+    except Exception as e:
+        logger.error(f"토큰 갱신 중 오류: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"토큰 갱신 중 오류: {str(e)}"
+        )
 
 @app.get("/", response_model=Dict[str, str])
 async def root():
@@ -166,13 +169,25 @@ async def root():
 @app.get("/status")
 async def get_status():
     """현재 서비스 상태 조회"""
+    global auth_client, kiwoom_api
+    
+    auth_status = {
+        "is_authenticated": False,
+        "access_token_expires_at": None
+    }
+    
+    if auth_client:
+        auth_status = {
+            "is_authenticated": auth_client.is_authenticated,
+            "access_token_expires_at": auth_client.access_token_expires_at.isoformat() if auth_client.access_token_expires_at else None
+        }
+    
     return {
         "status": "running" if service_status["is_running"] else "stopped",
         "is_running": service_status["is_running"],
         "start_time": service_status["start_time"].isoformat() if service_status["start_time"] else None,
         "connected_to_api": kiwoom_api.connected if kiwoom_api else False,
-        "subscribed_symbols": len(kiwoom_api.subscribed_symbols) if kiwoom_api else 0,
-        "token_expires_at": token_info["expires_at"].isoformat() if token_info["expires_at"] else None,
+        "auth_status": auth_status,
         "account_info": {
             "cash_balance": kiwoom_api.account_info["cash_balance"] if kiwoom_api else 0,
             "positions_count": len(kiwoom_api.account_info["positions"]) if kiwoom_api else 0,
@@ -183,29 +198,27 @@ async def get_status():
 @app.post("/service/start")
 async def start_trading_service(background_tasks: BackgroundTasks):
     """자동매매 서비스 시작"""
-    global kiwoom_api, trading_model, backend_client, service_status
+    global auth_client, kiwoom_api, trading_model, backend_client, service_status
 
     if service_status["is_running"]:
         return {"message": "서비스가 이미 실행 중입니다."}
+    
+    # 인증 상태 확인
+    if not auth_client or not auth_client.is_authenticated:
+        raise HTTPException(
+            status_code=401,
+            detail="인증되지 않았습니다. 먼저 로그인이 필요합니다."
+        )
 
     try:
-        # 접근 토큰 발급
-        token = await get_valid_token()
-        if not token:
-            raise HTTPException(
-                status_code=500,
-                detail="API 접근 토큰 발급 실패"
-            )
-        
-        # 키움 API 인스턴스 생성 (토큰 전달)
-        kiwoom_api = KiwoomAPI()
-        kiwoom_api.token = token
+        # 키움 API 인스턴스 생성 (인증 클라이언트 전달)
+        kiwoom_api = KiwoomAPI(auth_client)
         
         # 트레이딩 모델 생성
         trading_model = TradingModel(kiwoom_api)
         
         # 백엔드 클라이언트 생성 (매매 결과 전송용)
-        backend_client = BackendClient(trading_model)
+        backend_client = BackendClient(trading_model, auth_client)
         
         # 백그라운드 태스크로 서비스 초기화
         background_tasks.add_task(initialize_service)
@@ -230,41 +243,20 @@ async def start_trading_service(background_tasks: BackgroundTasks):
             detail=f"서비스 시작 실패: {str(e)}",
         )
 
-# 거래 실행 후 결과를 recent_trades에 추가하는 함수
-async def add_trade_to_history(decision, result):
-    """거래 결과를 거래 내역에 추가"""
-    global recent_trades
-    
-    trade_info = TradeInfo(
-        symbol=decision["symbol"],
-        name=decision["name"] if "name" in decision else "",
-        type=decision["action"],  # "buy" 또는 "sell"
-        price=result["executed_price"],
-        quantity=result["executed_quantity"],
-        amount=result["executed_price"] * result["executed_quantity"],
-        date_time=datetime.now(),
-        status="완료" if result["success"] else "실패"
-    )
-    
-    # 최대 50개까지만 저장
-    recent_trades.append(trade_info.dict())
-    if len(recent_trades) > 50:
-        recent_trades = recent_trades[-50:]
-
 async def initialize_service():
     """자동매매 서비스 초기화 및 시작"""
-    global kiwoom_api, trading_model, backend_client, service_status
+    global auth_client, kiwoom_api, trading_model, backend_client, service_status
     
     try:
-        # REST API 연결 및 로그인 (토큰 이미 설정됨)
+        # REST API 연결
         logger.info("REST API 연결 시작")
         if not await kiwoom_api.connect():
             logger.error("REST API 연결 실패")
             service_status["is_running"] = False
             return
         
-        # 토큰 갱신 태스크 시작
-        asyncio.create_task(token_refresh_task())
+        # 종목 정보 초기화
+        await kiwoom_api.initialize_stock_list()
         
         # 계좌 정보는 connect() 메서드 내에서 이미 요청됨
         
@@ -272,21 +264,26 @@ async def initialize_service():
         logger.info("트레이딩 모델 초기화")
         await trading_model.start()
         
-        # 종목 리스트 가져오기
-        symbols = kiwoom_api.get_all_symbols()
+        # 필터링된 종목 리스트 가져오기 (상위 600개)
+        filtered_symbols = kiwoom_api.stock_cache.get_filtered_symbols(450, 150)
         
-        # 트레이딩 모델에 차트 데이터 초기화
+        # 트레이딩 모델에 차트 데이터 초기화 - Envelope 지표 계산용
         logger.info("차트 데이터 초기화")
-        await trading_model.initialize_chart_data(symbols)
+        await trading_model.initialize_chart_data(filtered_symbols)
         
-        # 실시간 데이터 구독
-        logger.info("실시간 데이터 구독 시작")
-        # 배치 단위로 구독
-        batch_size = 100
-        for i in range(0, len(symbols), batch_size):
-            batch_symbols = symbols[i:i+batch_size]
-            await kiwoom_api.subscribe_realtime_data(batch_symbols, trading_model.handle_realtime_price)
-            await asyncio.sleep(1)  # API 부하 방지
+        # 실시간 데이터 구독 준비
+        logger.info("실시간 데이터 구독 그룹 준비")
+        await kiwoom_api.prepare_subscription_groups(filtered_symbols, 30)
+        
+        # 실시간 데이터 구독 로테이션 시작
+        logger.info("실시간 데이터 구독 로테이션 시작")
+        await kiwoom_api.start_rotating_subscriptions(trading_model.handle_realtime_price)
+        
+        # 웹소켓 메시지 처리 태스크 시작
+        asyncio.create_task(kiwoom_api.handle_websocket_message())
+        
+        # 백엔드 클라이언트 시작
+        await backend_client.start()
         
         # 거래 처리 루프 시작
         asyncio.create_task(trading_loop())
@@ -303,78 +300,57 @@ async def initialize_service():
             trading_model = None
         if backend_client:
             backend_client = None
-    
-    except Exception as e:
-        logger.error(f"서비스 초기화 중 오류 발생: {str(e)}")
-        service_status["is_running"] = False
-        if kiwoom_api:
-            await kiwoom_api.close()
-            kiwoom_api = None
-        if trading_model:
-            trading_model = None
-        if backend_client:
-            backend_client = None
-
-async def token_refresh_task():
-    """토큰 자동 갱신 태스크"""
-    while service_status["is_running"]:
-        try:
-            # 토큰 만료 10분 전에 갱신
-            if token_info["expires_at"]:
-                now = datetime.now()
-                time_to_expiry = (token_info["expires_at"] - now).total_seconds()
-                
-                if time_to_expiry <= 600:  # 10분(600초) 이하로 남은 경우
-                    logger.info("토큰 만료 시간이 10분 이내로 남아 갱신 시작")
-                    await get_valid_token()
-                else:
-                    # 다음 갱신 시간까지 대기 (토큰 만료 10분 전)
-                    wait_time = time_to_expiry - 600
-                    await asyncio.sleep(min(wait_time, 300))  # 최대 5분씩 대기
-            else:
-                await asyncio.sleep(300)  # 5분 대기
-        except Exception as e:
-            logger.error(f"토큰 갱신 태스크 오류: {str(e)}")
-            await asyncio.sleep(60)  # 오류 발생 시 1분 후 재시도
 
 async def trading_loop():
     """주기적인 매매 처리 루프"""
-    global kiwoom_api, trading_model, backend_client, service_status
+    global auth_client, kiwoom_api, trading_model, backend_client, service_status
     
     logger.info("거래 처리 루프 시작")
     
+    # 마지막 처리 시간 초기화
+    last_processing_time = datetime.now()
+    
     while service_status["is_running"]:
         try:
-            # 토큰 유효성 확인
-            token = await get_valid_token()
-            if not token:
-                logger.error("유효한 접근 토큰이 없어 거래를 건너뜁니다")
+            # 인증 상태 확인
+            if not auth_client or not auth_client.is_authenticated:
+                logger.error("인증되지 않았습니다. 거래를 건너뜁니다.")
                 await asyncio.sleep(30)
                 continue
+            
+            # 현재 시간
+            current_time = datetime.now()
+            
+            # 1분마다 계좌 정보 업데이트 및 매매 결정 처리
+            if (current_time - last_processing_time).total_seconds() >= 60:
+                # 계좌 정보 업데이트
+                await kiwoom_api.request_account_info()
                 
-            # 계좌 정보 업데이트 (1분 간격)
-            await kiwoom_api.request_account_info()
+                # 매매 결정 처리
+                decisions = await trading_model.get_trade_decisions()
+                
+                # 매매 결정이 있으면 실행
+                for decision in decisions:
+                    try:
+                        # 거래 실행
+                        result = await kiwoom_api.execute_trade_decision(decision)
+                        
+                        if result and result["success"]:
+                            # 백엔드로 결과 전송
+                            if backend_client:
+                                await backend_client.send_trade_result(decision, result)
+                        else:
+                            logger.warning(f"거래 실패: {decision['symbol']} {decision['action']} - {result.get('message', '')}")
+                    
+                    except Exception as e:
+                        logger.error(f"거래 실행 중 오류: {str(e)}")
+                
+                # 마지막 처리 시간 업데이트
+                last_processing_time = current_time
+                logger.info(f"거래 처리 완료: {len(decisions)}개 결정 처리됨")
             
-            # 매매 결정 처리
-            decisions = await trading_model.get_trade_decisions()
-            
-            # 매매 결정이 있으면 실행
-            for decision in decisions:
-                try:
-                    # 거래 실행 (비동기로 변경)
-                    result = await kiwoom_api.execute_trade_decision(decision)
-                    if result:
-                        # 거래 내역에 추가
-                        await add_trade_to_history(decision, result)
-                        # 백엔드로 결과 전송
-                        if backend_client:
-                            await backend_client.send_trade_result(decision)
-                                        
-                except Exception as e:
-                    logger.error(f"거래 실행 중 오류: {str(e)}")
-            
-            # 다음 사이클까지 대기 (60초)
-            await asyncio.sleep(60)
+            # 1초 대기
+            await asyncio.sleep(1)
             
         except Exception as e:
             logger.error(f"거래 처리 루프 오류: {str(e)}")
@@ -389,10 +365,9 @@ async def stop_trading_service():
         return {"message": "서비스가 이미 중지되었습니다."}
     
     try:
-        # 실시간 데이터 구독 해제
+        # API 연결 종료 (구독 해제 포함)
         if kiwoom_api:
-            await kiwoom_api.unsubscribe_realtime_data()
-            await kiwoom_api.close()  # API 연결 종료
+            await kiwoom_api.close()
             kiwoom_api = None
         
         # 트레이딩 모델 종료
@@ -441,9 +416,9 @@ async def get_symbols():
         )
     
     return {
-        "kospi": kiwoom_api.kospi_symbols,
-        "kosdaq": kiwoom_api.kosdaq_symbols,
-        "total": len(kiwoom_api.kospi_symbols) + len(kiwoom_api.kosdaq_symbols)
+        "kospi": kiwoom_api.stock_cache.kospi_symbols,
+        "kosdaq": kiwoom_api.stock_cache.kosdaq_symbols,
+        "total": len(kiwoom_api.stock_cache.kospi_symbols) + len(kiwoom_api.stock_cache.kosdaq_symbols)
     }
 
 @app.get("/prices")
@@ -455,42 +430,7 @@ async def get_realtime_prices():
             detail="서비스가 실행 중이지 않습니다."
         )
     
-    return kiwoom_api.realtime_prices
-
-@app.get("/trades", response_model=List[dict])
-async def get_trades():
-    """최근 거래 내역 조회"""
-    if not service_status["is_running"]:
-        raise HTTPException(
-            status_code=400,
-            detail="서비스가 실행 중이지 않습니다."
-        )
-    
-    return recent_trades
-
-@app.post("/auth/token")
-async def get_token():
-    """접근 토큰 발급 API"""
-    try:
-        token = await get_valid_token()
-        
-        if not token:
-            raise HTTPException(
-                status_code=500,
-                detail="토큰 발급 실패"
-            )
-        
-        return {
-            "token": token,
-            "expires_at": token_info["expires_at"].isoformat() if token_info["expires_at"] else None,
-            "token_type": "bearer"
-        }
-    except Exception as e:
-        logger.error(f"토큰 발급 API 오류: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"토큰 발급 실패: {str(e)}"
-        )
+    return kiwoom_api.stock_cache.price_cache
 
 if __name__ == "__main__":
     import uvicorn

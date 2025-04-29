@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     # API 설정
     API_BASE_URL: str = "https://api.kiwoom.com"  # 키움증권 API 기본 URL
     BACKEND_API_URL: str = "http://localhost:8080"  # 백엔드 API URL
+    WEBSOCKET_API_URL: str = "wss://api.kiwoom.com:10000"
     
     # 인증 설정
     KIWOOM_API_KEY: str = os.getenv('KIWOOM_API_KEY', '')  # appkey
