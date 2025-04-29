@@ -12,6 +12,7 @@ import Watchlist from "@/features/mypage/Watchlist";
 import Transactions from "@/features/mypage/Transactions";
 import SignupPage from "@/pages/SignupPage";
 import LoginPage from "@/pages/LoginPage";
+import LoginRedirect from "@/pages/LoginRedirect";
 
 const router = createBrowserRouter([
   {
@@ -74,6 +75,10 @@ const router = createBrowserRouter([
             element: <StockPage />,
           },
         ],
+      },
+      {
+        path: "login/redirect",
+        element: <LoginRedirect />,
       },
     ],
   },
