@@ -1,5 +1,5 @@
 import { TrendingUp, DollarSign, BarChart3 } from "lucide-react";
-import { MarketType, RankingType, StockListHeaderProps } from "./types";
+import { MarketType, RankingType, StockListHeaderProps } from "../model/types";
 
 const StockListHeader = ({
   marketType,

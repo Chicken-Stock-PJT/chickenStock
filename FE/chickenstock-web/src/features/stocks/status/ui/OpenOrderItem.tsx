@@ -1,4 +1,4 @@
-import { OpenOrder } from "./types";
+import { OpenOrder } from "../model/types";
 
 interface OpenOrderItemProps {
   order: OpenOrder;

@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import StockListIndex from "@/features/stocks/list/ui/StockListIndex";
 import StockListItem from "@/features/stocks/list/ui/StockListItem";
-import {
-  MarketType,
-  RankingType,
-  StockListResponse,
-  StockProps,
-} from "@/features/stocks/list/model/types";
+import { MarketType, RankingType, StockProps } from "@/features/stocks/list/model/types";
 import StockListHeader from "@/features/stocks/list/ui/StockListHeader";
 import StockListSkeleton from "@/features/stocks/list/ui/StockListSkeleton";
 import { getStockRanking } from "@/features/stocks/list/api";

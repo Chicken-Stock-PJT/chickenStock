@@ -1,6 +1,7 @@
 import ReactApexChart from "react-apexcharts";
 
 interface ChartBodyProps {
+  //   chartData: ChartData[];
   chartData: {
     date: string;
     currentPrice: string;
@@ -8,9 +9,10 @@ interface ChartBodyProps {
     highPrice: string;
     lowPrice: string;
   }[];
+  onLoadMore: (startDate: string, endDate: string) => Promise<void>;
 }
 
-const ChartBody = ({ chartData }: ChartBodyProps) => {
+const ChartBody = ({ chartData, onLoadMore }: ChartBodyProps) => {
   const formattedData = chartData.map((item) => ({
     x: new Date(item.date.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")),
     y: [
@@ -56,6 +58,31 @@ const ChartBody = ({ chartData }: ChartBodyProps) => {
         enabled: true,
         type: "xy" as const, // x축과 y축 모두 pan 가능
       },
+      events: {
+        scrolled: function (
+          chartContext: unknown,
+          { xaxis }: { xaxis: { min: number; max: number } },
+        ) {
+          const minDate = new Date(xaxis.min);
+          const maxDate = new Date(xaxis.max);
+
+          // 현재 보이는 범위의 데이터 중 가장 오래된 데이터의 날짜
+          const oldestVisibleData = formattedData[0]?.x;
+
+          // 스크롤이 왼쪽(과거 데이터)으로 이동하고 있고
+          // 현재 보이는 범위의 시작점이 가장 오래된 데이터에 가까워졌을 때
+          if (
+            minDate < oldestVisibleData &&
+            (oldestVisibleData.getTime() - minDate.getTime()) / (24 * 60 * 60 * 1000) < 5
+          ) {
+            // YYYYMMDD 형식으로 변환
+            const startDate = minDate.toISOString().slice(0, 10).replace(/-/g, "");
+            const endDate = oldestVisibleData.toISOString().slice(0, 10).replace(/-/g, "");
+
+            void onLoadMore(startDate, endDate);
+          }
+        },
+      },
     },
     plotOptions: {
       candlestick: {
@@ -93,8 +120,8 @@ const ChartBody = ({ chartData }: ChartBodyProps) => {
         },
       },
       floating: false,
-      forceNiceScale: true, // 좋은 스케일 강제로 사용
-      tickAmount: 8, // y축 눈금 수
+      forceNiceScale: true,
+      tickAmount: 8,
     },
     tooltip: {
       enabled: true,

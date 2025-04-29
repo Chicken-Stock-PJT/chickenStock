@@ -1,7 +1,7 @@
 import { Heart } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { StockProps } from "./types";
+import { StockProps } from "../model/types";
 
 const StockListItem = (props: StockProps) => {
   console.log(props);
