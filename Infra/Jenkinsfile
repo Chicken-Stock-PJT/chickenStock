@@ -83,8 +83,8 @@ pipeline {
                         BUILD_NUMBER=${BUILD_NUMBER} docker-compose -f docker-compose.yml up -d
 
                         docker-compose ps backend1
-                        docker-compose ps backend2
-                        docker-compose ps backend3
+                        # docker-compose ps backend2
+                        # docker-compose ps backend3
                     """
                 }
             }
