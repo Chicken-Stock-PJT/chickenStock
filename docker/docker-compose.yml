@@ -47,4 +47,5 @@ services:
 networks:
   chickenStock-network:
     name: chickenStock-network
+    external: true
     driver: bridge
