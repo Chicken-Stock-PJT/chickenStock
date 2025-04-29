@@ -1,4 +1,5 @@
 import asyncio
+import aiohttp
 import logging
 from typing import Dict, List
 from datetime import datetime
@@ -12,6 +13,7 @@ from app.kiwoom_api import KiwoomAPI
 from app.auth_client import AuthClient
 from app.ai_trading import TradingModel
 from app.backend_client import BackendClient
+from app.kiwoom_auth import KiwoomAuthClient
 
 # 로깅 설정
 logging.basicConfig(
@@ -165,6 +167,59 @@ async def refresh_token():
 async def root():
     """API 루트 엔드포인트"""
     return {"message": "주식 자동매매 봇 API에 오신 것을 환영합니다!"}
+
+@app.get("/auth/token-status")
+async def get_kiwoom_token_status():
+    """키움 API 토큰 상태 조회"""
+    try:
+        # KiwoomAuthClient 인스턴스 생성
+        kiwoom_auth_client = KiwoomAuthClient()
+        
+        # 토큰 상태 확인
+        token = await kiwoom_auth_client.get_access_token()
+        
+        return {
+            "has_token": token is not None,
+            "is_valid": token is not None,
+            "is_expired": token is None,
+            "expires_at": None  # 현재 구현에서는 만료 시간 정보가 없음
+        }
+    except Exception as e:
+        logger.error(f"키움 토큰 상태 조회 중 오류: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"키움 토큰 상태 조회 중 오류: {str(e)}"
+        )
+
+@app.post("/auth/request-token")
+async def request_kiwoom_token():
+    """키움 API 토큰 발급 요청"""
+    try:
+        # KiwoomAuthClient 인스턴스 생성
+        kiwoom_auth_client = KiwoomAuthClient()
+        
+        # 토큰 발급 요청
+        token = await kiwoom_auth_client.get_access_token()
+        
+        if token:
+            return {
+                "success": True,
+                "message": "키움 API 토큰이 성공적으로 발급되었습니다.",
+                "token_info": {
+                    "token": token
+                }
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="키움 API 토큰 발급에 실패했습니다."
+            )
+    except Exception as e:
+        logger.error(f"키움 토큰 요청 중 오류: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"키움 토큰 요청 중 오류: {str(e)}"
+        )
 
 @app.get("/status")
 async def get_status():

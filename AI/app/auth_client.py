@@ -45,8 +45,8 @@ class AuthClient:
                 await self.initialize()
             
             login_data = {
-                "email": email,
-                "password": password,
+                "email": "cuteai@gmail.com",
+                "password": "ssafy123!@#",
                 "platform": "mobile"
             }
             

@@ -8,6 +8,7 @@ import json
 from app.config import settings
 from app.auth_client import AuthClient
 from app.stock_cache import StockCache
+from app.kiwoom_auth import KiwoomAuthClient
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ class KiwoomAPI:
         
         # 인증 클라이언트
         self.auth_client = auth_client
+
+        # 키움 API 토큰 클라이언트 추가
+        self.kiwoom_auth_client = KiwoomAuthClient()
         
         # HTTP 세션
         self.session = None
@@ -104,6 +108,12 @@ class KiwoomAPI:
                 logger.error("인증되지 않았습니다. 먼저 로그인이 필요합니다.")
                 return False
             
+            # 키움 API 토큰 발급 (최초 1회)
+            kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+            if not kiwoom_token:
+                logger.error("키움 API 토큰 발급 실패")
+                return False
+
             # 백엔드 API에서 계좌 정보 요청
             await self.request_account_info()
             
