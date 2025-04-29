@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import StockListIndex from "../features/stocks/list/StockListIndex";
-import StockListItem from "../features/stocks/list/StockListItem";
+import StockListIndex from "@/features/stocks/list/ui/StockListIndex";
+import StockListItem from "@/features/stocks/list/ui/StockListItem";
 import {
   MarketType,
   RankingType,
   StockListResponse,
   StockProps,
-} from "../features/stocks/list/types";
-import StockListHeader from "../features/stocks/list/StockListHeader";
-import StockListSkeleton from "../features/stocks/list/StockListSkeleton";
+} from "@/features/stocks/list/model/types";
+import StockListHeader from "@/features/stocks/list/ui/StockListHeader";
+import StockListSkeleton from "@/features/stocks/list/ui/StockListSkeleton";
+import { getStockRanking } from "@/features/stocks/list/api";
 
 const StockList = () => {
   const [stocks, setStocks] = useState<StockProps[]>([]);
@@ -20,11 +21,8 @@ const StockList = () => {
     const fetchStocks = async () => {
       setLoading(true);
       try {
-        const response = await fetch(
-          `/api/stock/ranking/${rankingType}?marketType=${marketType}&includeManagement=1`,
-        );
-        const data = (await response.json()) as StockListResponse;
-        const formattedStocks = data.rankingItems.map((item, index: number) => ({
+        const response = await getStockRanking(rankingType, marketType);
+        const formattedStocks = response.rankingItems.map((item, index: number) => ({
           ...item,
           rankingType: rankingType.toLowerCase() as RankingType,
           rank: index + 1,
