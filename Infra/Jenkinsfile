@@ -38,7 +38,7 @@ pipeline {
                     sh '''
                         chmod +x ./gradlew
                         set -o allexport
-                        source .env
+                        . .env
                         set +o allexport
                         ./gradlew clean build
                     '''
