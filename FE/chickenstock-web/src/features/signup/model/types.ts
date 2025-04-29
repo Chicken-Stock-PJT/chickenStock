@@ -25,3 +25,8 @@ export interface SuccessResponse {
   success: boolean;
   message: string;
 }
+
+export interface CheckDuplicateResponse {
+  duplicate: boolean;
+  message: string;
+}

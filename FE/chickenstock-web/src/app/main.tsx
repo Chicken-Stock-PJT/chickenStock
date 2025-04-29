@@ -14,10 +14,10 @@ async function prepare() {
 
 void prepare().then(() => {
   createRoot(document.getElementById("root")!).render(
-    <StrictMode>
+    // <StrictMode>
       <QueryClientProvider>
         <App />
       </QueryClientProvider>
-    </StrictMode>,
+    // </StrictMode>,
   );
 });

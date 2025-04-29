@@ -7,7 +7,7 @@ import tailwindPlugin from "eslint-plugin-tailwindcss";
 import reactRefresh from "eslint-plugin-react-refresh";
 import reactPlugin from "eslint-plugin-react";
 import { fixupPluginRules } from "@eslint/compat";
-import * as tanstackQueryPlugin from "@tanstack/eslint-plugin-query";
+import tanstackQueryPlugin from "@tanstack/eslint-plugin-query";
 
 // const tsconfigRootDir = new URL('.', import.meta.url).pathname;
 

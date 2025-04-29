@@ -14,7 +14,8 @@ const initialSendCode = async (email: string) => {
   try {
     await authApi.sendCode(email);
   } catch (err) {
-    // 에러는 sendCode 내부에서 처리됨
+    console.log(err);
+    alert("인증코드 전송에 실패했습니다.");
   }
 };
 
@@ -25,8 +26,8 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
   const [isResending, setIsResending] = useState(false);
 
   useEffect(() => {
-    initialSendCode(email);
-  });
+    void initialSendCode(email);
+  }, [email]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +41,7 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
       setIsVerifying(true);
 
       const result = await authApi.verifyCode(email, verificationCode);
-      if (result.success) {
+      if (result?.success) {
         onSubmit();
       }
     } catch (err) {
@@ -58,6 +59,7 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
       alert("인증코드가 재발송되었습니다.");
     } catch (err) {
       setError("인증코드 재발송에 실패했습니다.");
+      console.log(err);
     } finally {
       setIsResending(false);
     }

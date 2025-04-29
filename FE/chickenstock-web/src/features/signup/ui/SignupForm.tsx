@@ -27,7 +27,7 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
   const [passwordError, setPasswordError] = useState("");
   const [password2Error, setPassword2Error] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!email.trim()) {
@@ -100,7 +100,6 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
 
   // 닉네임 유효성 검사
   useEffect(() => {
-    console.log(nickname);
     if (!nickname) return;
 
     if (nickname.includes(" ")) {
@@ -116,7 +115,7 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
   }, [nickname]);
 
   // 이메일 중복검사
-  const validateEmail = async () => {
+  const validateEmail = async (): Promise<void> => {
     if (emailError) return;
     // 이메일 중복 검사 (API 호출)
     try {
@@ -125,39 +124,38 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
 
       if (!response.success) {
         setEmailError(response.message);
-        return false;
+        return;
       }
 
       setEmailError(""); // 에러 초기화
-      return true;
+
+      return;
     } catch (error) {
       setEmailError("이메일 중복 확인 중 오류가 발생했습니다.");
       console.error("이메일 중복 확인 오류:", error);
-      return false;
+      return;
     }
-
-    setEmailError(""); // 에러 초기화
-    return true;
   };
 
   // 닉네임 중복검사
-  const validateNickname = async () => {
+  const validateNickname = async (): Promise<void> => {
     if (nicknameError) return;
 
     try {
       const response = await authApi.checkNickname(nickname);
+      console.log(response);
 
-      if (!response.duplicate) {
+      if (response.duplicate) {
         setNicknameError(response.message);
-        return false;
+        return;
       }
 
       setNicknameError(""); // 에러 초기화
-      return true;
+      return;
     } catch (error) {
       setNicknameError("닉네임 중복 확인 중 오류가 발생했습니다.");
       console.error("닉네임 중복 확인 오류:", error);
-      return false;
+      return;
     }
   };
 
@@ -188,7 +186,6 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
 
   // 비밀번호 확인
   useEffect(() => {
-    console.log(password1 === password2, password1, password2);
     if (password1 !== password2) {
       setPassword2Error("비밀번호가 일치하지 않습니다.");
       return;
@@ -210,7 +207,7 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
             placeholder="이메일"
             required
             className={`block w-full ${emailError ? "border-red-500" : ""}`}
-            onBlur={validateEmail}
+            onBlur={() => void validateEmail()}
           />
         </div>
         {emailError ? <p className="mt-1 text-xs text-red-600">{emailError}</p> : <></>}
@@ -248,7 +245,7 @@ export default function SignupForm({ onSubmit }: SignupFormProps) {
             onChange={handleNicknameChange}
             placeholder="닉네임"
             className={`block w-full ${nicknameError ? "border-red-500" : ""}`}
-            onBlur={validateNickname}
+            onBlur={() => void validateNickname()}
           />
         </div>
         {nicknameError ? (

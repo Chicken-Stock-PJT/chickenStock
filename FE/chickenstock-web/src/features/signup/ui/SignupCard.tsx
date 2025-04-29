@@ -27,29 +27,31 @@ const SignupCard = () => {
     setStep(2);
   };
 
-  const handleVerificationSubmit = async () => {
-    // // 회원가입 api 요청
+  const handleVerificationSubmit = async (): Promise<void> => {
     try {
       const response = await authApi.signup(formData);
-
-      console.log(response);
+      if (response) {
+        alert('회원가입이 완료되었습니다. 로그인 페이지로 이동합니다.');
+        navigate('/login');
+      }
     } catch (err) {
-      alert(err);
+      alert('회원가입에 실패했습니다. 다시 시도해주세요.');
+      console.error(err);
     }
-
-    void navigate("/login");
-    console.log(formData);
   };
 
   return (
-    <Card className="mx-auto w-[400px]">
+    <Card className="mx-auto mb-40 mt-20 w-[400px]">
       <CardHeader>
         <CardTitle>회원가입</CardTitle>
       </CardHeader>
       <CardContent className="items-center gap-4 space-y-4">
         {step === 1 && <SignupForm onSubmit={handleFormSubmit} />}
         {step === 2 && (
-          <EmailVerification email={formData.email} onSubmit={handleVerificationSubmit} />
+          <EmailVerification
+            email={formData.email}
+            onSubmit={() => void handleVerificationSubmit()}
+          />
         )}
       </CardContent>
       <CardFooter className="flex justify-center gap-2 text-center text-sm">

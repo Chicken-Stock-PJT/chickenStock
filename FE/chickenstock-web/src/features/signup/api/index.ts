@@ -1,5 +1,12 @@
-import axios from "axios";
-import { SignupData } from "../model/types";
+import {
+  CheckDuplicateResponse,
+  SignupData,
+  SignupResponse,
+  SuccessResponse,
+} from "@/features/signup/model/types";
+import axios, { AxiosResponse } from "axios";
+
+const baseURL = import.meta.env.VITE_BASE_URL;
 
 export const authApi = {
   /**
@@ -7,12 +14,12 @@ export const authApi = {
    * @param email 확인할 이메일
    * @returns {Promise<SuccessResponse>} 중복 여부
    */
-  checkEmail: async (email: string) => {
-    const response = await axios.post(
-      `/auth/check-email`,
+  checkEmail: async (email: string): Promise<SuccessResponse> => {
+    const response = await axios.post<SuccessResponse>(
+      `${baseURL}/auth/check-email`,
       { email },
       {
-        withCredentials: true,
+        // withCredentials: true,
         headers: {
           "Content-Type": "application/json",
         },
@@ -27,9 +34,9 @@ export const authApi = {
    * @param nickname 확인할 닉네임
    * @returns {Promise<{duplicate: boolean, message: string}>} 중복 여부
    */
-  checkNickname: async (nickname: string) => {
-    const response = await axios.post(
-      `/auth/check-nickname`,
+  checkNickname: async (nickname: string): Promise<CheckDuplicateResponse> => {
+    const response = await axios.post<CheckDuplicateResponse>(
+      `${baseURL}/auth/check-nickname`,
       { nickname },
       {
         withCredentials: true,
@@ -47,10 +54,10 @@ export const authApi = {
    * @param email 전송할 이메일
    * @returns {Promise<void>}
    */
-  sendCode: async (email: string) => {
+  sendCode: async (email: string): Promise<AxiosResponse | undefined> => {
     try {
-      const response = await axios.post(
-        `/auth/send-code`,
+      const response = await axios.post<AxiosResponse>(
+        `${baseURL}/auth/send-code`,
         { email },
         {
           withCredentials: true,
@@ -60,7 +67,7 @@ export const authApi = {
         },
       );
 
-      return response.data;
+      return response;
     } catch (err) {
       console.error("인증코드 발송 실패:", err);
     }
@@ -71,16 +78,18 @@ export const authApi = {
    * @param {email, code} 전송할 이메일
    * @returns {Promise<SuccessResponse>}
    */
-  verifyCode: async (email: string, code: string) => {
+  verifyCode: async (email: string, code: string): Promise<SuccessResponse | undefined> => {
+    console.log(email, code);
     try {
-      const response = await axios.get(`/auth/verify-code`, {
-        params: { email, code },
-        withCredentials: true,
-        headers: {
-          "Content-Type": "application/json",
+      const response = await axios.post<SuccessResponse>(
+        `${baseURL}/auth/verify-code`,
+        { email, code },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
         },
-      });
-
+      );
       return response.data;
     } catch (err) {
       console.error("인증 실패:", err);
@@ -90,11 +99,11 @@ export const authApi = {
   /**
    * 회원가입
    * @param {formData:SignupData} 이메일, 비번, 닉네임, 이름
-   * @returns {Promise<{id: number, email: string, nickname: string, name: string}>} 중복 여부
+   * @returns {Promise<SignupResponse>}
    */
-  signup: async (formData: SignupData) => {
-    const response = await axios.post(
-      `/auth/signup`,
+  signup: async (formData: SignupData): Promise<SignupResponse> => {
+    const response = await axios.post<SignupResponse>(
+      `${baseURL}/auth/signup`,
       { ...formData },
       {
         withCredentials: true,
