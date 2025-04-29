@@ -1,4 +1,4 @@
-import { RankingType } from "./types";
+import { RankingType } from "../model/types";
 
 interface StockListIndexProps {
   rankingType: RankingType;
@@ -26,9 +26,9 @@ const StockListIndex = ({ rankingType }: StockListIndexProps) => {
         { id: "strength", label: "체결강도", width: "w-1/6" },
         { id: "remaining", label: "잔량", width: "w-1/6" },
       ],
-    };
+    } as const;
 
-    return [...baseColumns, ...specificColumns[rankingType]];
+    return [...baseColumns, ...specificColumns[rankingType as keyof typeof specificColumns]];
   };
 
   return (

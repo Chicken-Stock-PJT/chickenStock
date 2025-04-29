@@ -1,4 +1,4 @@
-import { FilledOrder } from "./types";
+import { FilledOrder } from "../model/types";
 
 interface FilledOrderItemProps {
   order: FilledOrder;

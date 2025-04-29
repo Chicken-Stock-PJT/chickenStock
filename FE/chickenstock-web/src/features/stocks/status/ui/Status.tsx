@@ -1,6 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 import OpenOrderItem from "./OpenOrderItem";
-import { FilledOrder, OpenOrder } from "./types";
+import { FilledOrder, OpenOrder } from "../model/types";
 import FilledOrderItem from "./FilledOrderItem";
 
 const Status = () => {
