@@ -1,6 +1,9 @@
 package realClassOne.chickenStock.stock.trade.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.member.entity.Member;
@@ -29,7 +32,7 @@ public class TradeHistoryService {
     private final MemberRepository memberRepository;
     private final StockDataRepository stockDataRepository;
 
-    public TradeHistoriesResponse getTradeHistories(String authorizationHeader) {
+    public TradeHistoriesResponse getTradeHistories(String authorizationHeader, int page, int size) {
         // 토큰에서 memberId 추출
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
@@ -38,16 +41,21 @@ public class TradeHistoryService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        // member로 거래내역 조회
-        List<TradeHistory> histories = tradeHistoryRepository.findByMember(member);
+        // member로 전체 거래내역 조회 (실현 손익 계산용)
+        List<TradeHistory> allHistories = tradeHistoryRepository.findByMember(member);
 
-        List<TradeHistoryDTO> tradeHistoryDtos = histories.stream()
+        // 무한스크롤용 페이징 처리 추가
+        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<TradeHistory> pagedHistories = tradeHistoryRepository.findByMember(member, pageRequest);
+
+        // 페이지별 거래내역만 변환
+        List<TradeHistoryDTO> tradeHistoryDtos = pagedHistories.stream()
                 .map(history -> {
                     StockData stockData = stockDataRepository.findByShortCode(history.getStockData().getShortCode())
                             .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
                     return new TradeHistoryDTO(
                             stockData.getShortName(),
-                            history.getTradeType().name(),  // ENUM 타입을 문자열로 변환
+                            history.getTradeType().name(),
                             history.getQuantity(),
                             history.getUnitPrice(),
                             history.getCreatedAt(),
@@ -57,11 +65,15 @@ public class TradeHistoryService {
                 .collect(Collectors.toList());
 
         // FIFO 실현 손익 계산 로직
-        List<TradeHistory> buyHistories = tradeHistoryRepository.findByMemberAndTradeTypeOrderByCreatedAtAsc(member, TradeHistory.TradeType.BUY);
+        // 실현 손익은 전체 거래 기준으로 계산
+        List<TradeHistory> buyHistories = allHistories.stream()
+                .filter(history -> history.getTradeType() == TradeHistory.TradeType.BUY)
+                .sorted((h1, h2) -> h1.getCreatedAt().compareTo(h2.getCreatedAt()))
+                .collect(Collectors.toList());
 
         long realizedProfit = 0L;
 
-        for (TradeHistory sell : histories) {
+        for (TradeHistory sell : allHistories) {
             if (!sell.getTradeType().equals(TradeHistory.TradeType.SELL)) continue;
 
             int remainingSellQuantity = sell.getQuantity();

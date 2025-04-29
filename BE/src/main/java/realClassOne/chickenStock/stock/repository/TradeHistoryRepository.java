@@ -4,6 +4,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
@@ -18,6 +20,7 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
     List<TradeHistory> findByMemberAndTradeType(Member member, TradeHistory.TradeType tradeType);
     List<TradeHistory> findByMemberAndStockData(Member member, StockData stockData);
     List<TradeHistory> findByMemberAndTradeTypeOrderByCreatedAtAsc(Member member, TradeHistory.TradeType tradeType);
+    Page<TradeHistory> findByMember(Member member, Pageable pageable);
 
 
     @Query("SELECT th FROM TradeHistory th WHERE th.member = :member AND th.tradedAt BETWEEN :startDate AND :endDate ORDER BY th.tradedAt DESC")
