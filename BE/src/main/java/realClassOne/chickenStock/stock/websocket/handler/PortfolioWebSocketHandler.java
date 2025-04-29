@@ -165,27 +165,29 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
     @Override
     public void onStockPriceUpdate(String stockCode, JsonNode data) {
         try {
-            // 현재가 추출
+            // 현재가 추출 (부호 및 쉼표 처리)
             if (data == null || !data.has("10")) {
                 return;
             }
 
-            Long currentPrice = Long.parseLong(data.get("10").asText().replace(",", ""));
+            Long currentPrice = Long.parseLong(data.get("10").asText()
+                    .replace(",", "")
+                    .replace("+", "")
+                    .replace("-", "")
+                    .trim());
 
             // 해당 종목을 보유한 회원들에게 업데이트 전송
             for (Map.Entry<Long, WebSocketSession> entry : memberSessionMap.entrySet()) {
                 Long memberId = entry.getKey();
                 WebSocketSession session = entry.getValue();
 
-                // 회원이 해당 종목을 보유하고 있는지 확인
-                List<HoldingPosition> positions = holdingPositionRepository.findByMember(
-                        memberRepository.findById(memberId).orElse(null));
+                // JOIN FETCH를 사용하여 N+1 문제 해결 및 LazyInitializationException 방지
+                List<HoldingPosition> positions = holdingPositionRepository
+                        .findWithStockDataByMemberIdAndStockCode(memberId, stockCode);
 
                 for (HoldingPosition position : positions) {
-                    if (position.getStockData().getShortCode().equals(stockCode)) {
-                        sendRealtimeStockUpdate(session, memberId, stockCode, currentPrice, position);
-                        break;
-                    }
+                    // 이제 position.getStockData().getShortCode()가 안전하게 호출됨
+                    sendRealtimeStockUpdate(session, memberId, stockCode, currentPrice, position);
                 }
             }
         } catch (Exception e) {
