@@ -19,7 +19,7 @@ class KiwoomAPI:
         self.base_url = settings.API_BASE_URL
         self.api_key = settings.KIWOOM_API_KEY
         self.api_secret = settings.KIWOOM_API_SECRET
-        self.access_token = None
+        self.token = None
         
         # HTTP 세션
         self.session = None
@@ -61,40 +61,33 @@ class KiwoomAPI:
                     "Accept": "application/json"
                 }
             )
-            
-            # 인증 토큰 획득
-            auth_data = {
-                "apiKey": self.api_key,
-                "apiSecret": self.api_secret
-            }
-            
-            async with self.session.post(f"{self.base_url}/auth/token", json=auth_data) as response:
+            # 토큰이 이미 설정되어 있는지 확인
+            if not self.token:
+                logger.error("접근 토큰이 설정되지 않았습니다.")
+                return False
+                
+            # 세션 헤더에 토큰 추가
+            self.session.headers.update({
+                "Authorization": f"Bearer {self.token}"
+            })
+
+            # 간단한 연결 테스트 요청 (예: 간단한 핑 또는 상태 확인)
+            async with self.session.get(f"{self.base_url}/status") as response:
+                
                 if response.status == 200:
-                    result = await response.json()
-                    self.access_token = result.get("accessToken")
+                    # 인증 성공
+                    self.connected = True
                     
-                    if self.access_token:
-                        # 인증 성공
-                        self.connected = True
-                        
-                        # 세션 헤더에 토큰 추가
-                        self.session.headers.update({
-                            "Authorization": f"Bearer {self.access_token}"
-                        })
-                        
-                        # 계좌 정보 가져오기
-                        await self._get_account_info()
-                        
-                        # 시장 데이터 초기화
-                        await self._init_market_data()
-                        
-                        logger.info("REST API 연결 완료")
-                        return True
-                    else:
-                        logger.error("토큰 획득 실패")
-                        return False
+                    # 백엔드 API에서 계좌 정보 요청
+                    await self.request_account_info()
+                    
+                    # 시장 데이터 초기화
+                    await self._get_stock_list()
+                    
+                    logger.info("REST API 연결 완료")
+                    return True
                 else:
-                    logger.error(f"로그인 실패: HTTP {response.status}")
+                    logger.error(f"API 연결 테스트 실패: HTTP {response.status}")
                     return False
         
         except Exception as e:
@@ -130,82 +123,137 @@ class KiwoomAPI:
     async def _get_stock_list(self):
         """종목 리스트 가져오기"""
         try:
-            # 코스피 종목 리스트
-            async with self.session.get(f"{self.base_url}/market/stocks/kospi") as response:
-                if response.status == 200:
-                    kospi_data = await response.json()
-                    self.kospi_symbols = [stock["code"] for stock in kospi_data]
-                else:
-                    logger.error(f"코스피 종목 조회 실패: HTTP {response.status}")
-            
-            # 코스닥 종목 리스트
-            async with self.session.get(f"{self.base_url}/market/stocks/kosdaq") as response:
-                if response.status == 200:
-                    kosdaq_data = await response.json()
-                    self.kosdaq_symbols = [stock["code"] for stock in kosdaq_data]
-                else:
-                    logger.error(f"코스닥 종목 조회 실패: HTTP {response.status}")
-            
-            # 시가총액 상위 종목만 필터링
-            await self._filter_top_stocks()
-            
-            logger.info(f"코스피 종목 수: {len(self.kospi_symbols)}, 코스닥 종목 수: {len(self.kosdaq_symbols)}")
-        
-        except Exception as e:
-            logger.error(f"종목 리스트 조회 중 오류: {str(e)}")
-    
-    async def _filter_top_stocks(self):
-        """시가총액 상위 종목 필터링"""
-        try:
-            # 시가총액 정보 요청
-            params = {
-                "market": "ALL",
-                "orderBy": "marketCap",
-                "order": "DESC",
-                "perPage": 600
+            # 코스피 종목 리스트 요청
+            headers = {
+                "authorization": f"Bearer {self.access_token}",
+                "api-id": "ka10099"
             }
             
-            async with self.session.get(f"{self.base_url}/market/stocks", params=params) as response:
-                if response.status == 200:
-                    stocks = await response.json()
-                    
-                    # 코스피, 코스닥 종목 분류
-                    kospi_stocks = [stock for stock in stocks if stock["marketType"] == "KOSPI"]
-                    kosdaq_stocks = [stock for stock in stocks if stock["marketType"] == "KOSDAQ"]
-                    
-                    # 시가총액 상위 종목만 필터링
-                    if len(kospi_stocks) > 450:
-                        self.kospi_symbols = [stock["code"] for stock in kospi_stocks[:450]]
-                    else:
-                        self.kospi_symbols = [stock["code"] for stock in kospi_stocks]
-                    
-                    if len(kosdaq_stocks) > 150:
-                        self.kosdaq_symbols = [stock["code"] for stock in kosdaq_stocks[:150]]
-                    else:
-                        self.kosdaq_symbols = [stock["code"] for stock in kosdaq_stocks]
-                    
-                    if settings.DEBUG_MODE:
-                        # 디버그 모드에서는 종목 수 제한
-                        self.kospi_symbols = self.kospi_symbols[:30]
-                        self.kosdaq_symbols = self.kosdaq_symbols[:10]
-                else:
-                    logger.error(f"시가총액 정보 조회 실패: HTTP {response.status}")
-        
-        except Exception as e:
-            logger.error(f"시가총액 필터링 중 오류: {str(e)}")
+            # 코스피 종목 요청
+            kospi_body = {
+                "mrkt_tp": "0"  # 코스피
+            }
             
-            # 실패 시 기본 필터링 적용
+            kospi_stocks = []
+            cont_yn = "Y"
+            next_key = ""
+            
+            # 연속 조회로 모든 코스피 종목 가져오기
+            while cont_yn == "Y":
+                request_headers = headers.copy()
+                if next_key:
+                    request_headers["cont-yn"] = "Y"
+                    request_headers["next-key"] = next_key
+                    
+                async with self.session.post(
+                    f"{self.base_url}/api/dostk/stkinfo", 
+                    headers=request_headers, 
+                    json=kospi_body
+                ) as response:
+                    if response.status == 200:
+                        resp_data = await response.json()
+                        
+                        # 연속 조회 정보 업데이트
+                        cont_yn = response.headers.get("cont-yn", "N")
+                        next_key = response.headers.get("next-key", "")
+                        
+                        # 종목 정보 추가
+                        stock_list = resp_data.get("list", [])
+                        for stock in stock_list:
+                            if "code" in stock and "name" in stock and "lastPrice" in stock and "listCount" in stock:
+                                try:
+                                    # 전일종가와 상장주식수 숫자로 변환
+                                    last_price = int(stock["lastPrice"])
+                                    list_count = int(stock["listCount"])
+                                    # 시가총액 계산 (전일종가 * 상장주식수)
+                                    market_cap = last_price * list_count
+                                    
+                                    kospi_stocks.append({
+                                        "code": stock["code"],
+                                        "name": stock["name"],
+                                        "market_cap": market_cap
+                                    })
+                                except (ValueError, TypeError):
+                                    logger.warning(f"코스피 종목 데이터 변환 오류: {stock}")
+                    else:
+                        logger.error(f"코스피 종목 조회 실패: HTTP {response.status}")
+                        break
+            
+            # 코스닥 종목 요청
+            kosdaq_body = {
+                "mrkt_tp": "10"  # 코스닥
+            }
+            
+            kosdaq_stocks = []
+            cont_yn = "Y"
+            next_key = ""
+            
+            # 연속 조회로 모든 코스닥 종목 가져오기
+            while cont_yn == "Y":
+                request_headers = headers.copy()
+                if next_key:
+                    request_headers["cont-yn"] = "Y"
+                    request_headers["next-key"] = next_key
+                    
+                async with self.session.post(
+                    f"{self.base_url}/api/dostk/stkinfo", 
+                    headers=request_headers, 
+                    json=kosdaq_body
+                ) as response:
+                    if response.status == 200:
+                        resp_data = await response.json()
+                        
+                        # 연속 조회 정보 업데이트
+                        cont_yn = response.headers.get("cont-yn", "N")
+                        next_key = response.headers.get("next-key", "")
+                        
+                        # 종목 정보 추가
+                        stock_list = resp_data.get("list", [])
+                        for stock in stock_list:
+                            if "code" in stock and "name" in stock and "lastPrice" in stock and "listCount" in stock:
+                                try:
+                                    # 전일종가와 상장주식수 숫자로 변환
+                                    last_price = int(stock["lastPrice"])
+                                    list_count = int(stock["listCount"])
+                                    # 시가총액 계산 (전일종가 * 상장주식수)
+                                    market_cap = last_price * list_count
+                                    
+                                    kosdaq_stocks.append({
+                                        "code": stock["code"],
+                                        "name": stock["name"],
+                                        "market_cap": market_cap
+                                    })
+                                except (ValueError, TypeError):
+                                    logger.warning(f"코스닥 종목 데이터 변환 오류: {stock}")
+                    else:
+                        logger.error(f"코스닥 종목 조회 실패: HTTP {response.status}")
+                        break
+            
+            # 시가총액 기준 정렬 (내림차순)
+            kospi_stocks.sort(key=lambda x: x["market_cap"], reverse=True)
+            kosdaq_stocks.sort(key=lambda x: x["market_cap"], reverse=True)
+            
+            # 상위 종목만 선택
+            kospi_top = kospi_stocks[:450] if len(kospi_stocks) > 450 else kospi_stocks
+            kosdaq_top = kosdaq_stocks[:150] if len(kosdaq_stocks) > 150 else kosdaq_stocks
+            
+            # 종목 코드만 추출하여 저장
+            self.kospi_symbols = [stock["code"] for stock in kospi_top]
+            self.kosdaq_symbols = [stock["code"] for stock in kosdaq_top]
+            
+            # 디버그 모드일 경우 종목 수 제한
             if settings.DEBUG_MODE:
-                # 디버그 모드에서는 종목 수 제한
                 self.kospi_symbols = self.kospi_symbols[:30]
                 self.kosdaq_symbols = self.kosdaq_symbols[:10]
-            else:
-                # 임시로 현재 리스트에서 450개, 150개만 사용
-                if len(self.kospi_symbols) > 450:
-                    self.kospi_symbols = self.kospi_symbols[:450]
-                
-                if len(self.kosdaq_symbols) > 150:
-                    self.kosdaq_symbols = self.kosdaq_symbols[:150]
+            
+            logger.info(f"코스피 종목 수: {len(self.kospi_symbols)}, 코스닥 종목 수: {len(self.kosdaq_symbols)}")
+            
+        except Exception as e:
+            logger.error(f"종목 리스트 조회 중 오류: {str(e)}")
+            # 오류 발생 시 기본 필터링 설정
+            if settings.DEBUG_MODE:
+                self.kospi_symbols = self.kospi_symbols[:30] if self.kospi_symbols else []
+                self.kosdaq_symbols = self.kosdaq_symbols[:10] if self.kosdaq_symbols else []
     
     async def get_stock_name(self, code):
         """종목 코드로 종목명 조회"""
@@ -306,7 +354,7 @@ class KiwoomAPI:
     async def _start_websocket(self):
         """웹소켓 연결 시작"""
         try:
-            ws_url = f"{self.base_url.replace('http', 'ws')}/ws/quotes?token={self.access_token}"
+            ws_url = f"{self.base_url.replace('http', 'ws')}/ws/quotes?token={self.token}"
             self.websocket = await self.session.ws_connect(ws_url)
             
             # 웹소켓 메시지 수신 태스크 시작
@@ -420,36 +468,33 @@ class KiwoomAPI:
             logger.error(f"실시간 시세 구독 해제 중 오류: {str(e)}")
     
     async def request_account_info(self):
-        """계좌 정보 요청"""
+        """백엔드 API에서 계좌 정보 요청"""
         try:
-            async with self.session.get(f"{self.base_url}/user/accounts/{self.account_number}/balance") as response:
+            # 백엔드 API에서 포트폴리오 정보 요청
+            async with self.session.get(f"{settings.BACKEND_API_URL}/api/members/portfolio") as response:
                 if response.status == 200:
-                    account_data = await response.json()
+                    portfolio_data = await response.json()
                     
                     # 계좌 정보 업데이트
                     self.account_info = {
-                        "cash_balance": account_data.get("cashBalance", 0),
-                        "total_asset_value": account_data.get("totalAssetValue", 0),
+                        "cash_balance": portfolio_data.get("memberMoney", 0),
+                        "total_asset_value": portfolio_data.get("totalAsset", 0),
                         "positions": {}
                     }
                     
-                    # 보유 종목 정보 요청
-                    async with self.session.get(f"{self.base_url}/user/accounts/{self.account_number}/positions") as pos_response:
-                        if pos_response.status == 200:
-                            positions = await pos_response.json()
-                            
-                            # 보유 종목 정보 업데이트
-                            for position in positions:
-                                code = position.get("code")
-                                self.account_info["positions"][code] = {
-                                    "code": code,
-                                    "name": position.get("name", ""),
-                                    "quantity": position.get("quantity", 0),
-                                    "purchase_price": position.get("purchasePrice", 0),
-                                    "current_price": position.get("currentPrice", 0),
-                                    "eval_profit_loss": position.get("evalProfitLoss", 0),
-                                    "earning_rate": position.get("earningRate", 0.0)
-                                }
+                    # 보유 종목 정보 업데이트
+                    for position in portfolio_data.get("positions", []):
+                        code = position.get("stockCode")
+                        if code:
+                            self.account_info["positions"][code] = {
+                                "code": code,
+                                "name": position.get("stockName", ""),
+                                "quantity": position.get("quantity", 0),
+                                "purchase_price": position.get("averagePrice", 0),
+                                "current_price": position.get("currentPrice", 0),
+                                "eval_profit_loss": position.get("profitLoss", 0),
+                                "earning_rate": position.get("returnRate", 0.0)
+                            }
                     
                     logger.info(f"계좌정보 업데이트: 예수금={self.account_info['cash_balance']}, 종목수={len(self.account_info['positions'])}")
                     return True
@@ -538,7 +583,7 @@ class KiwoomAPI:
                 }
             
             # 토큰 유효성 확인
-            if not self.access_token:
+            if not self.token:
                 logger.error("유효한 접근 토큰이 없습니다")
                 return {
                     "success": False,
@@ -575,7 +620,7 @@ class KiwoomAPI:
             async with self.session.post(
                 f"{self.api_base_url}/order",
                 json=order_data,
-                headers={"Authorization": f"Bearer {self.access_token}"}
+                headers={"Authorization": f"Bearer {self.token}"}
             ) as response:
                 result = await response.json()
                 

@@ -6,6 +6,7 @@ import AccountInfo from './components/AccountInfo';
 import RecentTrades from './components/RecentTrades';
 import Positions from './components/Positions';
 import Alert from './components/Alert';
+import TokenManager from './components/TokenManager'; // 토큰 관리자 컴포넌트 추가
 
 function App() {
   const [statusInfo, setStatusInfo] = useState({
@@ -25,36 +26,13 @@ function App() {
   const [trades, setTrades] = useState([]);
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [token, setToken] = useState('');
   
   // API URL 기본 경로
   const API_BASE_URL = 'http://localhost:8000';
   
-  // 토큰 가져오기
-  const getToken = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/token`, {
-        method: 'POST'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setToken(data.access_token);
-        return data.access_token;
-      } else {
-        console.error('토큰 발급 실패');
-        return null;
-      }
-    } catch (error) {
-      console.error('토큰 발급 중 오류:', error);
-      return null;
-    }
-  };
-  
-  // API 요청 헤더 생성
+  // API 요청 헤더
   const getHeaders = () => {
     return {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
   };
@@ -73,14 +51,6 @@ function App() {
   const startService = async () => {
     try {
       setIsLoading(true);
-      
-      // 토큰이 없으면 가져오기
-      const currentToken = token || await getToken();
-      if (!currentToken) {
-        showAlert('danger', '인증 토큰을 가져올 수 없습니다.');
-        setIsLoading(false);
-        return;
-      }
       
       const response = await fetch(`${API_BASE_URL}/service/start`, {
         method: 'POST',
@@ -109,14 +79,6 @@ function App() {
     try {
       setIsLoading(true);
       
-      // 토큰이 없으면 가져오기
-      const currentToken = token || await getToken();
-      if (!currentToken) {
-        showAlert('danger', '인증 토큰을 가져올 수 없습니다.');
-        setIsLoading(false);
-        return;
-      }
-      
       const response = await fetch(`${API_BASE_URL}/service/stop`, {
         method: 'POST',
         headers: getHeaders()
@@ -142,13 +104,6 @@ function App() {
   // 상태 정보 로드 함수
   const loadStatusInfo = async () => {
     try {
-      // 토큰이 없으면 가져오기
-      const currentToken = token || await getToken();
-      if (!currentToken) {
-        console.error('인증 토큰을 가져올 수 없습니다.');
-        return;
-      }
-      
       const response = await fetch(`${API_BASE_URL}/status`, {
         headers: getHeaders()
       });
@@ -179,13 +134,6 @@ function App() {
         return;
       }
       
-      // 토큰이 없으면 가져오기
-      const currentToken = token || await getToken();
-      if (!currentToken) {
-        console.error('인증 토큰을 가져올 수 없습니다.');
-        return;
-      }
-      
       const response = await fetch(`${API_BASE_URL}/account`, {
         headers: getHeaders()
       });
@@ -204,13 +152,6 @@ function App() {
     try {
       // 서비스가 실행 중이 아니면 요청 건너뛰기
       if (!statusInfo.is_running) {
-        return;
-      }
-      
-      // 토큰이 없으면 가져오기
-      const currentToken = token || await getToken();
-      if (!currentToken) {
-        console.error('인증 토큰을 가져올 수 없습니다.');
         return;
       }
       
@@ -247,11 +188,8 @@ function App() {
   
   // 초기 데이터 로드 및 인터벌 설정
   useEffect(() => {
-    // 초기 토큰 발급
-    getToken().then(() => {
-      // 토큰 발급 후 데이터 로드
-      loadDashboardData();
-    });
+    // 초기 데이터 로드
+    loadDashboardData();
     
     // 30초마다 데이터 새로고침
     const interval = setInterval(loadDashboardData, 30000);
@@ -273,6 +211,13 @@ function App() {
         />
         
         <div className="col-md-10 main-content">
+          {/* 새로운 토큰 관리자 컴포넌트 추가 */}
+          <div className="row mt-3">
+            <div className="col-md-6">
+              <TokenManager onRefresh={loadDashboardData} />
+            </div>
+          </div>
+          
           <div className="row mt-3">
             <div className="col-md-4">
               <AccountInfo accountInfo={accountInfo} />
