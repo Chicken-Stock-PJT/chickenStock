@@ -18,7 +18,16 @@ public enum StockErrorCode implements ErrorCode {
     CHART_DATA_PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E008", "차트 데이터 처리에 실패했습니다"),
     AUTHENTICATION_FAILED(HttpStatus.UNAUTHORIZED, "STOCK-E009", "API 인증에 실패했습니다"),
     INVALID_CHART_TYPE(HttpStatus.BAD_REQUEST, "STOCK-E010", "유효하지 않은 차트 타입입니다"),
-    INVALID_RANKING_TYPE(HttpStatus.BAD_REQUEST, "STOCK-E011", "유효하지 않은 랭킹 타입입니다");
+    INVALID_RANKING_TYPE(HttpStatus.BAD_REQUEST, "STOCK-E011", "유효하지 않은 랭킹 타입입니다"),
+    INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST, "STOCK-E012", "잔액이 부족합니다"),
+    INSUFFICIENT_STOCK(HttpStatus.BAD_REQUEST, "STOCK-E013", "보유 수량이 부족합니다"),
+    ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "STOCK-E014", "주문을 찾을 수 없습니다"),
+    PRICE_DATA_NOT_AVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "STOCK-E015", "현재 시장 가격을 조회할 수 없습니다"),
+    ORDER_EXECUTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E016", "주문 체결 처리에 실패했습니다"),
+    INVALID_ORDER_OPERATION(HttpStatus.BAD_REQUEST, "STOCK-E017", "유효하지 않은 주문 처리입니다"),
+    INVALID_REQUEST(HttpStatus.BAD_REQUEST, "STOCK-E018", "유효하지 않은 요청입니다."),
+    POSITION_UPDATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E019", "포지션 업데이트에 실패했습니다"),
+    OPERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E020", "관심종목 삭제 중 오류가 발생했습니다");
 
     private final HttpStatus httpStatus;
     private final String code;

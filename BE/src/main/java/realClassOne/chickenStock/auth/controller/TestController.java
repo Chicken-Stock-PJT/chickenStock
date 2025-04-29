@@ -12,5 +12,4 @@ public class TestController {
     public String oauthCallback(@RequestParam(required = false) String token) {
         return "callback";
     }
-
 }

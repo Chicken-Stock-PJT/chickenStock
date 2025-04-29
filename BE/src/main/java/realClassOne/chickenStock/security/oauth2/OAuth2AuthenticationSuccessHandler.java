@@ -26,8 +26,6 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     @Value("${app.oauth2.authorized-redirect-uri}")
     private String redirectUri;
 
-    // 사용하지 않는 쿠키 만료 관련 변수들 제거함
-
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException {

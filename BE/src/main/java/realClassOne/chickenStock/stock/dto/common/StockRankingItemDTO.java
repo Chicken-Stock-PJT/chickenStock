@@ -36,6 +36,4 @@ public class StockRankingItemDTO implements Serializable {
     private String tradeVolume; // 거래량
     private String previousRatio; // 전일비
     private String tradeTurnoverRate; // 거래회전율
-
-    // 기타 필요한 필드들은 여기에 추가
 }
