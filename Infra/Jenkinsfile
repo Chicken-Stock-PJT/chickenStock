@@ -39,11 +39,13 @@ pipeline {
             steps {
                 dir('BE') {  // BE 디렉토리로 이동해서 빌드 실행
                     sh '''
+                        echo "===== Building Spring Boot Application ====="
                         chmod +x ./gradlew
-                        set -o allexport
-                        . .env
-                        set +o allexport
-                        ./gradlew clean build
+                        bash -c '
+                            set -o allexport
+                            source .env
+                            ./gradlew clean build
+                        '
                     '''
                 }
             }
