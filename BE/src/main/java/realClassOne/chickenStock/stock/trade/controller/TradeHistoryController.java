@@ -15,9 +15,11 @@ public class TradeHistoryController {
 
     @GetMapping
     public ResponseEntity<TradeHistoriesResponse> getTradeHistories(
-            @RequestHeader("Authorization") String authorizationHeader) {
+            @RequestHeader("Authorization") String authorizationHeader,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
 
-        TradeHistoriesResponse response = tradeHistoryService.getTradeHistories(authorizationHeader);
+        TradeHistoriesResponse response = tradeHistoryService.getTradeHistories(authorizationHeader, page, size);
 
         return ResponseEntity.ok(response);
     }
