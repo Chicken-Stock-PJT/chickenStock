@@ -56,3 +56,25 @@ export type StockProps = {
   | ({ rankingType: "volume" } & VolumeRankingItem)
   | ({ rankingType: "fluctuationRate" } & FluctutaionRankingItem)
 );
+
+export interface StockChartResponse {
+  stockCode: string;
+  stockName: string;
+  chartData: StockChartData[];
+  hasNext: boolean;
+  nextKey: string;
+  code: number;
+  message: string;
+}
+
+export interface StockChartData {
+  date: string;
+  currentPrice: string;
+  openPrice: string;
+  highPrice: string;
+  lowPrice: string;
+  volume: string;
+  tradingValue: string;
+  modifiedRatio: string;
+  previousClosePrice: string;
+}
