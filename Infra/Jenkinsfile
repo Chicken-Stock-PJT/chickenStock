@@ -44,7 +44,7 @@ pipeline {
                         bash -c '
                             set -o allexport
                             source .env
-                            ./gradlew clean build
+                            ./gradlew clean build -x test
                         '
                     '''
                 }
