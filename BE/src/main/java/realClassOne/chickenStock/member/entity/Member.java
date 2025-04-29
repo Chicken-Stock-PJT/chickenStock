@@ -89,6 +89,9 @@ public class Member {
     @OneToOne(mappedBy = "member", cascade = CascadeType.ALL)
     private InvestmentSummary investmentSummary;
 
+    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<WatchList> watchLists = new ArrayList<>();
+
     public static Member of(String email, String password, String nickname, String name,
                             String imageUrl, String provider,
                             String providerId, Set<MemberRole> roles) {

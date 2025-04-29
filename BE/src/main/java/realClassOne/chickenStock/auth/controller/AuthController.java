@@ -84,14 +84,16 @@ public class AuthController {
 
     @PostMapping("/token/refresh-web")
     public ResponseEntity<WebTokenResponseDTO> refreshAccessToken(
-            @CookieValue(name = "refreshToken", required = false) String refreshToken,
-            @CookieValue(name = "Authorization", required = false) String accessToken,
+            @CookieValue(name = "refreshToken") String refreshToken,
+            @CookieValue(name = "Authorization") String accessToken,
             HttpServletResponse response) {
         return ResponseEntity.ok(authService.refreshAccessTokenWeb(refreshToken, accessToken, response));
     }
 
     @PostMapping("/token/refresh-mobile")
-    public ResponseEntity<TokenDto> refreshAccessTokenMobile(@RequestBody RefreshTokenRequestDTO request) {
+    public ResponseEntity<TokenDto> refreshAccessTokenMobile(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @RequestBody RefreshTokenRequestDTO request) {
         return ResponseEntity.ok(authService.refreshAccessTokenMobile(request));
     }
 
@@ -105,7 +107,9 @@ public class AuthController {
     }
 
     @PostMapping("/token/refresh-all-mobile")
-    public ResponseEntity<TokenDto> refreshAllTokensMobile(@RequestBody RefreshTokenRequestDTO request) {
+    public ResponseEntity<TokenDto> refreshAllTokensMobile(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @RequestBody RefreshTokenRequestDTO request) {
         return ResponseEntity.ok(authService.refreshAllTokensMobile(request));
     }
 
