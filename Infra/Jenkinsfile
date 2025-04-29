@@ -23,10 +23,13 @@ pipeline {
                 file(credentialsId: 'backend-env-file-credentials', variable: 'BACKEND_ENV_FILE')
                 ]) {
                     sh '''
+                      echo "===== Setting up Environment ====="
                       mkdir -p BE/src/main/resources
                       chmod -R 700 BE/src/main/resources
                       cp $BACKEND_ENV_FILE BE/.env
                       cp $ENV_FILE_ENT BE/src/main/resources/application.yml
+                      echo "===== BE 디렉토리 파일 리스트 ====="
+                      ls -al BE/
                     '''
                 }
             }
