@@ -1,4 +1,4 @@
-import { Calendar, DollarSign, TrendingUp, Trophy } from "lucide-react";
+import { DollarSign, TrendingUp } from "lucide-react";
 
 interface User {
   email: string;
