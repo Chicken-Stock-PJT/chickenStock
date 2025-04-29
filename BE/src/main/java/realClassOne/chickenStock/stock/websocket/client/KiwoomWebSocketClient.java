@@ -65,12 +65,12 @@ public class KiwoomWebSocketClient {
     public void processStockPriceUpdate(String stockCode, JsonNode data) {
         try {
             // 로그 데이터 (기존 코드)
-            log.info("[실시간가격] 종목: {}, 현재가: {}, 전일대비: {}, 등락률: {}%, 체결시간: {}",
-                    stockCode,
-                    data.get("10").asText(),
-                    data.get("11").asText(),
-                    data.get("12").asText(),
-                    data.get("20").asText());
+//            log.info("[실시간가격] 종목: {}, 현재가: {}, 전일대비: {}, 등락률: {}%, 체결시간: {}",
+//                    stockCode,
+//                    data.get("10").asText(),
+//                    data.get("11").asText(),
+//                    data.get("12").asText(),
+//                    data.get("20").asText());
 
             // 최신 데이터를 캐시에 저장 (기존 코드)
             latestPriceDataCache.put(stockCode, data);
@@ -128,7 +128,7 @@ public class KiwoomWebSocketClient {
                         }
 
                         if (!"PING".equals(trnm)) {
-                            log.debug("키움증권 WebSocket 메시지 수신: {}", message);
+//                            log.debug("키움증권 WebSocket 메시지 수신: {}", message);
                         }
                     } catch (Exception e) {
                         log.error("WebSocket 메시지 처리 중 오류 발생", e);
@@ -324,27 +324,19 @@ public class KiwoomWebSocketClient {
                     JsonNode values = dataItem.get("values");
 
                     if ("0B".equals(type)) {
-                        // 캐시에 최신 데이터 저장 (이 부분 추가)
+                        // 캐시에 최신 데이터 저장
                         latestPriceDataCache.put(stockCode, values);
 
-                        // 로그보기
-                        log.info("[실시간가격] 종목: {}, 현재가: {}, 전일대비: {}, 등락률: {}%, 체결시간: {}",
-                                stockCode,
-                                values.get("10").asText(),
-                                values.get("11").asText(),
-                                values.get("12").asText(),
-                                values.get("20").asText());
-
                         // 주식체결 데이터 처리
-                        notifyStockPriceUpdate(stockCode, values);
+                        // 여기서 별도의 스레드에서 실행하여 웹소켓 스레드 블로킹 방지
+                        new Thread(() -> {
+                            try {
+                                notifyStockPriceUpdate(stockCode, values);
+                            } catch (Exception e) {
+                                log.error("주식 가격 업데이트 처리 중 오류 발생", e);
+                            }
+                        }).start();
                     } else if ("0D".equals(type)) {
-                        // 주식호가잔량 데이터 로그
-                        log.info("[호가잔량] 종목: {}, 시간: {}, 최우선매도호가: {}, 최우선매수호가: {}",
-                                stockCode,
-                                values.get("21").asText(),
-                                values.get("41").asText().trim(),  // 공백 제거
-                                values.get("51").asText().replace("-", "").trim());  // 음수 부호 및 공백 제거
-
                         // 주식호가잔량 데이터 처리
                         notifyStockBidAskUpdate(stockCode, values);
                     }

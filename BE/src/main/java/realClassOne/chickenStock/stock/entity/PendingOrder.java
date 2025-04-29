@@ -89,13 +89,12 @@ public class PendingOrder {
 
     /**
      * 주문 처리 실패 시 상태를 실패로 변경합니다.
-     * 이는 주문 처리 중 오류가 발생했을 때 사용합니다.
+     * 보다 유연하게 작동하도록 수정
      */
     public void fail() {
-        if (this.status != OrderStatus.PROCESSING) {
-            // 처리 중인 주문만 실패로 변경할 수 있습니다.
-            // 하지만 예외 상황에서는 다른 상태에서도 호출될 수 있으므로 유연하게 처리
-            throw new IllegalStateException("처리 중인 주문만 실패로 변경할 수 있습니다.");
+        // 이미 완료/취소된 주문은 실패로 변경하지 않음
+        if (this.status == OrderStatus.COMPLETED || this.status == OrderStatus.CANCELED) {
+            return;
         }
         this.status = OrderStatus.FAILED;
     }

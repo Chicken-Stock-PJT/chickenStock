@@ -22,4 +22,7 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
     List<PendingOrder> findExecutableOrders(@Param("stockCode") String stockCode,
                                             @Param("orderType") TradeHistory.TradeType orderType,
                                             @Param("price") Long price);
+
+    @Query("SELECT po FROM PendingOrder po JOIN FETCH po.stockData WHERE po.status = realClassOne.chickenStock.stock.entity.PendingOrder$OrderStatus.PENDING")
+    List<PendingOrder> findPendingOrdersWithStockData();
 }
