@@ -23,6 +23,8 @@ import androidx.navigation.NavController
 import com.example.chickenstock.navigation.Screen
 import com.example.chickenstock.ui.theme.Gray300
 import com.example.chickenstock.viewmodel.AuthViewModel
+import coil.compose.rememberAsyncImagePainter
+import coil.transform.CircleCropTransformation
 
 data class StockItem(
     val stockCode: String,
@@ -38,7 +40,9 @@ fun StockListItem(
     stock: StockItem,
     navController: NavController,
     authViewModel: AuthViewModel,
-    onFavoriteClick: () -> Unit = {}
+    onFavoriteClick: () -> Unit = {},
+    showContractStrength: Boolean = false,
+    showTradeVolume: Boolean = false
 ) {
     var showLoginDialog by remember { mutableStateOf(false) }
     
@@ -119,7 +123,7 @@ fun StockListItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 왼쪽 정렬: 하트, 숫자, 이름&금액
+            // 왼쪽 정렬: 하트, 로고, 이름&금액
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
@@ -146,14 +150,18 @@ fun StockListItem(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 // 종목 로고
-                AsyncImage(
-                    model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${stock.stockCode}.png",
-                    contentDescription = "주식 로고",
+                Box(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(Color.White)
-                )
+                ) {
+                    AsyncImage(
+                        model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${stock.stockCode}.png",
+                        contentDescription = "주식 로고",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 
                 // 회사 이름과 가격
                 Column(
@@ -161,20 +169,20 @@ fun StockListItem(
                 ) {
                     Text(
                         text = stock.stockName,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.W700,
                         fontFamily = SCDreamFontFamily
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "${stock.currentPrice}원",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
                         )
                         Text(
                             text = " ${stock.fluctuationRate}%",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.W500,
                             color = fluctuationColor,
                             fontFamily = SCDreamFontFamily
@@ -183,24 +191,44 @@ fun StockListItem(
                 }
             }
             
-            // 오른쪽 정렬: 거래대금과 화살표
+            // 오른쪽 정렬: 거래대금/체결강도/거래량과 화살표
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End
             ) {
-                Text(
-                    text = "${stock.tradeAmount}원",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.W500,
-                    fontFamily = SCDreamFontFamily,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(end = 4.dp)
-                )
+                Column(
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = when {
+                            showContractStrength -> "체결강도"
+                            showTradeVolume -> "거래량"
+                            else -> "거래대금"
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.W500,
+                        color = Color.Gray,
+                        fontFamily = SCDreamFontFamily
+                    )
+                    Text(
+                        text = when {
+                            showContractStrength -> "${stock.tradeAmount}%"
+                            showTradeVolume -> "${stock.tradeAmount}주"
+                            else -> "${stock.tradeAmount}원"
+                        },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.W500,
+                        fontFamily = SCDreamFontFamily,
+                        color = Color.Black
+                    )
+                }
                 Icon(
                     imageVector = Icons.Filled.KeyboardArrowRight,
                     contentDescription = "더 보기",
                     tint = Color.Gray,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .size(20.dp)
                 )
             }
         }

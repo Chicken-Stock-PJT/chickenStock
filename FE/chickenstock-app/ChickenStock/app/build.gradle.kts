@@ -17,6 +17,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
@@ -37,6 +40,14 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.1"
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
     }
 }
 
@@ -79,4 +90,7 @@ dependencies {
 
     // 카카오 SDK
     implementation("com.kakao.sdk:v2-user:2.19.0")
+
+    // 웹소켓 관련 의존성
+    implementation("com.squareup.okhttp3:okhttp:4.9.3")
 }

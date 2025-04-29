@@ -91,6 +91,19 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.example.chickenstock.api.RetrofitClient
+import com.example.chickenstock.api.StockService
+import com.example.chickenstock.api.StockDetailResponse
+import android.util.Log
+import okhttp3.*
+import com.google.gson.Gson
+import org.json.JSONObject
+import com.example.chickenstock.api.WebSocketManager
+import com.example.chickenstock.api.StockPrice
+import com.example.chickenstock.api.StockBidAsk
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,6 +158,42 @@ fun StockDetailScreen(
     val hideKeyboard = {
         keyboardController?.hide()
         focusManager.clearFocus()
+    }
+
+    // API 상태 관리
+    var stockDetail by remember { mutableStateOf<StockDetailResponse?>(null) }
+
+    // 웹소켓 데이터 상태
+    val webSocketManager = remember { WebSocketManager.getInstance() }
+    val stockPrice = webSocketManager.stockPrice.collectAsState().value
+    val stockBidAsk = webSocketManager.stockBidAsk.collectAsState().value
+
+    // 웹소켓 연결
+    LaunchedEffect(stock.stockCode) {
+        Log.d("StockDetailScreen", "웹소켓 연결 시작: ${stock.stockCode}")
+        webSocketManager.connect(stock.stockCode)
+    }
+
+    // 화면이 사라질 때 웹소켓 연결 해제
+    DisposableEffect(Unit) {
+        onDispose {
+            Log.d("StockDetailScreen", "웹소켓 연결 해제")
+            webSocketManager.disconnect()
+        }
+    }
+
+    // 상단 가격 정보 업데이트
+    LaunchedEffect(stockPrice) {
+        stockPrice?.let { price ->
+            Log.d("StockDetailScreen", "주식 가격 업데이트: ${price.currentPrice}")
+        }
+    }
+
+    // 호가 데이터 업데이트
+    LaunchedEffect(stockBidAsk) {
+        stockBidAsk?.let { bidAsk ->
+            Log.d("StockDetailScreen", "호가 데이터 업데이트: ${bidAsk.timestamp}")
+        }
     }
 
     if (showSellBottomSheet) {
