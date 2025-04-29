@@ -25,8 +25,8 @@ pipeline {
                     sh '''
                       mkdir -p BE/src/main/resources
                       chmod -R 700 BE/src/main/resources
-                      cp $ENV_FILE_ENT BE/src/main/resources/application.yml
                       cp $BACKEND_ENV_FILE BE/.env
+                      cp $ENV_FILE_ENT BE/src/main/resources/application.yml
                     '''
                 }
             }
