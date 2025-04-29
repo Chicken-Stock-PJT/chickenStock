@@ -23,6 +23,7 @@ import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -41,6 +42,8 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
     private final Map<String, Long> sessionMemberMap = new ConcurrentHashMap<>();
     // 회원별 세션 관리
     private final Map<Long, WebSocketSession> memberSessionMap = new ConcurrentHashMap<>();
+
+    private final Map<String, Set<Long>> stockSubscribers = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
@@ -65,10 +68,28 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         log.info("포트폴리오 WebSocket 클라이언트 연결 종료: {}", session.getId());
 
-        // 세션-회원 매핑 정보 제거
+        // 세션-회원 매핑 정보 가져오기
         Long memberId = sessionMemberMap.remove(session.getId());
         if (memberId != null) {
             memberSessionMap.remove(memberId);
+
+            // 해당 회원의 구독 정보 제거 및 필요시 구독 취소
+            for (Map.Entry<String, Set<Long>> entry : stockSubscribers.entrySet()) {
+                String stockCode = entry.getKey();
+                Set<Long> subscribers = entry.getValue();
+
+                // 해당 종목 구독자 목록에서 회원 제거
+                subscribers.remove(memberId);
+
+                // 구독자가 없으면 종목 구독 취소 및 맵에서 제거
+                if (subscribers.isEmpty()) {
+                    if (kiwoomWebSocketClient.isSubscribed(stockCode)) {
+                        kiwoomWebSocketClient.unsubscribeStock(stockCode);
+                        log.info("종목 구독 취소: {}", stockCode);
+                    }
+                    stockSubscribers.remove(stockCode);
+                }
+            }
         }
 
         // 등록된 클라이언트가 없으면 리스너 제거
@@ -143,6 +164,10 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
         // 사용자가 보유한 종목 구독 등록
         List<String> stockCodes = portfolioService.getMemberStockCodes(memberId);
         for (String stockCode : stockCodes) {
+            // 종목별 구독자 목록에 회원 추가
+            stockSubscribers.computeIfAbsent(stockCode, k -> ConcurrentHashMap.newKeySet()).add(memberId);
+
+            // 새로운 구독이면 키움 클라이언트에 등록
             if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
                 kiwoomWebSocketClient.subscribeStock(stockCode);
                 log.info("회원 {} 보유 종목 {} 구독 등록", memberId, stockCode);
@@ -250,7 +275,8 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
                 return null;
             }
 
-            List<HoldingPosition> positions = holdingPositionRepository.findByMember(member);
+            // 변경된 부분: JOIN FETCH를 사용하여 StockData를 즉시 로딩
+            List<HoldingPosition> positions = holdingPositionRepository.findWithStockDataByMemberId(memberId);
 
             Long totalInvestment = 0L;
             Long totalValuation = 0L;
@@ -261,7 +287,12 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
 
                 Long currentPrice = 0L;
                 if (priceData != null && priceData.has("10")) {
-                    currentPrice = Long.parseLong(priceData.get("10").asText().replace(",", ""));
+                    // 수정된 부분: 부호 및 쉼표 처리 추가
+                    currentPrice = Long.parseLong(priceData.get("10").asText()
+                            .replace(",", "")
+                            .replace("+", "")
+                            .replace("-", "")
+                            .trim());
                 }
 
                 totalInvestment += position.getAveragePrice() * position.getQuantity();
