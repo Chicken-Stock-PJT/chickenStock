@@ -31,6 +31,7 @@ import com.github.mikephil.charting.interfaces.datasets.ILineDataSet
 import com.example.chickenstock.ui.components.ChartMarkerView
 import com.example.chickenstock.ui.theme.Gray300
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import coil.compose.AsyncImage
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
@@ -308,7 +309,10 @@ fun StockDetailScreen(
                                     .focusRequester(priceFocusRequester),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = ChartBlue,
-                                    unfocusedBorderColor = Gray300
+                                    unfocusedBorderColor = Gray300,
+                                    focusedTextColor = Color.Black,
+                                    unfocusedTextColor = Color.Black,
+                                    disabledTextColor = Color.Black
                                 )
                             )
                             
@@ -337,7 +341,9 @@ fun StockDetailScreen(
                                     .focusRequester(quantityFocusRequester),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = ChartBlue,
-                                    unfocusedBorderColor = Gray300
+                                    unfocusedBorderColor = Gray300,
+                                    focusedTextColor = Color.Black,
+                                    unfocusedTextColor = Color.Black
                                 )
                             )
                             
@@ -386,13 +392,14 @@ fun StockDetailScreen(
                                     text = "매도",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontFamily = SCDreamFontFamily
+                                    fontFamily = SCDreamFontFamily,
+                                    color = Color.White
                                 )
                             }
                         }
                     }
                     2 -> {
-                        // 주문 확인 화면
+                        // 매도 시트 2번째 화면
                         Text(
                             text = "매도 주문 확인",
                             fontSize = 20.sp,
@@ -445,28 +452,32 @@ fun StockDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Button(
-                                onClick = { 
-                                    hideKeyboard()
-                                    showSellBottomSheet = false
-                                    sellStep = 1
-                                    sellOrderType = "지정가"
-                                    sellPrice = ""
-                                    sellQuantity = ""
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Gray200,
-                                    contentColor = Gray700
-                                ),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = "취소",
-                                    fontSize = 16.sp,
-                                    fontFamily = SCDreamFontFamily
-                                )
+                            // 취소 버튼 - 로딩 중일 때는 숨김
+                            if (!isLoading) {
+                                Button(
+                                    onClick = { 
+                                        hideKeyboard()
+                                        showSellBottomSheet = false
+                                        sellStep = 1
+                                        sellOrderType = "지정가"
+                                        sellPrice = ""
+                                        sellQuantity = ""
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Gray200,
+                                        contentColor = Gray700
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "취소",
+                                        fontSize = 16.sp,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
                             }
                             
+                            // 확인 버튼 - 항상 표시되지만 로딩 중일 때는 인디케이터로 변경
                             Button(
                                 onClick = { 
                                     hideKeyboard()
@@ -495,7 +506,8 @@ fun StockDetailScreen(
                                     Text(
                                         text = "확인",
                                         fontSize = 16.sp,
-                                        fontFamily = SCDreamFontFamily
+                                        fontFamily = SCDreamFontFamily,
+                                        color = Color.White
                                     )
                                 }
                             }
@@ -544,7 +556,8 @@ fun StockDetailScreen(
                                 Text(
                                     text = "확인",
                                     fontSize = 16.sp,
-                                    fontFamily = SCDreamFontFamily
+                                    fontFamily = SCDreamFontFamily,
+                                    color = Color.White
                                 )
                             }
                         }
@@ -660,7 +673,10 @@ fun StockDetailScreen(
                                     .focusRequester(priceFocusRequester),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = Secondary500,
-                                    unfocusedBorderColor = Gray300
+                                    unfocusedBorderColor = Gray300,
+                                    focusedTextColor = Color.Black,
+                                    unfocusedTextColor = Color.Black,
+                                    disabledTextColor = Color.Black
                                 )
                             )
                             
@@ -694,7 +710,9 @@ fun StockDetailScreen(
                                     .focusRequester(quantityFocusRequester),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = Secondary500,
-                                    unfocusedBorderColor = Gray300
+                                    unfocusedBorderColor = Gray300,
+                                    focusedTextColor = Color.Black,
+                                    unfocusedTextColor = Color.Black
                                 )
                             )
                             
@@ -750,13 +768,14 @@ fun StockDetailScreen(
                                     text = "매수",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontFamily = SCDreamFontFamily
+                                    fontFamily = SCDreamFontFamily,
+                                    color = Color.White
                                 )
                             }
                         }
                     }
                     2 -> {
-                        // 주문 확인 화면
+                        // 매수 시트 2번째 화면
                         Text(
                             text = "매수 주문 확인",
                             fontSize = 20.sp,
@@ -806,28 +825,32 @@ fun StockDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Button(
-                                onClick = { 
-                                    hideKeyboard()
-                                    showBuyBottomSheet = false
-                                    buyStep = 1
-                                    buyOrderType = "지정가"
-                                    buyPrice = ""
-                                    buyQuantity = ""
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Gray200,
-                                    contentColor = Gray700
-                                ),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = "취소",
-                                    fontSize = 16.sp,
-                                    fontFamily = SCDreamFontFamily
-                                )
+                            // 취소 버튼 - 로딩 중일 때는 숨김
+                            if (!isLoading) {
+                                Button(
+                                    onClick = { 
+                                        hideKeyboard()
+                                        showBuyBottomSheet = false
+                                        buyStep = 1
+                                        buyOrderType = "지정가"
+                                        buyPrice = ""
+                                        buyQuantity = ""
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Gray200,
+                                        contentColor = Gray700
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "취소",
+                                        fontSize = 16.sp,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
                             }
                             
+                            // 확인 버튼 - 항상 표시되지만 로딩 중일 때는 인디케이터로 변경
                             Button(
                                 onClick = { 
                                     hideKeyboard()
@@ -856,7 +879,8 @@ fun StockDetailScreen(
                                     Text(
                                         text = "확인",
                                         fontSize = 16.sp,
-                                        fontFamily = SCDreamFontFamily
+                                        fontFamily = SCDreamFontFamily,
+                                        color = Color.White
                                     )
                                 }
                             }
@@ -905,7 +929,8 @@ fun StockDetailScreen(
                                 Text(
                                     text = "확인",
                                     fontSize = 16.sp,
-                                    fontFamily = SCDreamFontFamily
+                                    fontFamily = SCDreamFontFamily,
+                                    color = Color.White
                                 )
                             }
                         }
@@ -959,7 +984,7 @@ fun StockDetailScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .height(56.dp),
+                    .height(40.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 // 매도 버튼 (왼쪽)
@@ -975,7 +1000,7 @@ fun StockDetailScreen(
                 ) {
                     Text(
                         text = "매도",
-                        fontSize = 18.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.W700,
                         fontFamily = SCDreamFontFamily,
                         color = Color.White
@@ -997,7 +1022,7 @@ fun StockDetailScreen(
                 ) {
                     Text(
                         text = "매수",
-                        fontSize = 18.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = SCDreamFontFamily,
                         color = Color.White
@@ -1095,21 +1120,38 @@ fun StockDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 // 차트 전환 버튼
-                                Button(
-                                    onClick = { isShowingCandleChart = !isShowingCandleChart },
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
-                                        .padding(vertical = 2.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Gray200,
-                                        contentColor = Gray700
-                                    ),
-                                    shape = RoundedCornerShape(8.dp)
+                                        .clickable { isShowingCandleChart = !isShowingCandleChart }
+                                        .padding(vertical = 2.dp, horizontal = 4.dp)
                                 ) {
+                                    // 동그란 체크 표시
+                                    Box(
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .background(Color.White, CircleShape)
+                                            .border(1.dp, Gray300, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isShowingCandleChart) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(12.dp)
+                                                    .background(Secondary500, CircleShape)
+                                            )
+                                        }
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    
+                                    // 텍스트
                                     Text(
-                                        text = if (isShowingCandleChart) "기본 차트 보기" else "캔들 차트 보기",
+                                        text = "자세한 차트",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.W500,
-                                        fontFamily = SCDreamFontFamily
+                                        fontFamily = SCDreamFontFamily,
+                                        color = if (isShowingCandleChart) Secondary500 else Gray700
                                     )
                                 }
                                 

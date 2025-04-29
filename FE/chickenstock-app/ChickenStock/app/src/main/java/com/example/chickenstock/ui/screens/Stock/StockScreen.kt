@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import com.example.chickenstock.ui.components.SegmentedControl
 import com.example.chickenstock.ui.components.StockListItem
 import com.example.chickenstock.ui.components.StockItem
+import com.example.chickenstock.viewmodel.AuthViewModel
 
 data class StockItem(
     val stockCode: String,
@@ -48,7 +49,8 @@ val dummyStocks = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StockScreen(
-    navController: NavHostController
+    navController: NavHostController,
+    authViewModel: AuthViewModel
 ) {
     var selectedMarketIndex by remember { mutableStateOf(0) }
     var selectedSortIndex by remember { mutableStateOf(0) }
@@ -87,6 +89,7 @@ fun StockScreen(
                     StockListItem(
                         stock = stock,
                         navController = navController,
+                        authViewModel = authViewModel,
                         onFavoriteClick = { /* 즐겨찾기 기능 */ }
                     )
                 }
@@ -135,7 +138,7 @@ fun SegmentedControl(
 }
 
 @Composable
-fun StockListItem(stock: StockItem, navController: NavHostController, onFavoriteClick: () -> Unit) {
+fun StockListItem(stock: StockItem, navController: NavHostController, authViewModel: AuthViewModel, onFavoriteClick: () -> Unit) {
     val isUp = stock.fluctuationRate.startsWith("+")
     val fluctuationColor = when {
         stock.fluctuationRate.startsWith("+") -> Color.Red

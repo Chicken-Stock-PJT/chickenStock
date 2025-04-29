@@ -39,16 +39,86 @@ import com.example.chickenstock.ui.theme.Gray0
 import com.example.chickenstock.ui.theme.Gray700
 import com.example.chickenstock.ui.theme.SCDreamFontFamily
 import com.example.chickenstock.viewmodel.MainViewModel
+import com.example.chickenstock.viewmodel.AuthViewModel
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.lifecycleScope
+import com.example.chickenstock.api.RetrofitClient
+import com.example.chickenstock.api.StockService
+import com.example.chickenstock.data.StockRepository
+import kotlinx.coroutines.launch
+import com.example.chickenstock.api.AuthService
+import android.util.Log
+import android.content.pm.PackageManager
+import android.content.pm.PackageInfo
+import android.util.Base64
+import java.security.MessageDigest
+import com.example.chickenstock.data.TokenManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // 토큰 값 로그 출력
+        val tokenManager = TokenManager.getInstance(this)
+        val accessToken = tokenManager.getAccessToken()
+        val refreshToken = tokenManager.getRefreshToken()
+        val prefs = tokenManager.getSharedPreferences()
+        Log.d("TokenInfo", "Access Token: $accessToken")
+        Log.d("TokenInfo", "Refresh Token: $refreshToken")
+        Log.d("TokenInfo", "All SharedPreferences: ${prefs.all}")
+        
+        // 키 해시 얻기
+        try {
+            val packageInfo: PackageInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+            }
+
+            val signatures = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                packageInfo.signingInfo?.apkContentsSigners
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.signatures
+            }
+
+            signatures?.forEach { signature ->
+                val md = MessageDigest.getInstance("SHA")
+                md.update(signature.toByteArray())
+                val keyHash = Base64.encodeToString(md.digest(), Base64.DEFAULT)
+                Log.d("KeyHash", "키 해시 값 : $keyHash")
+            }
+        } catch (e: Exception) {
+            Log.e("KeyHash", "키 해시 추출 실패", e)
+        }
+        
         // 상태바 숨기기
         WindowCompat.setDecorFitsSystemWindows(window, false)
         
         enableEdgeToEdge()
+
+        // 앱 실행 시 1회만 주식 데이터 가져오기
+        if (!StockRepository.isInitialized()) {
+            lifecycleScope.launch {
+                try {
+                    val stockService = RetrofitClient.getInstance(this@MainActivity).create(StockService::class.java)
+                    val response = stockService.getAllStocks()
+                    if (response.isSuccessful) {
+                        response.body()?.let { stocks ->
+                            StockRepository.setStocks(stocks)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // 에러 처리
+                }
+            }
+        }
+
+        val authService = RetrofitClient.getInstance(this).create(AuthService::class.java)
+
         setContent {
             ChickenStockTheme {
                 MainScreen()
@@ -194,7 +264,10 @@ fun SearchTopAppBar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel = viewModel()) {
+fun MainScreen(
+    viewModel: MainViewModel = viewModel(),
+    authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory(LocalContext.current))
+) {
     val navController = rememberNavController()
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route ?: Screen.Home.route
@@ -205,19 +278,38 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         isSearchExpanded = currentRoute.startsWith("search")
     }
 
+    // 현재 route에 따라 selectedIndex 업데이트
+    LaunchedEffect(currentRoute) {
+        when {
+            currentRoute.startsWith(Screen.Home.route) -> viewModel.updateSelectedIndex(0)
+            currentRoute.startsWith(Screen.Stock.route) -> viewModel.updateSelectedIndex(1)
+            currentRoute.startsWith(Screen.MyPage.route) -> viewModel.updateSelectedIndex(2)
+        }
+    }
+
     val tabList = listOf(Screen.Home.route, Screen.Stock.route, Screen.MyPage.route)
     val selectedIndex by viewModel.selectedIndex
     val isBottomBarVisible by viewModel.isBottomBarVisible
 
     // 현재 라우트가 변경될 때 bottomBar 가시성 업데이트
     LaunchedEffect(currentRoute) {
-        viewModel.setBottomBarVisibility(!currentRoute.startsWith("search"))
+        viewModel.setBottomBarVisibility(!currentRoute.startsWith("search") && 
+                                       !currentRoute.startsWith("login") && 
+                                       !currentRoute.startsWith("signup") &&
+                                       !currentRoute.startsWith("findpw"))
     }
 
-    // 첫 실행 시 애니메이션을 위한 상태
-    var isFirstLaunch by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        isFirstLaunch = false
+    // 로그인 상태 변경 감지
+    LaunchedEffect(authViewModel.isLoggedIn.value) {
+        if (authViewModel.isLoggedIn.value) {
+            // 로그인 시 홈으로 이동하고 하단 네비바도 홈으로 변경
+            viewModel.updateSelectedIndex(0)
+            navController.navigate(Screen.Home.route) {
+                popUpTo(navController.graph.startDestinationId) {
+                    inclusive = true
+                }
+            }
+        }
     }
 
     // 하단 네비바 애니메이션
@@ -235,21 +327,25 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = Modifier.padding(WindowInsets.systemBars.asPaddingValues()),
         topBar = {
-            SearchTopAppBar(
-                isSearchExpanded = isSearchExpanded,
-                searchText = searchText,
-                onSearchTextChange = { searchText = it },
-                onBackClick = {
-                    isSearchExpanded = false
-                    navController.navigateUp()
-                },
-                onSearchIconClick = {
-                    isSearchExpanded = true
-                    navController.navigate("search") {
-                        launchSingleTop = true
+            if (!currentRoute.startsWith("login") && 
+                !currentRoute.startsWith("signup") && 
+                !currentRoute.startsWith("findpw")) {
+                SearchTopAppBar(
+                    isSearchExpanded = isSearchExpanded,
+                    searchText = searchText,
+                    onSearchTextChange = { searchText = it },
+                    onBackClick = {
+                        isSearchExpanded = false
+                        navController.navigateUp()
+                    },
+                    onSearchIconClick = {
+                        isSearchExpanded = true
+                        navController.navigate("search") {
+                            launchSingleTop = true
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
             Box(
@@ -260,7 +356,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             ) {
                 AnimatedBottomBar(
                     selectedIndex = selectedIndex,
-                    isFirstLaunch = isFirstLaunch,
                     onTabSelected = { index ->
                         viewModel.updateSelectedIndex(index)
                         val target = tabList[index]
@@ -290,7 +385,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         NavGraph(
             navController = navController,
             modifier = Modifier.padding(innerPadding),
-            viewModel = viewModel
+            viewModel = viewModel,
+            authViewModel = authViewModel
         )
     }
 }
@@ -298,7 +394,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 @Composable
 fun AnimatedBottomBar(
     selectedIndex: Int,
-    isFirstLaunch: Boolean,
     onTabSelected: (Int) -> Unit
 ) {
     val indicatorWidth = 60.dp
@@ -315,7 +410,7 @@ fun AnimatedBottomBar(
         
         val indicatorOffset by animateDpAsState(
             targetValue = itemWidth * selectedIndex + centerOffset,
-            animationSpec = tween(durationMillis = if (isFirstLaunch) 0 else 250),
+            animationSpec = tween(durationMillis = 250),
             label = "indicatorOffset"
         )
 
@@ -338,7 +433,7 @@ fun AnimatedBottomBar(
                 val isSelected = index == selectedIndex
                 val iconColor by animateColorAsState(
                     targetValue = if (isSelected) Color.Red else Color.Black,
-                    animationSpec = tween(durationMillis = if (isFirstLaunch) 0 else 200),
+                    animationSpec = tween(durationMillis = 200),
                     label = "iconColor"
                 )
                 Box(
@@ -351,10 +446,16 @@ fun AnimatedBottomBar(
                         modifier = Modifier
                             .width(indicatorWidth)
                             .height(indicatorHeight)
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { onTabSelected(index) },
+                            .then(
+                                if (!isSelected) {
+                                    Modifier.clickable(
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() }
+                                    ) { onTabSelected(index) }
+                                } else {
+                                    Modifier
+                                }
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
