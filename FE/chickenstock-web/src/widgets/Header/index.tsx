@@ -3,10 +3,12 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
 import SearchModal from "./SearchModal";
+import { useAuthStore } from "@/shared/store/auth";
 
 const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const navigate = useNavigate();
+  const { simpleProfile } = useAuthStore();
 
   return (
     <div className="sticky top-0 z-50 flex h-14 w-screen items-center bg-white px-4">
@@ -65,11 +67,17 @@ const Header = () => {
           </div>
         </nav>
       </div>
-
-      <div className="flex w-1/3 justify-end" onClick={() => void navigate("mypage")}>
-        auth
-      </div>
-      {/* 검색 모달 */}
+      {
+        simpleProfile ? (
+          <div className="flex w-1/3 justify-end cursor-pointer" onClick={() => void navigate("mypage")}>
+            {simpleProfile.nickname}
+          </div>
+        ) : (
+          <div className="flex w-1/3 justify-end cursor-pointer" onClick={() => void navigate("login")}>
+            로그인
+          </div>
+        )
+      }
       <SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />
     </div>
   );
