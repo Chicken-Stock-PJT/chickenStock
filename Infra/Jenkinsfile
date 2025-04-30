@@ -1,0 +1,115 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = credentials('docker-registry-credentials')
+        ENV_FILE_ENT = credentials('env-file-credentials-ENT')
+        ENVIRO_FILE = credentials('enviro-file-dc')
+        BACKEND_ENV_FILE = credentials('backend-env-file-credentials')
+        JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Setup Environment') {
+            steps {
+                withCredentials([
+                file(credentialsId: 'env-file-credentials-ENT', variable: 'ENV_FILE_ENT'),
+                file(credentialsId: 'backend-env-file-credentials', variable: 'BACKEND_ENV_FILE')
+                ]) {
+                    sh '''
+                      echo "===== Setting up Environment ====="
+                      mkdir -p BE/src/main/resources
+                      chmod -R 700 BE/src/main/resources
+                      cp $BACKEND_ENV_FILE BE/.env
+                      cp $ENV_FILE_ENT BE/src/main/resources/application.yml
+                      echo "===== BE 디렉토리 파일 리스트 ====="
+                      ls -al BE/
+                    '''
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                dir('BE') {  // BE 디렉토리로 이동해서 빌드 실행
+                    sh '''
+                        echo "===== Building Spring Boot Application ====="
+                        chmod +x ./gradlew
+                        bash -c '
+                            set -o allexport
+                            source .env
+                            ./gradlew clean build -x test
+                        '
+                    '''
+                }
+            }
+        }
+
+        stage('Build and Push Docker Image') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-registry-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        def imageTag = "kjeongwoo/backend:${BUILD_NUMBER}"
+                        sh """
+                            echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin
+                            docker build -t ${imageTag} -f docker/Dockerfile .
+                            docker push ${imageTag}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                withCredentials([file(credentialsId: 'enviro-file-dc', variable: 'ENVIRO_FILE')]) {
+                    sh """
+                        cp \$ENVIRO_FILE docker/.env
+                        chmod 644 docker/.env
+
+                        cd docker
+                        docker-compose -f docker-compose.yml down
+
+                        BUILD_NUMBER=${BUILD_NUMBER} docker-compose -f docker-compose.yml up -d
+
+                        docker-compose ps backend1
+                        # docker-compose ps backend2
+                        # docker-compose ps backend3
+                    """
+                }
+            }
+        }
+
+        stage('Docker Test') {
+            steps {
+                sh '''
+                    docker --version
+                    docker ps
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            sh '''
+                rm -f BE/src/main/resources/application-prod.yml
+                rm -f BE/src/main/resources/application-oauth.yml
+                rm -f docker/.env
+
+                docker container prune -f
+                docker image prune -f
+            '''
+        }
+    }
+}
