@@ -90,12 +90,11 @@ async def login(login_request: LoginRequest):
     
     try:
         success = await auth_client.login(login_request.email, login_request.password)
-        
+        logger.info(success)
         if success:
             return {
                 "success": True,
                 "message": "로그인 성공",
-                "expires_at": auth_client.access_token_expires_at.isoformat() if auth_client.access_token_expires_at else None
             }
         else:
             raise HTTPException(

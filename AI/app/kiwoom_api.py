@@ -375,48 +375,73 @@ class KiwoomAPI:
         try:
             logger.info(f"일봉 데이터 요청: {code}")
             
+            # 캐시 키 생성 (코드, 기간 등을 조합)
+            cache_key = f"daily_{code}_{from_date or ''}_{to_date or ''}_{period or ''}"
+            
+            # 캐시에 데이터가 있는지 확인
+            if cache_key in self.chart_cache:
+                logger.info(f"캐시된 일봉 데이터 사용: {code}")
+                return self.chart_cache[cache_key]
+            
             # API 요청 헤더 구성
             headers = self.auth_client.get_authorization_header()
+            headers["api-id"] = "FHKST03010100"  # API ID 설정 (필요시 변경)
             
             # API 요청 파라미터 구성
             params = {
-                "code": code,
-                "timeframe": "day"  # 일봉 데이터
+                "stk_cd": code,  # 종목코드
+                "upd_stkpc_tp": "1"  # 수정주가구분
             }
             
-            # 기간 설정
-            if from_date:
-                params["from_date"] = from_date
+            # 기준일자 설정 (to_date가 있으면 사용, 없으면 오늘 날짜)
             if to_date:
-                params["to_date"] = to_date
-            if period:
-                params["period"] = period
+                params["base_dt"] = to_date
+            else:
+                params["base_dt"] = datetime.now().strftime("%Y%m%d")
             
             # API 요청
             async with self.session.get(
-                f"{self.base_url}/market/charts", 
+                f"{self.base_url}/api/dostk/chart",
                 params=params,
                 headers=headers
             ) as response:
                 if response.status == 200:
                     chart_data = await response.json()
                     
-                    # 데이터 변환 및 반환
-                    result = []
-                    for item in chart_data.get("data", []):
-                        result.append({
-                            "date": item.get("date"),
-                            "open": float(item.get("open", 0)),
-                            "high": float(item.get("high", 0)),
-                            "low": float(item.get("low", 0)),
-                            "close": float(item.get("close", 0)),
-                            "volume": int(item.get("volume", 0))
-                        })
+                    # 응답 데이터 처리
+                    all_data = []
+                    chart_items = chart_data.get("stk_dt_pole_chart_qry", [])
                     
-                    logger.info(f"일봉 데이터 조회 성공: {code}, {len(result)}개 데이터")
-                    return result
+                    for item in chart_items:
+                        data_item = {
+                            "date": item.get("dt", ""),  # 일자
+                            "open": float(item.get("open_pric", "0") or "0"),  # 시가
+                            "high": float(item.get("high_pric", "0") or "0"),  # 고가
+                            "low": float(item.get("low_pric", "0") or "0"),    # 저가
+                            "close": float(item.get("cur_prc", "0") or "0"),   # 현재가 (종가)
+                            "volume": int(item.get("trde_qty", "0") or "0")    # 거래량
+                        }
+                        all_data.append(data_item)
+                    
+                    # 날짜 기준 내림차순 정렬 (최신 데이터가 앞에 오도록)
+                    all_data.sort(key=lambda x: x["date"], reverse=True)
+                    
+                    # 조회 기간에 맞게 데이터 필터링
+                    if from_date:
+                        all_data = [item for item in all_data if item["date"] >= from_date]
+                    if period:
+                        all_data = all_data[:period]
+                    
+                    logger.info(f"일봉 데이터 조회 성공: {code}, {len(all_data)}개 데이터")
+                    
+                    # 캐시에 저장
+                    self.chart_cache[cache_key] = all_data
+                    
+                    return all_data
                 else:
                     logger.error(f"차트 데이터 요청 실패: {code} HTTP {response.status}")
+                    error_body = await response.text()
+                    logger.error(f"오류 응답: {error_body}")
                     return []
         
         except Exception as e:

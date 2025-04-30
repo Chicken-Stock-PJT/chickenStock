@@ -6,7 +6,8 @@ import AccountInfo from './components/AccountInfo';
 import RecentTrades from './components/RecentTrades';
 import Positions from './components/Positions';
 import Alert from './components/Alert';
-import TokenManager from './components/TokenManager'; // 토큰 관리자 컴포넌트 추가
+import TokenManager from './components/TokenManager';
+import Login from './components/login'; // 로그인 컴포넌트 가져오기
 
 function App() {
   const [statusInfo, setStatusInfo] = useState({
@@ -14,7 +15,11 @@ function App() {
     connected_to_api: false,
     subscribed_symbols: 0,
     start_time: null,
-    account_info: null
+    account_info: null,
+    auth_status: {
+      is_authenticated: false,
+      access_token_expires_at: null
+    }
   });
   
   const [accountInfo, setAccountInfo] = useState({
@@ -26,6 +31,8 @@ function App() {
   const [trades, setTrades] = useState([]);
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   
   // API URL 기본 경로
   const API_BASE_URL = 'http://localhost:8000';
@@ -45,6 +52,92 @@ function App() {
     setTimeout(() => {
       setAlert(null);
     }, 5000);
+  };
+  
+  // 로그인 처리 함수
+  const handleLogin = async (email, password) => {
+    try {
+      setIsLoading(true);
+      
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          email,
+          password,
+          platform: 'mobile'
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        setIsAuthenticated(true);
+        showAlert('success', '로그인 성공!');
+        await loadAuthStatus();
+        await loadDashboardData();
+      } else {
+        showAlert('danger', '로그인 실패: ' + (data.detail || data.message || '알 수 없는 오류'));
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      showAlert('danger', '로그인 실패: 서버 연결 오류');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // 로그아웃 처리 함수
+  const handleLogout = async () => {
+    try {
+      setIsAuthenticated(false);
+      showAlert('info', '로그아웃 되었습니다.');
+      // 필요한 경우 서버 측 로그아웃 엔드포인트 호출
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+  
+  // 인증 상태 로드 함수
+  const loadAuthStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/status`, {
+        headers: getHeaders()
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setIsAuthenticated(data.is_authenticated);
+        
+        return data;
+      }
+      
+      return { is_authenticated: false };
+    } catch (error) {
+      console.error('Error loading auth status:', error);
+      return { is_authenticated: false };
+    }
+  };
+  
+  // 토큰 갱신 함수
+  const refreshToken = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      return false;
+    }
   };
   
   // 서비스 시작 함수
@@ -112,6 +205,11 @@ function App() {
         const data = await response.json();
         setStatusInfo(data);
         
+        // 인증 상태 업데이트
+        if (data.auth_status) {
+          setIsAuthenticated(data.auth_status.is_authenticated);
+        }
+        
         // 계좌 정보가 포함되어 있으면 업데이트
         if (data.account_info) {
           setAccountInfo({
@@ -170,6 +268,8 @@ function App() {
   
   // 대시보드 데이터 로드 함수
   const loadDashboardData = async () => {
+    if (!isAuthenticated) return;
+    
     setIsLoading(true);
     try {
       await loadStatusInfo();
@@ -186,18 +286,104 @@ function App() {
     }
   };
   
-  // 초기 데이터 로드 및 인터벌 설정
+  // 토큰 갱신 검사 함수
+  const checkAndRefreshToken = async () => {
+    if (!isAuthenticated) return;
+    
+    // 토큰 만료 시간 확인
+    if (statusInfo.auth_status && statusInfo.auth_status.access_token_expires_at) {
+      const expiresAt = new Date(statusInfo.auth_status.access_token_expires_at);
+      const now = new Date();
+      const timeToExpiry = expiresAt - now;
+      
+      // 만료 10분 전에 갱신
+      if (timeToExpiry > 0 && timeToExpiry < 10 * 60 * 1000) {
+        try {
+          const refreshed = await refreshToken();
+          if (!refreshed) {
+            // 토큰 갱신 실패 시 재로그인 필요
+            setIsAuthenticated(false);
+            showAlert('warning', '인증이 만료되었습니다. 다시 로그인해주세요.');
+          } else {
+            // 갱신 성공 시 상태 다시 로드
+            await loadAuthStatus();
+          }
+        } catch (error) {
+          console.error('Token refresh check error:', error);
+        }
+      }
+    }
+  };
+  
+  // 초기 인증 상태 확인
   useEffect(() => {
-    // 초기 데이터 로드
-    loadDashboardData();
+    const checkAuth = async () => {
+      setAuthLoading(true);
+      try {
+        const authStatus = await loadAuthStatus();
+        setIsAuthenticated(authStatus.is_authenticated);
+        
+        if (authStatus.is_authenticated) {
+          await loadDashboardData();
+        }
+      } catch (error) {
+        console.error('Initial auth check error:', error);
+        setIsAuthenticated(false);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
     
-    // 30초마다 데이터 새로고침
-    const interval = setInterval(loadDashboardData, 30000);
-    
-    // 컴포넌트 언마운트 시 인터벌 정리
-    return () => clearInterval(interval);
+    checkAuth();
   }, []);
   
+  // 데이터 로드 및 토큰 갱신 인터벌 설정
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    // 30초마다 데이터 새로고침
+    const dataInterval = setInterval(loadDashboardData, 30000);
+    
+    // 1분마다 토큰 갱신 검사
+    const tokenInterval = setInterval(checkAndRefreshToken, 60000);
+    
+    // 컴포넌트 언마운트 시 인터벌 정리
+    return () => {
+      clearInterval(dataInterval);
+      clearInterval(tokenInterval);
+    };
+  }, [isAuthenticated, statusInfo.is_running]);
+  
+  // 로딩 중 표시
+  if (authLoading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center vh-100">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">로딩 중...</span>
+        </div>
+      </div>
+    );
+  }
+  
+  // 로그인되지 않은 경우 로그인 화면 표시
+  if (!isAuthenticated) {
+    return (
+      <div className="container">
+        <div className="row justify-content-center mt-5">
+          <div className="col-md-6 col-lg-4">
+            {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
+            <div className="text-center mb-4">
+              <h2>주식 자동매매 봇</h2>
+              <p className="text-muted">AI 트레이딩 시스템에 로그인하세요</p>
+            </div>
+            <Login onLogin={handleLogin} isLoading={isLoading} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // 로그인된 경우 대시보드 표시
   return (
     <div className="container-fluid">
       {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
@@ -208,10 +394,11 @@ function App() {
           stopService={stopService}
           refreshData={loadDashboardData}
           isLoading={isLoading}
+          onLogout={handleLogout}
+          isAuthenticated={isAuthenticated}
         />
         
         <div className="col-md-10 main-content">
-          {/* 새로운 토큰 관리자 컴포넌트 추가 */}
           <div className="row mt-3">
             <div className="col-md-6">
               <TokenManager onRefresh={loadDashboardData} />

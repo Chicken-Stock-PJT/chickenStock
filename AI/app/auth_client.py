@@ -61,10 +61,6 @@ class AuthClient:
                     self.access_token = auth_data.get("accessToken")
                     self.refresh_token = auth_data.get("refreshToken")
                     
-                    # 만료 시간 설정
-                    access_expires_in = auth_data.get("accessTokenExpiresIn", 3600)
-                    self.access_token_expires_at = datetime.now() + timedelta(seconds=access_expires_in)
-                    
                     # 세션 헤더에 토큰 추가
                     self.session.headers.update({
                         "Authorization": f"Bearer {self.access_token}"
