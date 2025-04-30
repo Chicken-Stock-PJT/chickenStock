@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import aiohttp
 
 from app.config import settings
@@ -91,6 +91,90 @@ class BackendClient:
         
         logger.info(f"거래 결과 큐에 추가: {trade_data['stockCode']} {trade_data['orderType']} {trade_data['quantity']}주 @ {trade_data['price']}")
         return True
+    
+    async def request_account_info(self):
+        """백엔드 API에서 계좌 정보 요청"""
+        try:
+            if not self.running:
+                await self.start()
+                
+            # 인증 상태 확인
+            if not self.auth_client.is_authenticated:
+                logger.error("인증되지 않았습니다. 계좌 정보를 요청할 수 없습니다.")
+                return None
+                
+            # 백엔드 API 요청 헤더
+            headers = self.auth_client.get_authorization_header()
+            
+            # 백엔드 API에서 포트폴리오 정보 요청
+            async with self.session.get(
+                f"{self.backend_url}/api/members/portfolio",
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    portfolio_data = await response.json()
+                    
+                    # 계좌 정보 구성
+                    account_info = {
+                        "cash_balance": portfolio_data.get("memberMoney", 0),
+                        "total_asset_value": portfolio_data.get("totalAsset", 0),
+                        "positions": {}
+                    }
+                    
+                    # 보유 종목 정보 업데이트
+                    for position in portfolio_data.get("positions", []):
+                        code = position.get("stockCode")
+                        if code:
+                            account_info["positions"][code] = {
+                                "code": code,
+                                "name": position.get("stockName", ""),
+                                "quantity": position.get("quantity", 0),
+                                "purchase_price": position.get("averagePrice", 0),
+                                "current_price": position.get("currentPrice", 0),
+                                "eval_profit_loss": position.get("profitLoss", 0),
+                                "earning_rate": position.get("returnRate", 0.0)
+                            }
+                    
+                    logger.info(f"계좌정보 업데이트: 예수금={account_info['cash_balance']}, 종목수={len(account_info['positions'])}")
+                    return account_info
+                else:
+                    logger.error(f"계좌 정보 조회 실패: HTTP {response.status}")
+                    return None
+        
+        except Exception as e:
+            logger.error(f"계좌 정보 요청 중 오류: {str(e)}")
+            return None
+            
+    async def get_all_stocks(self):
+        """백엔드에서 모든 종목 정보 요청"""
+        try:
+            if not self.running:
+                await self.start()
+                
+            # 인증 상태 확인
+            if not self.auth_client.is_authenticated:
+                logger.error("인증되지 않았습니다. 종목 정보를 요청할 수 없습니다.")
+                return None
+                
+            # 백엔드 API 요청 헤더
+            headers = self.auth_client.get_authorization_header()
+            
+            # 백엔드 API에서 모든 종목 정보 요청
+            async with self.session.get(
+                f"{self.backend_url}/api/stocks/all",
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    stock_list = await response.json()
+                    logger.info(f"종목 정보 조회 성공: {len(stock_list)}개 종목")
+                    return stock_list
+                else:
+                    logger.error(f"종목 정보 요청 실패: HTTP {response.status}")
+                    return None
+        
+        except Exception as e:
+            logger.error(f"종목 정보 요청 중 오류: {str(e)}")
+            return None
     
     async def _process_pending_results(self):
         """대기 중인 거래 결과 처리"""

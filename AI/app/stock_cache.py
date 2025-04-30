@@ -23,19 +23,22 @@ class StockCache:
         self.kosdaq_symbols = []
     
     def init_stock_info(self, stock_list: List[Dict]):
-        """종목 정보 초기화"""
+        """종목 정보 초기화 - 전달받은 종목을 모두 캐싱"""
         try:
             # 종목 정보 캐시 초기화
             self.stock_info_cache.clear()
             self.kospi_symbols.clear()
             self.kosdaq_symbols.clear()
             
-            # 종목 정보 캐싱
+            logger.info(f"종목 정보 초기화 시작: {len(stock_list)}개 종목")
+            
+            # 종목 정보 캐싱 - 누락된 종목 코드만 건너뛰고 나머지는 모두 저장
             for stock in stock_list:
                 code = stock.get("shortCode")
                 if not code:
-                    continue
+                    continue  # 종목 코드가 없는 경우만 건너뜀
                 
+                # 나머지 정보는 있는 그대로 저장 (기본값 필요 없음)
                 self.stock_info_cache[code] = {
                     "shortCode": code,
                     "shortName": stock.get("shortName", ""),
@@ -44,17 +47,18 @@ class StockCache:
                     "faceValue": stock.get("faceValue", "0")
                 }
                 
-                # 코스피/코스닥 분류
-                if stock.get("market") == "KOSPI":
+                # 코스피/코스닥 분류 (필요한 경우에만)
+                market = stock.get("market", "")
+                if market == "KOSPI":
                     self.kospi_symbols.append(code)
-                elif stock.get("market") == "KOSDAQ":
+                elif market == "KOSDAQ":
                     self.kosdaq_symbols.append(code)
             
             logger.info(f"종목 정보 캐시 초기화 완료: 총 {len(self.stock_info_cache)}개 종목")
             logger.info(f"코스피 종목 수: {len(self.kospi_symbols)}, 코스닥 종목 수: {len(self.kosdaq_symbols)}")
             
             return True
-        
+            
         except Exception as e:
             logger.error(f"종목 정보 캐시 초기화 중 오류: {str(e)}")
             return False
@@ -99,10 +103,3 @@ class StockCache:
     def get_all_symbols(self) -> List[str]:
         """모든 종목 코드 반환"""
         return list(self.stock_info_cache.keys())
-    
-    def get_filtered_symbols(self, top_kospi: int = 450, top_kosdaq: int = 150) -> List[str]:
-        """필터링된 종목 코드 반환"""
-        kospi_filtered = self.kospi_symbols[:top_kospi] if len(self.kospi_symbols) > top_kospi else self.kospi_symbols
-        kosdaq_filtered = self.kosdaq_symbols[:top_kosdaq] if len(self.kosdaq_symbols) > top_kosdaq else self.kosdaq_symbols
-        
-        return kospi_filtered + kosdaq_filtered

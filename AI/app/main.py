@@ -310,7 +310,8 @@ async def initialize_service():
             return
         
         # 종목 정보 초기화
-        await kiwoom_api.initialize_stock_list()
+        stock_list = await backend_client.get_all_stocks()
+        await kiwoom_api.initialize_stock_list(stock_list)
         
         # 계좌 정보는 connect() 메서드 내에서 이미 요청됨
         
@@ -318,12 +319,24 @@ async def initialize_service():
         logger.info("트레이딩 모델 초기화")
         await trading_model.start()
         
-        # 필터링된 종목 리스트 가져오기 (상위 600개)
-        filtered_symbols = kiwoom_api.stock_cache.get_filtered_symbols(450, 150)
+        # 필터링된 종목 리스트 가져오기 (시가총액 기준 상위 600개)
+        logger.info("시가총액 기준 종목 필터링 시작")
+        filtered_symbols = await kiwoom_api.get_filtered_symbols(450, 150)
+        logger.info(f"시가총액 기준 필터링 완료: 총 {len(filtered_symbols)}개 종목")
+        
+        # 필터링된 종목 정보로 stock_cache 업데이트
+        filtered_stock_list = [
+            stock for stock in stock_list 
+            if stock.get('shortCode') in filtered_symbols
+        ]
+        logger.info(stock_list)
+        await kiwoom_api.initialize_stock_list(filtered_stock_list)
         
         # 트레이딩 모델에 차트 데이터 초기화 - Envelope 지표 계산용
-        logger.info("차트 데이터 초기화")
-        await trading_model.initialize_chart_data(filtered_symbols)
+        # 서버 시작 시 한 번에 모든 차트 데이터 로드 및 캐싱
+        logger.info("차트 데이터 초기화 시작")
+        # await kiwoom_api.initialize_chart_data(filtered_symbols, period=120)
+        logger.info("차트 데이터 초기화 완료")
         
         # 실시간 데이터 구독 준비
         logger.info("실시간 데이터 구독 그룹 준비")
@@ -456,7 +469,7 @@ async def get_account_info():
         )
     
     # 최신 계좌 정보 요청
-    await kiwoom_api.request_account_info()
+    await backend_client.request_account_info()
     
     return kiwoom_api.account_info
 

@@ -80,25 +80,42 @@ class ChartDataProcessor:
         logger.info(f"Preloading envelope indicators for {len(symbols)} symbols")
         self.last_cache_update = datetime.now()
         
-        # 30개씩 배치 처리
+        # 캐시가 이미 유효하면 스킵
+        if self.is_cache_valid() and len(self.indicators_cache) > 0:
+            logger.info("Using existing valid cache for envelope indicators")
+            return len(self.indicators_cache)
+        
+        # 배치 처리를 위한 설정
         batch_size = 30
         success_count = 0
+        total_batches = (len(symbols) + batch_size - 1) // batch_size
         
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i:i+batch_size]
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, len(symbols))
+            current_batch = symbols[start_idx:end_idx]
             
-            # 배치 내 각 종목에 대해 처리
-            for symbol in batch:
-                try:
-                    # 일봉 데이터 요청 및 지표 계산
-                    result = await self._calculate_indicator_for_symbol(symbol, kiwoom_api)
-                    if result:
-                        success_count += 1
-                except Exception as e:
-                    logger.error(f"Error loading envelope indicator for {symbol}: {str(e)}")
+            # 배치 내 모든 종목 병렬 처리
+            tasks = []
+            for symbol in current_batch:
+                task = self._calculate_indicator_for_symbol(symbol, kiwoom_api)
+                tasks.append(task)
             
-            logger.info(f"Preloaded envelope indicators batch {i//batch_size + 1}/{(len(symbols)-1)//batch_size + 1}")
-            await asyncio.sleep(1)  # API 부하 방지를 위한 지연
+            # 모든 태스크 완료 대기
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 결과 처리
+            for i, result in enumerate(batch_results):
+                if isinstance(result, Exception):
+                    logger.error(f"Error calculating envelope for {current_batch[i]}: {str(result)}")
+                elif result:
+                    success_count += 1
+            
+            # 진행 상황 로깅
+            logger.info(f"Preloaded envelope indicators: batch {batch_idx+1}/{total_batches}, progress: {success_count}/{len(symbols)}")
+            
+            # API 부하 방지를 위한 짧은 대기
+            await asyncio.sleep(0.5)
         
         # 캐시 저장
         self._save_cache()
@@ -109,11 +126,17 @@ class ChartDataProcessor:
     async def _calculate_indicator_for_symbol(self, symbol: str, kiwoom_api) -> bool:
         """REST API를 사용하여 종목의 일봉 데이터 요청 및 Envelope 지표 계산"""
         try:
-            # 일봉 데이터 요청
-            chart_data = await kiwoom_api.get_daily_chart_data(symbol, period=60)
+            # 일봉 데이터 요청 - 처음 호출 시에만 force_reload=True, 이후에는 캐시 사용
+            # KiwoomAPI의 차트 데이터 캐시를 활용
+            is_first_load = not self.is_cache_valid() or symbol not in self.indicators_cache
+            chart_data = await kiwoom_api.get_daily_chart_data(
+                symbol, 
+                period=60, 
+                force_reload=is_first_load
+            )
             
             if not chart_data or len(chart_data) < 20:  # 최소 20일치 데이터 필요
-                logger.warning(f"Insufficient data for {symbol}")
+                logger.warning(f"Insufficient data for {symbol}: {len(chart_data) if chart_data else 0} days")
                 return False
             
             # 데이터프레임 생성
@@ -123,15 +146,15 @@ class ChartDataProcessor:
             df['ma20'] = df['close'].rolling(window=20).mean()
             
             # 최신 데이터의 MA20 가져오기
-            ma20 = df['ma20'].iloc[-1]
+            ma20 = df['ma20'].iloc[0]  # 내림차순 정렬된 데이터에서 첫 번째가 최신
             
             # Envelope 상하한 계산 (20%)
             upper_band = ma20 * (1 + self.envelope_percentage)
             lower_band = ma20 * (1 - self.envelope_percentage)
             
             # 최신 날짜와 종가
-            latest_date = df['date'].iloc[-1]
-            last_close = df['close'].iloc[-1]
+            latest_date = df['date'].iloc[0]
+            last_close = df['close'].iloc[0]
             
             # 캐시에 저장
             self.indicators_cache[symbol] = {

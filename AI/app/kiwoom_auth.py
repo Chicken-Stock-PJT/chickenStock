@@ -19,12 +19,7 @@ class KiwoomAuthClient:
         self.token_expires_at = None
         
     async def get_access_token(self) -> str:
-        """
-        키움 API 액세스 토큰 발급
-        
-        Returns:
-            str: 발급된 액세스 토큰 또는 None
-        """
+        """키움 API 액세스 토큰 발급"""
         # 기존 토큰이 유효한 경우 그대로 반환
         if self.access_token and self.token_expires_at and datetime.now() < self.token_expires_at:
             return self.access_token
@@ -49,11 +44,12 @@ class KiwoomAuthClient:
                     # 응답 처리
                     if response.status == 200:
                         result = await response.json()
-                        
+
                         # 토큰 정보 저장
                         self.token = result.get("token")
                         
                         logger.info("키움 API 토큰 발급 성공")
+
                         return self.token
                     else:
                         # 오류 응답 처리
