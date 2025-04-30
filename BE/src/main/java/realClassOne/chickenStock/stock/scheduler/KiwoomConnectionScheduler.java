@@ -13,7 +13,7 @@ public class KiwoomConnectionScheduler {
 
     private final KiwoomWebSocketClient kiwoomWebSocketClient;
 
-    @Scheduled(fixedRate = 60000) // 1분마다 연결 상태 체크
+    @Scheduled(fixedRate = 60000000) // 1분마다 연결 상태 체크
     public void checkConnection() {
         if (!kiwoomWebSocketClient.isConnected()) {
             log.info("키움증권 WebSocket 연결이 끊어져 있습니다. 재연결 시도...");
