@@ -20,11 +20,11 @@ public class WebSocketConfig implements WebSocketConfigurer {
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
 
         // 기존 주식 실시간 데이터 웹소켓
-        registry.addHandler(stockWebSocketHandler, "/api/ws/stock")
+        registry.addHandler(stockWebSocketHandler, "/ws/stock")
                 .setAllowedOrigins("*"); // 실제 환경에서는 보안을 위해 특정 오리진만 허용하는 것 추천됨.
 
         // 포트폴리오 실시간 데이터 웹소켓
-        registry.addHandler(portfolioWebSocketHandler, "/api/ws/portfolio")
+        registry.addHandler(portfolioWebSocketHandler, "/ws/portfolio")
                 .setAllowedOrigins("*");
     }
 }
