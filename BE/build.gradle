@@ -13,6 +13,10 @@ java {
 	}
 }
 
+compileJava {
+	options.compilerArgs += ['-parameters']
+}
+
 configurations {
 	compileOnly {
 		extendsFrom annotationProcessor
@@ -60,6 +64,12 @@ dependencies {
 
 	// Add WebFlux for WebClient
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+	// 모니터링
+	implementation 'org.springframework.boot:spring-boot-starter-actuator';
+
+	// 이메일 전송용 의존성
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
 
 	implementation 'com.opencsv:opencsv:5.9'
 

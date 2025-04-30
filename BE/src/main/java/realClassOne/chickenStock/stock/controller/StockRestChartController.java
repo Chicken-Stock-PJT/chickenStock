@@ -27,11 +27,11 @@ public class StockRestChartController {
     public ResponseEntity<ChartResponseDTO> getStockChartByType(
             @PathVariable String chartType,
             @PathVariable String stockCode,
-            @RequestParam(required = false) String baseDate,
-            @RequestParam(required = false) String timeInterval,
-            @RequestParam(required = false) String modifiedPriceType,
-            @RequestParam(required = false) String contYn,
-            @RequestParam(required = false) String nextKey) {
+            @RequestParam(name = "baseDate", required = false) String baseDate,
+            @RequestParam(name = "timeInterval", required = false) String timeInterval,
+            @RequestParam(name = "modifiedPriceType", required = false) String modifiedPriceType,
+            @RequestParam(name = "contYn", required = false) String contYn,
+            @RequestParam(name = "nextKey", required = false) String nextKey) {
 
         log.info("차트 조회 요청 - 타입: {}, 종목코드: {}", chartType, stockCode);
 
@@ -43,10 +43,10 @@ public class StockRestChartController {
 
     @GetMapping("/all/{stockCode}")
     public ResponseEntity<ChartResponseDTO> getAllChartData(
-            @PathVariable String stockCode,
-            @RequestParam(required = false) String baseDate,
-            @RequestParam(required = false, defaultValue = "DAILY") String chartType,
-            @RequestParam(required = false) String modifiedPriceType) {
+            @PathVariable(name = "stockCode") String stockCode,
+            @RequestParam(name = "baseDate", required = false) String baseDate,
+            @RequestParam(name = "chartType", required = false) String chartType,
+            @RequestParam(name = "modifiedPriceType", required = false) String modifiedPriceType) {
 
         log.info("모든 차트 데이터 조회 요청 - 종목코드: {}, 차트타입: {}", stockCode, chartType);
 
