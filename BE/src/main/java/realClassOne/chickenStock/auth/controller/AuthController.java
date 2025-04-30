@@ -75,7 +75,8 @@ public class AuthController {
     // 이메일 인증번호 전송 API
     @PostMapping("/send-code")
     public ResponseEntity<Void> sendCode(@RequestBody EmailRequestDTO request) {
-        emailService.sendVerificationCode(request.getEmail());
+//        emailService.sendVerificationCode(request.getEmail());
+        emailService.sendVerificationCodeWithTTL(request.getEmail());
         return ResponseEntity.ok().build();
     }
 
