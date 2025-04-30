@@ -46,10 +46,13 @@ export interface InitialOrderBook {
   return_msg: string; // 응답 메시지
 }
 
-export interface RealTimeOrderBook {
+export interface RealTimeOrderBook extends OrderBookData {
   type: "stockBidAsk"; // 메시지 타입 식별자
   stockCode: string; // 종목 코드 (예: 삼성전자)
   timestamp: string; // 호가 시간 (HHMMSS 형식)
+}
+
+export interface OrderBookData {
   askPrices: {
     // 매도호가 가격
     "1": string; // 1호가 매도가격
@@ -94,4 +97,87 @@ export interface RealTimeOrderBook {
     "7": string; //
     "8": string; //
   };
+}
+
+export interface OrderBookRow {
+  price: number;
+  askVolume: number;
+  bidVolume: number;
+}
+
+export const convertOrderBookDataToRows = (data: OrderBookData): OrderBookRow[] => {
+  const rows: OrderBookRow[] = [];
+
+  // 매도호가 (내림차순)
+  for (let i = 8; i >= 1; i--) {
+    const price = Math.abs(Number(data.askPrices[i.toString() as keyof typeof data.askPrices]));
+    const askVolume = Number(data.askVolumes[i.toString() as keyof typeof data.askVolumes]);
+    rows.push({ price, askVolume, bidVolume: 0 });
+  }
+
+  // 매수호가 (내림차순)
+  for (let i = 1; i <= 8; i++) {
+    const price = Math.abs(Number(data.bidPrices[i.toString() as keyof typeof data.bidPrices]));
+    const bidVolume = Number(data.bidVolumes[i.toString() as keyof typeof data.bidVolumes]);
+    rows.push({ price, askVolume: 0, bidVolume });
+  }
+
+  return rows;
+};
+
+export const mapInitialOrderBookToOrderBookData = (data: InitialOrderBook): OrderBookData => {
+  return {
+    askPrices: {
+      "1": data.sel_fpr_bid,
+      "2": data.sel_2th_pre_bid,
+      "3": data.sel_3th_pre_bid,
+      "4": data.sel_4th_pre_bid,
+      "5": data.sel_5th_pre_bid,
+      "6": data.sel_6th_pre_bid,
+      "7": data.sel_7th_pre_bid,
+      "8": data.sel_8th_pre_bid,
+    },
+    askVolumes: {
+      "1": data.sel_fpr_req,
+      "2": data.sel_2th_pre_req,
+      "3": data.sel_3th_pre_req,
+      "4": data.sel_4th_pre_req,
+      "5": data.sel_5th_pre_req,
+      "6": data.sel_6th_pre_req,
+      "7": data.sel_7th_pre_req,
+      "8": data.sel_8th_pre_req,
+    },
+    bidPrices: {
+      "1": data.buy_fpr_bid,
+      "2": data.buy_2th_pre_bid,
+      "3": data.buy_3th_pre_bid,
+      "4": data.buy_4th_pre_bid,
+      "5": data.buy_5th_pre_bid,
+      "6": data.buy_6th_pre_bid,
+      "7": data.buy_7th_pre_bid,
+      "8": data.buy_8th_pre_bid,
+    },
+    bidVolumes: {
+      "1": data.buy_fpr_req,
+      "2": data.buy_2th_pre_req,
+      "3": data.buy_3th_pre_req,
+      "4": data.buy_4th_pre_req,
+      "5": data.buy_5th_pre_req,
+      "6": data.buy_6th_pre_req,
+      "7": data.buy_7th_pre_req,
+      "8": data.buy_8th_pre_req,
+    },
+  };
+};
+
+export interface OrderBookProps {
+  stockCode: string;
+  currentPrice: number;
+}
+export interface OrderRowProps {
+  price: number;
+  askVolume: number;
+  bidVolume: number;
+  max: number;
+  isCurrentPrice?: boolean;
 }

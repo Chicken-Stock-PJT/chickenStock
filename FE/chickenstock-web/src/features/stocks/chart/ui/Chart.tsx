@@ -82,6 +82,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         priceChange={priceData?.priceChange ?? "0"}
         changeRate={priceData?.changeRate ?? "0"}
         onChartTypeChange={handleChartTypeChange}
+        selectedChartType={chartType}
       />
       <ChartBody chartData={chartData} onLoadMore={handleLoadMore} />
     </div>

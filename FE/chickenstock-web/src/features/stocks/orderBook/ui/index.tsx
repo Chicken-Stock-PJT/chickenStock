@@ -1,16 +1,43 @@
 import OrderRow from "./OrderRow";
 import OrderIndex from "./OrderIndex";
-import { mockOrderBookData } from "@/shared/libs/mocks/data";
+import { getOrderBook } from "@/features/stocks/orderBook/api";
+import { useEffect, useState } from "react";
+import {
+  mapInitialOrderBookToOrderBookData,
+  convertOrderBookDataToRows,
+  OrderBookRow,
+  OrderBookProps,
+} from "@/features/stocks/orderBook/model/types";
+import { useWebSocketStore } from "@/shared/store/websocket";
 
-const OrderBook = () => {
-  // 최대값 계산 (매수/매도 모두 고려)
-  const max = mockOrderBookData.reduce((acc, order) => {
-    const maxVolume = Math.max(Number(order.askVolume), Number(order.bidVolume));
-    return Math.max(acc, maxVolume);
-  }, 0);
+const OrderBook = ({ stockCode, currentPrice }: OrderBookProps) => {
+  const [orderBookRows, setOrderBookRows] = useState<OrderBookRow[]>([]);
+  const { orderBookData } = useWebSocketStore();
 
-  // 현재가 계산 (중간 인덱스 활용)
-  const currentPriceIndex = Math.floor(mockOrderBookData.length / 2);
+  useEffect(() => {
+    const fetchOrderBook = async () => {
+      const data = await getOrderBook(stockCode);
+      if (data) {
+        const mappedData = mapInitialOrderBookToOrderBookData(data);
+        const rows = convertOrderBookDataToRows(mappedData);
+        setOrderBookRows(rows);
+      }
+    };
+
+    void fetchOrderBook();
+  }, [stockCode]);
+
+  useEffect(() => {
+    if (orderBookData) {
+      const rows = convertOrderBookDataToRows(orderBookData);
+      setOrderBookRows(rows);
+    }
+  }, [orderBookData]);
+
+  if (orderBookRows.length === 0) return null;
+
+  // 최대 거래량 계산
+  const maxVolume = Math.max(...orderBookRows.map((row) => Math.max(row.askVolume, row.bidVolume)));
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -21,14 +48,14 @@ const OrderBook = () => {
       <div className="relative flex-1 overflow-auto">
         <OrderIndex />
         <div className="divide-y divide-gray-100">
-          {mockOrderBookData.map((order, index) => (
+          {orderBookRows.map((row, index) => (
             <OrderRow
-              key={order.price}
-              price={order.price}
-              askVolume={order.askVolume}
-              bidVolume={order.bidVolume}
-              max={max}
-              isCurrentPrice={index === currentPriceIndex}
+              key={`row-${index}`}
+              price={row.price}
+              askVolume={row.askVolume}
+              bidVolume={row.bidVolume}
+              max={maxVolume}
+              isCurrentPrice={row.price === currentPrice}
             />
           ))}
         </div>
@@ -36,12 +63,10 @@ const OrderBook = () => {
 
       <footer className="flex justify-between border-t border-gray-200 px-6 py-2 text-xs text-gray-500">
         <span>
-          총 매수잔량:{" "}
-          {mockOrderBookData.reduce((sum, item) => sum + item.bidVolume, 0).toLocaleString()}
+          총 매수잔량: {orderBookRows.reduce((sum, row) => sum + row.bidVolume, 0).toLocaleString()}
         </span>
         <span>
-          총 매도잔량:{" "}
-          {mockOrderBookData.reduce((sum, item) => sum + item.askVolume, 0).toLocaleString()}
+          총 매도잔량: {orderBookRows.reduce((sum, row) => sum + row.askVolume, 0).toLocaleString()}
         </span>
       </footer>
     </div>
