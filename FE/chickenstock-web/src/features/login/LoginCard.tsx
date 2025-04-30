@@ -76,7 +76,9 @@ const LoginCard = () => {
               alt="구글 로그인"
               className="w-[56px] cursor-pointer fill-current text-primary-400"
               onClick={() => {
-                window.location.href = `${import.meta.env.VITE_BASE_URL}/oauth2/authorization/google`;
+                window.location.href = `${import.meta.env.VITE_BASE_URL}/auth/oauth2/redirect/google?redirectUri=${encodeURIComponent(
+                  "http://localhost:5173/login/redirect"
+                )}`
               }}
             />
             <img
@@ -84,7 +86,9 @@ const LoginCard = () => {
               alt="카카오 로그인"
               className="w-[56px] cursor-pointer fill-current text-primary-400"
               onClick={() => {
-                window.location.href = `${import.meta.env.VITE_BASE_URL}/oauth2/authorization/kakao`;
+                window.location.href = `${import.meta.env.VITE_BASE_URL}/auth/oauth2/redirect/kakao?redirectUri=${encodeURIComponent(
+                  "http://localhost:5173/login/redirect"
+                )}`
               }}
             />
             <img
@@ -92,7 +96,9 @@ const LoginCard = () => {
               alt="네이버 로그인"
               className="w-[56px] cursor-pointer fill-current text-primary-400"
               onClick={() => {
-                window.location.href = `${import.meta.env.VITE_BASE_URL}/oauth2/authorization/naver`;
+                window.location.href = `${import.meta.env.VITE_BASE_URL}/auth/oauth2/redirect/naver?redirectUri=${encodeURIComponent(
+                  "http://localhost:5173/login/redirect"
+                )}`
               }}
             />
           </div>
