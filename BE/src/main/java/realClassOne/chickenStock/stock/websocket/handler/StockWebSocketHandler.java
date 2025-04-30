@@ -81,6 +81,27 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             // 클라이언트로부터 메시지 수신 처리
             JsonNode requestJson = objectMapper.readTree(message.getPayload());
             String action = requestJson.get("action").asText();
+
+            // list 작업은 stockCode가 필요하지 않으므로 별도 처리
+            if ("list".equals(action)) {
+                // 구독 중인 종목 목록 요청
+                Set<String> subscribedStocks = sessionSubscriptions.get(session.getId());
+                if (subscribedStocks != null) {
+                    ObjectNode listMessage = objectMapper.createObjectNode();
+                    listMessage.put("type", "subscriptionList");
+
+                    ArrayNode stockList = objectMapper.createArrayNode();
+                    for (String code : subscribedStocks) {
+                        stockList.add(code);
+                    }
+
+                    listMessage.set("stocks", stockList);
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(listMessage)));
+                }
+                return; // list 작업은 여기서 처리 완료
+            }
+
+            // 나머지 작업은 stockCode 필요
             String stockCode = requestJson.has("stockCode") ? requestJson.get("stockCode").asText() : null;
 
             if (stockCode == null || stockCode.trim().isEmpty()) {
@@ -133,21 +154,9 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
                 } else {
                     sendInfoMessage(session, "구독 중이 아닌 종목입니다: " + stockCode);
                 }
-            } else if ("list".equals(action)) {
-                // 구독 중인 종목 목록 요청
-                Set<String> subscribedStocks = sessionSubscriptions.get(session.getId());
-                if (subscribedStocks != null) {
-                    ObjectNode listMessage = objectMapper.createObjectNode();
-                    listMessage.put("type", "subscriptionList");
-
-                    ArrayNode stockList = objectMapper.createArrayNode();
-                    for (String code : subscribedStocks) {
-                        stockList.add(code);
-                    }
-
-                    listMessage.set("stocks", stockList);
-                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(listMessage)));
-                }
+            } else {
+                // 알 수 없는 작업 요청
+                sendErrorMessage(session, "지원하지 않는 작업입니다: " + action);
             }
         } catch (Exception e) {
             log.error("클라이언트 메시지 처리 중 오류 발생", e);

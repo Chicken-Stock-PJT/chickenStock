@@ -16,8 +16,11 @@ import realClassOne.chickenStock.auth.dto.request.ExchangeRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.LoginRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
+import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
+import realClassOne.chickenStock.auth.dto.response.PasswordResetResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
 import realClassOne.chickenStock.auth.exception.AuthErrorCode;
+import realClassOne.chickenStock.auth.repository.VerificationCodeRepository;
 import realClassOne.chickenStock.common.exception.CommonErrorCode;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.common.util.CookieUtils;
@@ -27,8 +30,13 @@ import realClassOne.chickenStock.member.entity.MemberRole;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
+import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
+import realClassOne.chickenStock.auth.service.EmailService;
+
 
 import java.util.Collections;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -41,6 +49,8 @@ public class AuthService {
     private final JwtConfig jwtConfig;
     private final RedisTokenBlacklistService redisTokenBlacklistService;
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
+    private final EmailService emailService;
+    private final VerificationCodeRepository verificationCodeRepository;
 
     // 소셜 토큰 반환
     public Object exchangeToken(ExchangeRequestDTO request, HttpServletResponse response) {
@@ -64,6 +74,7 @@ public class AuthService {
         Member member = Member.of(
                 signupRequestDTO.getEmail(),
                 passwordEncoder.encode(signupRequestDTO.getPassword()),
+                signupRequestDTO.getNickname(),
                 signupRequestDTO.getName(),
                 null, // image
                 "local",
@@ -76,8 +87,17 @@ public class AuthService {
         return SignupResponseDTO.builder()
                 .id(savedMember.getMemberId())
                 .email(savedMember.getEmail())
+                .nickname(savedMember.getNickname())
                 .name(savedMember.getName())
                 .build();
+    }
+
+    // 이메일 중복 확인
+    public EmailCheckResponseDTO checkEmailDuplicateAndRespond(String email) {
+        if (memberRepository.existsByEmail(email)) {
+            return EmailCheckResponseDTO.of(false, "이미 가입된 이메일입니다.");
+        }
+        return EmailCheckResponseDTO.of(true, "사용 가능한 이메일입니다.");
     }
 
     // 로그인
@@ -315,4 +335,47 @@ public class AuthService {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
     }
+
+    // 인증 완료된 이메일 임시 비밀번호 전송
+    // AuthService.java 내부
+    public PasswordResetResponseDTO resetPasswordAfterVerification(String email) {
+        // 1. 인증 완료 여부 확인 (Redis)
+        if (!verificationCodeRepository.isVerified(email)) {
+            throw new CustomException(AuthErrorCode.VERIFICATION_NOT_COMPLETED);
+        }
+
+        // 2. 사용자 조회
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        // 3. 임시 비밀번호 생성
+        String tempPassword = UUID.randomUUID().toString().substring(0, 10);
+
+        // 4. 비밀번호 암호화 & 저장
+        member.updatePassword(passwordEncoder.encode(tempPassword));
+        memberRepository.save(member);
+
+        // 5. 이메일로 임시 비밀번호 전송 (💡 EmailService 사용!)
+        emailService.sendTemporaryPassword(email, tempPassword);
+
+        // 6. 인증 상태 제거
+        verificationCodeRepository.removeVerified(email);
+
+        return PasswordResetResponseDTO.of("임시 비밀번호가 이메일로 전송되었습니다.");
+    }
+
+    // 한글, 영어, 숫자만 가능하고, 최대 10자
+    private final Pattern nicknamePattern = Pattern.compile("^[a-zA-Z0-9가-힣]{1,10}$");
+
+    public NicknameCheckResponseDTO checkNickname(String nickname) {
+        if (!nicknamePattern.matcher(nickname).matches()) {
+            throw new CustomException(AuthErrorCode.INVALID_NICKNAME_FORMAT);
+        }
+
+        boolean isDuplicate = memberRepository.existsByNickname(nickname);
+        String message = isDuplicate ? "이미 사용 중인 닉네임입니다." : "사용 가능한 닉네임입니다.";
+        return NicknameCheckResponseDTO.of(isDuplicate, message);
+    }
+
+
 }
