@@ -6,6 +6,78 @@ import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.http.Path
+import retrofit2.http.POST
+import retrofit2.http.Body
+
+data class StockDetailResponse(
+    val shortCode: String,      // 종목 코드
+    val shortName: String,      // 종목 이름
+    val market: String,         // 상장된 시장
+    val stockType: String,      // 주식 유형
+    val faceValue: String,      // 액면가
+    val prevDayCompare: String, // 전일대비 변동 금액
+    val fluctuationRate: String // 등락률
+)
+
+data class ChartResponse(
+    val stockCode: String,
+    val chartType: String,
+    val chartData: List<ChartData>,
+    val hasNext: Boolean,
+    val nextKey: String,
+    val code: Int,
+    val message: String
+)
+
+data class ChartData(
+    val date: String,
+    val currentPrice: String,
+    val openPrice: String,
+    val highPrice: String,
+    val lowPrice: String,
+    val volume: String,
+    val tradingValue: String,
+    val modifiedRatio: String,
+    val previousClosePrice: String
+)
+
+data class BuyOrderRequest(
+    val stockCode: String,
+    val quantity: Int,
+    val price: Long? = null,
+    val marketOrder: Boolean = true
+)
+
+data class SellOrderRequest(
+    val stockCode: String,
+    val quantity: Int,
+    val price: Long? = null,
+    val marketOrder: Boolean = true
+)
+
+data class BuyOrderResponse(
+    val tradeHistoryId: Int,
+    val stockCode: String,
+    val stockName: String,
+    val tradeType: String,
+    val quantity: Int,
+    val unitPrice: Long,
+    val totalPrice: Long,
+    val tradeAt: String,
+    val status: String
+)
+
+data class SellOrderResponse(
+    val tradeHistoryId: Int,
+    val stockCode: String,
+    val stockName: String,
+    val tradeType: String,
+    val quantity: Int,
+    val unitPrice: Long,
+    val totalPrice: Long,
+    val tradeAt: String,
+    val status: String
+)
 
 interface StockService {
     @GET("stocks/all")
@@ -13,29 +85,38 @@ interface StockService {
 
     @GET("stock/ranking/tradeAmount")
     suspend fun getTradeAmountRanking(
-        @Query("marketType") marketType: String,
-        @Query("nextKey") nextKey: String? = null
+        @Query("marketType") marketType: String
     ): Response<StockRankingResponse>
 
     @GET("stock/ranking/fluctuationRate")
     suspend fun getFluctuationRateRanking(
         @Query("marketType") marketType: String,
-        @Query("sortType") sortType: String,
-        @Query("nextKey") nextKey: String? = null
+        @Query("sortType") sortType: String
     ): Response<StockRankingResponse>
 
     @GET("stock/ranking/volume")
     suspend fun getVolumeRanking(
-        @Query("marketType") marketType: String,
-        @Query("nextKey") nextKey: String? = null
+        @Query("marketType") marketType: String
     ): Response<StockRankingResponse>
 
     @GET("stocks/code/{code}")
     suspend fun getStockDetail(
         @Path("code") code: String
     ): Response<StockDetailResponse>
-}
 
-data class StockDetailResponse(
-    val shortName: String    // 종목 이름만 필요
-) 
+    @GET("/api/stock/chart/{chartType}/{stockCode}")
+    suspend fun getStockChart(
+        @Path("chartType") chartType: String,
+        @Path("stockCode") stockCode: String,
+        @Query("baseDate") baseDate: String? = null,
+        @Query("timeInterval") timeInterval: String? = null,
+        @Query("nextKey") nextKey: String? = null,
+        @Query("contYn") contYn: String? = null
+    ): ChartResponse
+
+    @POST("stock/trading/buy")
+    suspend fun buyStock(@Body request: BuyOrderRequest): Response<BuyOrderResponse>
+
+    @POST("stock/trading/sell")
+    suspend fun sellStock(@Body request: SellOrderRequest): Response<SellOrderResponse>
+} 

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
 import com.example.chickenstock.ui.components.StockItem
+import com.example.chickenstock.ui.components.StockBidAskView
 import com.example.chickenstock.ui.theme.SCDreamFontFamily
 import com.example.chickenstock.ui.theme.ChartRed
 import com.example.chickenstock.ui.theme.Gray500
@@ -65,6 +66,7 @@ import com.github.mikephil.charting.data.CandleData
 import com.github.mikephil.charting.data.CandleDataSet
 import com.github.mikephil.charting.data.CandleEntry
 import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.components.YAxis
 import android.graphics.Paint
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.utils.MPPointF
@@ -104,17 +106,88 @@ import com.example.chickenstock.api.StockBidAsk
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import com.example.chickenstock.api.ChartResponse
+import com.example.chickenstock.api.ChartData
+import com.github.mikephil.charting.components.MarkerView
+import android.widget.TextView
+import android.view.LayoutInflater
+import android.content.Context
+import android.view.MotionEvent
+import com.github.mikephil.charting.listener.OnChartGestureListener
+import com.github.mikephil.charting.listener.ChartTouchListener
+import java.util.ArrayList
+import com.example.chickenstock.viewmodel.MainViewModel
+import com.example.chickenstock.model.Position
+import com.example.chickenstock.viewmodel.AuthViewModel
+import com.example.chickenstock.navigation.Screen
+import com.example.chickenstock.api.MemberService
+import com.example.chickenstock.api.SimpleProfileResponse
+import com.example.chickenstock.api.BuyOrderRequest
+import com.example.chickenstock.api.SellOrderRequest
+
+class CustomMarkerView(
+    context: Context,
+    layoutResource: Int,
+    private val dates: List<String>
+) : MarkerView(context, layoutResource) {
+    private val tvDate: TextView = findViewById(R.id.tvDate)
+    private val tvValue: TextView = findViewById(R.id.tvValue)
+
+    override fun refreshContent(e: Entry?, highlight: Highlight?) {
+        e?.let {
+            val index = it.x.toInt()
+            val date = if (index >= 0 && index < dates.size) dates[index] else ""
+            tvDate.text = date
+            tvValue.text = String.format("%,.0f원", it.y)
+        }
+        super.refreshContent(e, highlight)
+    }
+
+    override fun getOffset(): MPPointF {
+        return MPPointF((-(width / 2)).toFloat(), (-height).toFloat())
+    }
+}
+
+@Composable
+fun OrderInfoRow(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            color = Gray500,
+            fontFamily = SCDreamFontFamily
+        )
+        Text(
+            text = value,
+            fontSize = 14.sp,
+            color = Gray700,
+            fontFamily = SCDreamFontFamily
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StockDetailScreen(
     navController: NavController,
-    stock: StockItem
+    stock: StockItem,
+    viewModel: MainViewModel,
+    authViewModel: AuthViewModel
 ) {
     val context = LocalContext.current
-    var selectedPeriod by remember { mutableStateOf("주") }
+    var selectedPeriod by remember { mutableStateOf("일") }
     var showMinuteDropdown by remember { mutableStateOf(false) }
     val minuteOptions = listOf("1분", "3분", "5분", "10분", "30분", "60분")
+    val coroutineScope = rememberCoroutineScope()
 
     var showSellBottomSheet by remember { mutableStateOf(false) }
     var showBuyBottomSheet by remember { mutableStateOf(false) }
@@ -126,20 +199,26 @@ fun StockDetailScreen(
     )
 
     // 매수 관련 상태들
-    var buyOrderType by remember { mutableStateOf("지정가") }
+    var buyOrderType by remember { mutableStateOf("시장가") }
     var buyPrice by remember { mutableStateOf("") }
     var buyQuantity by remember { mutableStateOf("") }
     var buyStep by remember { mutableStateOf(1) }
-    var showSuccessMessage by remember { mutableStateOf(false) }
+    var showBuySuccessMessage by remember { mutableStateOf(false) }
     
     // 매도 관련 상태들
-    var sellOrderType by remember { mutableStateOf("지정가") }
+    var sellOrderType by remember { mutableStateOf("시장가") }
     var sellPrice by remember { mutableStateOf("") }
     var sellQuantity by remember { mutableStateOf("") }
     var sellStep by remember { mutableStateOf(1) }
     var showSellSuccessMessage by remember { mutableStateOf(false) }
     
-    val currentBalance = 1000000 // 임시 잔고 데이터
+    // API 상태 관리를 위한 변수 추가
+    var userProfile by remember { mutableStateOf<SimpleProfileResponse?>(null) }
+    var isProfileLoading by remember { mutableStateOf(false) }
+    var profileError by remember { mutableStateOf<String?>(null) }
+
+    // 현재 잔고 계산
+    val currentBalance = userProfile?.memberMoney?.replace(",", "")?.toIntOrNull() ?: 0
 
     // 임시 보유 주식 데이터
     val holdingQuantity = 100
@@ -162,11 +241,23 @@ fun StockDetailScreen(
 
     // API 상태 관리
     var stockDetail by remember { mutableStateOf<StockDetailResponse?>(null) }
+    var chartData by remember { mutableStateOf<ChartResponse?>(null) }
+    var isChartLoading by remember { mutableStateOf(false) }
+    var nextKey by remember { mutableStateOf<String?>(null) }
+    var hasNext by remember { mutableStateOf(true) }
+    var isLoadingMoreData by remember { mutableStateOf(false) }
 
     // 웹소켓 데이터 상태
     val webSocketManager = remember { WebSocketManager.getInstance() }
     val stockPrice = webSocketManager.stockPrice.collectAsState().value
     val stockBidAsk = webSocketManager.stockBidAsk.collectAsState().value
+
+    // 현재 보유 주식 정보 찾기
+    val currentPosition = remember(stock.stockCode) {
+        viewModel.portfolioData.value?.positions?.find { position -> 
+            position.stockCode == stock.stockCode 
+        }
+    }
 
     // 웹소켓 연결
     LaunchedEffect(stock.stockCode) {
@@ -196,15 +287,200 @@ fun StockDetailScreen(
         }
     }
 
+    // 종목 상세 정보 로드
+    LaunchedEffect(stock.stockCode) {
+        try {
+            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+            val response = stockService.getStockDetail(stock.stockCode)
+            if (response.isSuccessful) {
+                stockDetail = response.body()
+                isLoading = false
+            }
+        } catch (e: Exception) {
+            Log.e("StockDetailScreen", "Failed to load stock detail", e)
+            isLoading = false
+        }
+    }
+
+    // 차트 데이터 로드
+    LaunchedEffect(selectedPeriod) {
+        isChartLoading = true
+        try {
+            val chartType = when (selectedPeriod) {
+                "1분", "3분", "5분", "10분", "30분", "60분" -> "MINUTE"
+                "일" -> "DAILY"
+                "주" -> "WEEKLY"
+                "월" -> "MONTHLY"
+                "년" -> "YEARLY"
+                else -> "DAILY"
+            }
+            
+            val timeInterval = if (selectedPeriod.endsWith("분")) {
+                selectedPeriod.replace("분", "")
+            } else null
+
+            Log.d("StockDetailScreen", "차트 데이터 요청: chartType=$chartType, timeInterval=$timeInterval, stockCode=${stock.stockCode}")
+
+            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+            val response = stockService.getStockChart(
+                chartType = chartType,
+                stockCode = stock.stockCode,
+                timeInterval = timeInterval,
+                nextKey = null
+            )
+            chartData = response
+            nextKey = response.nextKey
+            hasNext = response.hasNext
+            Log.d("StockDetailScreen", "차트 데이터 로드 성공: ${response.chartData.size}개, nextKey=${response.nextKey}, hasNext=${response.hasNext}")
+            
+            // 데이터 상세 로그
+            response.chartData.take(3).forEachIndexed { index, data ->
+                Log.d("StockDetailScreen", "데이터 $index: date=${data.date}, currentPrice=${data.currentPrice}, openPrice=${data.openPrice}, highPrice=${data.highPrice}, lowPrice=${data.lowPrice}")
+            }
+        } catch (e: Exception) {
+            Log.e("StockDetailScreen", "차트 데이터 로드 실패", e)
+            Toast.makeText(context, "차트 데이터를 불러오는데 실패했습니다.", Toast.LENGTH_SHORT).show()
+        } finally {
+            isChartLoading = false
+        }
+    }
+
+    // 차트 스크롤 처리
+    var isScrolling by remember { mutableStateOf(false) }
+
+    // 차트 스크롤 이벤트 처리
+    val onChartScroll = { x: Float ->
+        if (!isScrolling && !isLoadingMoreData && hasNext && x < 10) {
+            isScrolling = true
+            isLoadingMoreData = true
+            
+            coroutineScope.launch {
+                try {
+                    val chartType = when (selectedPeriod) {
+                        "1분", "3분", "5분", "10분", "30분", "60분" -> "MINUTE"
+                        "일" -> "DAILY"
+                        "주" -> "WEEKLY"
+                        "월" -> "MONTHLY"
+                        "년" -> "YEARLY"
+                        else -> "DAILY"
+                    }
+                    
+                    val timeInterval = if (selectedPeriod.endsWith("분")) {
+                        selectedPeriod.replace("분", "")
+                    } else null
+
+                    val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                    val response = stockService.getStockChart(
+                        chartType = chartType,
+                        stockCode = stock.stockCode,
+                        timeInterval = timeInterval,
+                        nextKey = nextKey
+                    )
+                    
+                    chartData = chartData?.copy(
+                        chartData = chartData?.chartData.orEmpty() + response.chartData,
+                        nextKey = response.nextKey,
+                        hasNext = response.hasNext
+                    )
+                    nextKey = response.nextKey
+                    hasNext = response.hasNext
+                } catch (e: Exception) {
+                    Log.e("StockDetailScreen", "추가 데이터 로드 실패", e)
+                } finally {
+                    isLoadingMoreData = false
+                    isScrolling = false
+                }
+            }
+        }
+    }
+
+    // 로그인 다이얼로그 상태
+    var showLoginDialog by remember { mutableStateOf(false) }
+    var loginDialogType by remember { mutableStateOf("") } // "buy" 또는 "sell"
+
+    // 프로필 정보 로드
+    LaunchedEffect(authViewModel.isLoggedIn.value) {
+        if (authViewModel.isLoggedIn.value) {
+            isProfileLoading = true
+            try {
+                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                val response = memberService.getSimpleProfile()
+                if (response.isSuccessful) {
+                    userProfile = response.body()
+                }
+            } catch (e: Exception) {
+                profileError = e.message
+            } finally {
+                isProfileLoading = false
+            }
+        }
+    }
+
+    // 로그인 다이얼로그
+    if (showLoginDialog) {
+        AlertDialog(
+            onDismissRequest = { showLoginDialog = false },
+            title = { 
+                Text(
+                    "로그인이 필요합니다",
+                    fontFamily = SCDreamFontFamily,
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = { 
+                Text(
+                    if (loginDialogType == "buy") "매수 주문을 위해서는 로그인이 필요합니다."
+                    else "매도 주문을 위해서는 로그인이 필요합니다.",
+                    fontFamily = SCDreamFontFamily,
+                    color = Color.Black
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLoginDialog = false
+                        navController.navigate(Screen.Login.route)
+                    }
+                ) {
+                    Text(
+                        "로그인하기",
+                        color = Color(0xFF0066CC),
+                        fontFamily = SCDreamFontFamily,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLoginDialog = false }
+                ) {
+                    Text(
+                        "취소",
+                        color = Color(0xFF0066CC),
+                        fontFamily = SCDreamFontFamily,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            containerColor = Color.White
+        )
+    }
+
     if (showSellBottomSheet) {
         val scrollState = rememberScrollState()
+
+        // 매도 바텀 시트 초기화
+        LaunchedEffect(Unit) {
+            sellPrice = stockPrice?.currentPrice.replace("""[+\-]""".toRegex(), "") ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
+        }
 
         ModalBottomSheet(
             onDismissRequest = { 
                 hideKeyboard()
                 showSellBottomSheet = false
                 sellStep = 1
-                sellOrderType = "지정가"
+                sellOrderType = "시장가"
                 sellPrice = ""
                 sellQuantity = ""
                 showSellSuccessMessage = false
@@ -243,72 +519,76 @@ fun StockDetailScreen(
                                 fontFamily = SCDreamFontFamily
                             )
                             Text(
-                                text = "${holdingQuantity}주",
+                                text = if (currentPosition != null) "${currentPosition.quantity}주" else "0주",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Gray700,
                                 fontFamily = SCDreamFontFamily
                             )
                             
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            Text(
-                                text = "평균 매수가",
-                                fontSize = 14.sp,
-                                color = Gray500,
-                                fontFamily = SCDreamFontFamily
-                            )
-                            Text(
-                                text = "${String.format("%,d", averagePrice)}원",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Gray700,
-                                fontFamily = SCDreamFontFamily
-                            )
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            Text(
-                                text = "수익률",
-                                fontSize = 14.sp,
-                                color = Gray500,
-                                fontFamily = SCDreamFontFamily
-                            )
-                            Text(
-                                text = String.format("%.2f%%", profitRate),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = when {
-                                    profitRate > 0f -> ChartRed
-                                    profitRate < 0f -> ChartBlue
-                                    else -> Gray700
-                                },
-                                fontFamily = SCDreamFontFamily
-                            )
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            Text(
-                                text = "평가 손익",
-                                fontSize = 14.sp,
-                                color = Gray500,
-                                fontFamily = SCDreamFontFamily
-                            )
-                            Text(
-                                text = "${String.format("%,d", totalProfit)}원",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = when {
-                                    totalProfit > 0L -> ChartRed
-                                    totalProfit < 0L -> ChartBlue
-                                    else -> Gray700
-                                },
-                                fontFamily = SCDreamFontFamily
-                            )
+                            // 보유 주식이 있을 때만 추가 정보 표시
+                            if (currentPosition != null) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                Text(
+                                    text = "평균 매수가",
+                                    fontSize = 14.sp,
+                                    color = Gray500,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                Text(
+                                    text = "${String.format("%,d", currentPosition.averagePrice)}원",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Gray700,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                Text(
+                                    text = "수익률",
+                                    fontSize = 14.sp,
+                                    color = Gray500,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                Text(
+                                    text = String.format("%.2f%%", currentPosition.returnRate),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when {
+                                        currentPosition.returnRate > 0f -> ChartRed
+                                        currentPosition.returnRate < 0f -> ChartBlue
+                                        else -> Gray700
+                                    },
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                Text(
+                                    text = "평가 손익",
+                                    fontSize = 14.sp,
+                                    color = Gray500,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                Text(
+                                    text = "${String.format("%,d", currentPosition.profitLoss)}원",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when {
+                                        currentPosition.profitLoss > 0L -> ChartRed
+                                        currentPosition.profitLoss < 0L -> ChartBlue
+                                        else -> Gray700
+                                    },
+                                    fontFamily = SCDreamFontFamily
+                                )
+                            }
                             
                             Spacer(modifier = Modifier.height(24.dp))
                             
-                            // 주문 유형 선택
+                            // 주문 유형 선택 (주석 처리)
+                            /*
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -337,13 +617,14 @@ fun StockDetailScreen(
                             }
 
                             Spacer(modifier = Modifier.height(24.dp))
+                            */
                             
-                            // 가격 입력
+                            // 가격 입력 (현재가로 자동 설정, 수정 불가)
                             OutlinedTextField(
                                 value = sellPrice,
-                                onValueChange = { if (sellOrderType == "지정가") sellPrice = it },
+                                onValueChange = { },
                                 label = { Text("주문 가격", fontFamily = SCDreamFontFamily) },
-                                enabled = sellOrderType == "지정가",
+                                enabled = false,
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Number,
                                     imeAction = ImeAction.Next
@@ -361,48 +642,88 @@ fun StockDetailScreen(
                                     unfocusedBorderColor = Gray300,
                                     focusedTextColor = Color.Black,
                                     unfocusedTextColor = Color.Black,
-                                    disabledTextColor = Color.Black
+                                    disabledTextColor = Color.Black,
+                                    disabledBorderColor = Gray300,
+                                    disabledLabelColor = Gray700
                                 )
                             )
                             
                             Spacer(modifier = Modifier.height(8.dp))
                             
-                            // 수량 입력
-                            OutlinedTextField(
-                                value = sellQuantity,
-                                onValueChange = { sellQuantity = it },
-                                label = { Text("주문 수량", fontFamily = SCDreamFontFamily) },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onDone = {
-                                        val quantity = sellQuantity.toIntOrNull() ?: 0
-                                        if (sellPrice.isNotEmpty() && sellQuantity.isNotEmpty() && quantity <= holdingQuantity) {
-                                            hideKeyboard()
-                                            sellStep = 2
+                            // 수량 입력 (매도)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = sellQuantity,
+                                    onValueChange = { sellQuantity = it },
+                                    label = { Text("주문 수량", fontFamily = SCDreamFontFamily) },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = {
+                                            val quantity = sellQuantity.toIntOrNull() ?: 0
+                                            val currentHolding = currentPosition?.quantity ?: 0
+                                            if (sellPrice.isNotEmpty() && sellQuantity.isNotEmpty() && quantity <= currentHolding) {
+                                                hideKeyboard()
+                                                sellStep = 2
+                                            }
                                         }
-                                    }
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .focusRequester(quantityFocusRequester),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = ChartBlue,
-                                    unfocusedBorderColor = Gray300,
-                                    focusedTextColor = Color.Black,
-                                    unfocusedTextColor = Color.Black
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(quantityFocusRequester),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = ChartBlue,
+                                        unfocusedBorderColor = Gray300,
+                                        focusedTextColor = Color.Black,
+                                        unfocusedTextColor = Color.Black
+                                    )
                                 )
-                            )
+                                
+                                Button(
+                                    onClick = { 
+                                        sellQuantity = (currentPosition?.quantity ?: 0).toString()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = ChartBlue
+                                    ),
+                                    modifier = Modifier.height(56.dp).offset(y = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "최대",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            // 수량 초과 시 경고 메시지
+                            val quantity = sellQuantity.toIntOrNull() ?: 0
+                            val currentHolding = currentPosition?.quantity ?: 0
+                            if (quantity > currentHolding) {
+                                Text(
+                                    text = "보유 수량을 초과할 수 없습니다",
+                                    color = ChartRed,
+                                    fontSize = 12.sp,
+                                    fontFamily = SCDreamFontFamily,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
                             
                             Spacer(modifier = Modifier.height(16.dp))
                             
                             // 총 매도 금액
                             val totalAmount = try {
                                 val price = sellPrice.toIntOrNull() ?: 0
-                                val quantity = sellQuantity.toIntOrNull() ?: 0
-                                price * quantity
+                                val sellQty = sellQuantity.toIntOrNull() ?: 0
+                                price * sellQty
                             } catch (e: Exception) { 0 }
                             
                             Text(
@@ -427,8 +748,10 @@ fun StockDetailScreen(
                                     hideKeyboard()
                                     sellStep = 2 
                                 },
-                                enabled = sellPrice.isNotEmpty() && sellQuantity.isNotEmpty() && 
-                                         (sellQuantity.toIntOrNull() ?: 0) <= holdingQuantity,
+                                enabled = sellPrice.isNotEmpty() && 
+                                         sellQuantity.isNotEmpty() && 
+                                         (sellQuantity.toIntOrNull() ?: 0) <= (currentPosition?.quantity ?: 0) &&
+                                         (sellQuantity.toIntOrNull() ?: 0) > 0,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
@@ -480,16 +803,16 @@ fun StockDetailScreen(
                                     .background(Gray50, RoundedCornerShape(8.dp))
                                     .padding(16.dp)
                             ) {
-                                OrderInfoRow("종목명", stock.stockName)
+                                OrderInfoRow("종목명", stockDetail?.shortName ?: stock.stockName)
                                 OrderInfoRow("주문 유형", sellOrderType)
                                 OrderInfoRow("주문 가격", "${String.format("%,d", sellPrice.toIntOrNull() ?: 0)}원")
                                 OrderInfoRow("주문 수량", "${sellQuantity}주")
                                 OrderInfoRow("총 매도 금액", "${String.format("%,d", (sellPrice.toIntOrNull() ?: 0) * (sellQuantity.toIntOrNull() ?: 0))}원")
                                 Divider(modifier = Modifier.padding(vertical = 8.dp), color = Gray200)
-                                OrderInfoRow("현재 보유 수량", "${holdingQuantity}주")
+                                OrderInfoRow("현재 보유 수량", "${currentPosition?.quantity ?: 0}주")
                                 OrderInfoRow(
                                     "매도 후 보유 수량", 
-                                    "${holdingQuantity.toInt() - (sellQuantity.toIntOrNull() ?: 0)}주"
+                                    "${(currentPosition?.quantity ?: 0) - (sellQuantity.toIntOrNull() ?: 0)}주"
                                 )
                             }
                         }
@@ -508,7 +831,7 @@ fun StockDetailScreen(
                                         hideKeyboard()
                                         showSellBottomSheet = false
                                         sellStep = 1
-                                        sellOrderType = "지정가"
+                                        sellOrderType = "시장가"
                                         sellPrice = ""
                                         sellQuantity = ""
                                     },
@@ -531,12 +854,49 @@ fun StockDetailScreen(
                                 onClick = { 
                                     hideKeyboard()
                                     isLoading = true
-                                    // 1.5초 후에 다음 화면으로 이동
-                                    MainScope().launch {
-                                        delay(1500)
-                                        isLoading = false
-                                        sellStep = 3
-                                        showSellSuccessMessage = true
+                                    // API 호출
+                                    coroutineScope.launch {
+                                        try {
+                                            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                                            val response = stockService.sellStock(
+                                                SellOrderRequest(
+                                                    stockCode = stock.stockCode,
+                                                    quantity = sellQuantity.toInt(),
+                                                    price = null,
+                                                    marketOrder = true
+                                                )
+                                            )
+                                            
+                                            if (response.isSuccessful) {
+                                                delay(500) // 성공 시 잠시 대기
+                                                isLoading = false
+                                                sellStep = 3
+                                                showSellSuccessMessage = true
+                                                
+                                                // 프로필 정보 새로고침 (잔고 업데이트를 위해)
+                                                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                                                val profileResponse = memberService.getSimpleProfile()
+                                                if (profileResponse.isSuccessful) {
+                                                    userProfile = profileResponse.body()
+                                                }
+                                            } else {
+                                                // 실패 시 에러 메시지 표시
+                                                Toast.makeText(
+                                                    context,
+                                                    "주문 실패: ${response.message()}",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                                isLoading = false
+                                            }
+                                        } catch (e: Exception) {
+                                            // 에러 발생 시
+                                            Toast.makeText(
+                                                context,
+                                                "주문 실패: ${e.message}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            isLoading = false
+                                        }
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
@@ -592,7 +952,7 @@ fun StockDetailScreen(
                                     hideKeyboard()
                                     showSellBottomSheet = false
                                     sellStep = 1
-                                    sellOrderType = "지정가"
+                                    sellOrderType = "시장가"
                                     sellPrice = ""
                                     sellQuantity = ""
                                     showSellSuccessMessage = false
@@ -619,15 +979,20 @@ fun StockDetailScreen(
     if (showBuyBottomSheet) {
         val scrollState = rememberScrollState()
 
+        // 매수 바텀 시트 초기화
+        LaunchedEffect(Unit) {
+            buyPrice = stockPrice?.currentPrice.replace("""[+\-]""".toRegex(), "") ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
+        }
+
         ModalBottomSheet(
             onDismissRequest = { 
                 hideKeyboard()
                 showBuyBottomSheet = false
                 buyStep = 1
-                buyOrderType = "지정가"
+                buyOrderType = "시장가"
                 buyPrice = ""
                 buyQuantity = ""
-                showSuccessMessage = false
+                showBuySuccessMessage = false
             },
             sheetState = bottomSheetState,
             containerColor = Gray0
@@ -655,24 +1020,32 @@ fun StockDetailScreen(
                             
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // 현재 잔고
+                            // 현재 잔고 표시 부분 수정
                             Text(
                                 text = "현재 잔고",
                                 fontSize = 14.sp,
                                 color = Gray500,
                                 fontFamily = SCDreamFontFamily
                             )
-                            Text(
-                                text = "${String.format("%,d", currentBalance)}원",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Gray700,
-                                fontFamily = SCDreamFontFamily
-                            )
+                            if (isProfileLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Secondary500
+                                )
+                            } else {
+                                Text(
+                                    text = "${String.format("%,d", userProfile?.memberMoney?.replace(",", "")?.toIntOrNull() ?: 0)}원",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Gray700,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                            }
                             
                             Spacer(modifier = Modifier.height(24.dp))
                             
-                            // 주문 유형 선택
+                            // 주문 유형 선택 (주석 처리)
+                            /*
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -701,13 +1074,14 @@ fun StockDetailScreen(
                             }
 
                             Spacer(modifier = Modifier.height(24.dp))
+                            */
                             
-                            // 가격 입력
+                            // 가격 입력 (현재가로 자동 설정, 수정 불가)
                             OutlinedTextField(
                                 value = buyPrice,
-                                onValueChange = { if (buyOrderType == "지정가") buyPrice = it },
+                                onValueChange = { },
                                 label = { Text("주문 가격", fontFamily = SCDreamFontFamily) },
-                                enabled = buyOrderType == "지정가",
+                                enabled = false,
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Number,
                                     imeAction = ImeAction.Next
@@ -725,45 +1099,76 @@ fun StockDetailScreen(
                                     unfocusedBorderColor = Gray300,
                                     focusedTextColor = Color.Black,
                                     unfocusedTextColor = Color.Black,
-                                    disabledTextColor = Color.Black
+                                    disabledTextColor = Color.Black,
+                                    disabledBorderColor = Gray300,
+                                    disabledLabelColor = Gray700
                                 )
                             )
                             
                             Spacer(modifier = Modifier.height(8.dp))
                             
-                            // 수량 입력
-                            OutlinedTextField(
-                                value = buyQuantity,
-                                onValueChange = { buyQuantity = it },
-                                label = { Text("주문 수량", fontFamily = SCDreamFontFamily) },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onDone = {
-                                        val totalAmount = try {
-                                            val price = buyPrice.toIntOrNull() ?: 0
-                                            val quantity = buyQuantity.toIntOrNull() ?: 0
-                                            price * quantity
-                                        } catch (e: Exception) { 0 }
+                            // 수량 입력 (매수)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = buyQuantity,
+                                    onValueChange = { buyQuantity = it },
+                                    label = { Text("주문 수량", fontFamily = SCDreamFontFamily) },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = {
+                                            val totalAmount = try {
+                                                val price = buyPrice.toIntOrNull() ?: 0
+                                                val quantity = buyQuantity.toIntOrNull() ?: 0
+                                                price * quantity
+                                            } catch (e: Exception) { 0 }
 
-                                        if (buyPrice.isNotEmpty() && buyQuantity.isNotEmpty() && totalAmount <= currentBalance) {
-                                            hideKeyboard()
-                                            buyStep = 2
+                                            if (buyPrice.isNotEmpty() && buyQuantity.isNotEmpty() && totalAmount <= currentBalance) {
+                                                hideKeyboard()
+                                                buyStep = 2
+                                            }
                                         }
-                                    }
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .focusRequester(quantityFocusRequester),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Secondary500,
-                                    unfocusedBorderColor = Gray300,
-                                    focusedTextColor = Color.Black,
-                                    unfocusedTextColor = Color.Black
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(quantityFocusRequester),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Secondary500,
+                                        unfocusedBorderColor = Gray300,
+                                        focusedTextColor = Color.Black,
+                                        unfocusedTextColor = Color.Black
+                                    )
                                 )
-                            )
+                                
+                                Button(
+                                    onClick = { 
+                                        val price = buyPrice.toIntOrNull() ?: 0
+                                        if (price > 0) {
+                                            val balance = userProfile?.memberMoney?.replace(",", "")?.toIntOrNull() ?: 0
+                                            val maxQuantity = balance / price
+                                            buyQuantity = maxQuantity.toString()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Secondary500
+                                    ),
+                                    modifier = Modifier.height(56.dp).offset(y = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "최대",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                             
                             Spacer(modifier = Modifier.height(16.dp))
                             
@@ -856,7 +1261,7 @@ fun StockDetailScreen(
                                     .background(Gray50, RoundedCornerShape(8.dp))
                                     .padding(16.dp)
                             ) {
-                                OrderInfoRow("종목명", stock.stockName)
+                                OrderInfoRow("종목명", stockDetail?.shortName ?: stock.stockName)
                                 OrderInfoRow("주문 유형", buyOrderType)
                                 OrderInfoRow("주문 가격", "${String.format("%,d", buyPrice.toIntOrNull() ?: 0)}원")
                                 OrderInfoRow("주문 수량", "${buyQuantity}주")
@@ -881,7 +1286,7 @@ fun StockDetailScreen(
                                         hideKeyboard()
                                         showBuyBottomSheet = false
                                         buyStep = 1
-                                        buyOrderType = "지정가"
+                                        buyOrderType = "시장가"
                                         buyPrice = ""
                                         buyQuantity = ""
                                     },
@@ -904,16 +1309,53 @@ fun StockDetailScreen(
                                 onClick = { 
                                     hideKeyboard()
                                     isLoading = true
-                                    // 1.5초 후에 다음 화면으로 이동
-                                    MainScope().launch {
-                                        delay(1500)
-                                        isLoading = false
-                                        buyStep = 3
-                                        showSuccessMessage = true
+                                    // API 호출
+                                    coroutineScope.launch {
+                                        try {
+                                            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                                            val response = stockService.buyStock(
+                                                BuyOrderRequest(
+                                                    stockCode = stock.stockCode,
+                                                    quantity = buyQuantity.toInt(),
+                                                    price = null,
+                                                    marketOrder = true
+                                                )
+                                            )
+                                            
+                                            if (response.isSuccessful) {
+                                                delay(500) // 성공 시 잠시 대기
+                                                isLoading = false
+                                                buyStep = 3
+                                                showBuySuccessMessage = true
+                                                
+                                                // 프로필 정보 새로고침 (잔고 업데이트를 위해)
+                                                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                                                val profileResponse = memberService.getSimpleProfile()
+                                                if (profileResponse.isSuccessful) {
+                                                    userProfile = profileResponse.body()
+                                                }
+                                            } else {
+                                                // 실패 시 에러 메시지 표시
+                                                Toast.makeText(
+                                                    context,
+                                                    "주문 실패: ${response.message()}",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                                isLoading = false
+                                            }
+                                        } catch (e: Exception) {
+                                            // 에러 발생 시
+                                            Toast.makeText(
+                                                context,
+                                                "주문 실패: ${e.message}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            isLoading = false
+                                        }
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Secondary500
+                                    containerColor = ChartBlue
                                 ),
                                 modifier = Modifier.weight(1f),
                                 enabled = !isLoading
@@ -965,10 +1407,10 @@ fun StockDetailScreen(
                                     hideKeyboard()
                                     showBuyBottomSheet = false
                                     buyStep = 1
-                                    buyOrderType = "지정가"
+                                    buyOrderType = "시장가"
                                     buyPrice = ""
                                     buyQuantity = ""
-                                    showSuccessMessage = false
+                                    showBuySuccessMessage = false
                                 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Secondary500
@@ -1038,7 +1480,14 @@ fun StockDetailScreen(
             ) {
                 // 매도 버튼 (왼쪽)
                 Button(
-                    onClick = { showSellBottomSheet = true },
+                    onClick = { 
+                        if (authViewModel.isLoggedIn.value) {
+                            showSellBottomSheet = true
+                        } else {
+                            loginDialogType = "sell"
+                            showLoginDialog = true
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -1060,7 +1509,14 @@ fun StockDetailScreen(
 
                 // 매수 버튼 (오른쪽)
                 Button(
-                    onClick = { showBuyBottomSheet = true },
+                    onClick = { 
+                        if (authViewModel.isLoggedIn.value) {
+                            showBuyBottomSheet = true
+                        } else {
+                            loginDialogType = "buy"
+                            showLoginDialog = true
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -1101,7 +1557,7 @@ fun StockDetailScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = stock.stockName,
+                        text = stockDetail?.shortName ?: stock.stockName,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.W700,
                         fontFamily = SCDreamFontFamily
@@ -1110,7 +1566,7 @@ fun StockDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "${stock.currentPrice}원",
+                            text = "${stockPrice?.currentPrice.replace("""[+\-]""".toRegex(), "") ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")}원",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
@@ -1122,18 +1578,28 @@ fun StockDetailScreen(
                             color = Color.Gray,
                             fontFamily = SCDreamFontFamily
                         )
+                        val currentPriceValue = stockPrice?.currentPrice?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() 
+                            ?: stock.currentPrice.replace("""[+\-,]""".toRegex(), "").toIntOrNull() 
+                            ?: 0
+                        val fluctuationRate = stockPrice?.changeRate?.replace("""[+\-,%]""".toRegex(), "")?.toFloatOrNull()
+                            ?: stock.fluctuationRate.replace("""[+\-,%]""".toRegex(), "").toFloatOrNull()
+                            ?: 0f
+                        val priceChange = (currentPriceValue * fluctuationRate / 100).toInt()
+                        val isPositive = stockPrice?.let { it.isPositiveChange() }
+                            ?: stock.fluctuationRate.startsWith("+")
+
                         Text(
-                            text = "${if (stock.fluctuationRate.startsWith("+")) "+" else "-"}${Math.abs(stock.currentPrice.toInt() * stock.fluctuationRate.replace("+", "").replace("%", "").toFloat() / 100)}원",
+                            text = "${if (isPositive) "+" else "-"}${String.format("%,d", Math.abs(priceChange))}원",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
-                            color = if (stock.fluctuationRate.startsWith("+")) Color.Red else Color.Blue,
+                            color = if (isPositive) Color.Red else Color.Blue,
                             fontFamily = SCDreamFontFamily
                         )
                         Text(
-                            text = " (${stock.fluctuationRate}%)",
+                            text = " (${stockPrice?.changeRate ?: stock.fluctuationRate}%)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
-                            color = if (stock.fluctuationRate.startsWith("+")) Color.Red else Color.Blue,
+                            color = if (isPositive) Color.Red else Color.Blue,
                             fontFamily = SCDreamFontFamily
                         )
                     }
@@ -1151,7 +1617,7 @@ fun StockDetailScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(300.dp)
+                            .height(400.dp)
                             .padding(vertical = 16.dp),
                         colors = CardDefaults.cardColors(containerColor = Gray50)
                     ) {
@@ -1165,780 +1631,258 @@ fun StockDetailScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(bottom = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.End
                             ) {
-                                // 차트 전환 버튼
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .clickable { isShowingCandleChart = !isShowingCandleChart }
-                                        .padding(vertical = 2.dp, horizontal = 4.dp)
-                                ) {
-                                    // 동그란 체크 표시
-                                    Box(
+                                // 분 버튼 (드롭다운)
+                                Box {
+                                    Row(
                                         modifier = Modifier
-                                            .size(18.dp)
-                                            .background(Color.White, CircleShape)
-                                            .border(1.dp, Gray300, CircleShape),
-                                        contentAlignment = Alignment.Center
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (selectedPeriod.endsWith("분")) Gray100 else Color.Transparent)
+                                            .clickable { showMinuteDropdown = true }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (isShowingCandleChart) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(12.dp)
-                                                    .background(Secondary500, CircleShape)
-                                            )
-                                        }
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    
-                                    // 텍스트
-                                    Text(
-                                        text = "자세한 차트",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.W500,
-                                        fontFamily = SCDreamFontFamily,
-                                        color = if (isShowingCandleChart) Secondary500 else Gray700
-                                    )
-                                }
-                                
-                                Row(horizontalArrangement = Arrangement.End) {
-                                    // 분 버튼 (드롭다운)
-                                    Box {
-                                        Row(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (selectedPeriod.endsWith("분")) Gray100 else Color.Transparent)
-                                                .clickable { showMinuteDropdown = true }
-                                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = selectedPeriod.takeIf { it.endsWith("분") } ?: "1분",
-                                                fontSize = 12.sp,
-                                                color = Gray700,
-                                                fontFamily = SCDreamFontFamily
-                                            )
-                                            Icon(
-                                                imageVector = Icons.Default.KeyboardArrowDown,
-                                                contentDescription = "드롭다운",
-                                                tint = Gray700,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                        DropdownMenu(
-                                            expanded = showMinuteDropdown,
-                                            onDismissRequest = { showMinuteDropdown = false },
-                                            modifier = Modifier.background(Gray0)
-                                        ) {
-                                            minuteOptions.forEach { option ->
-                                                DropdownMenuItem(
-                                                    text = { 
-                                                        Text(
-                                                            text = option, 
-                                                            fontSize = 12.sp, 
-                                                            fontFamily = SCDreamFontFamily,
-                                                            color = Gray700
-                                                        ) 
-                                                    },
-                                                    onClick = {
-                                                        selectedPeriod = option
-                                                        showMinuteDropdown = false
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    // 일/주/월/년 버튼들
-                                    listOf("일", "주", "월", "년").forEach { period ->
                                         Text(
-                                            text = period,
+                                            text = selectedPeriod.takeIf { it.endsWith("분") } ?: "1분",
                                             fontSize = 12.sp,
                                             color = Gray700,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (selectedPeriod == period) Gray200 else Color.Transparent)
-                                                .clickable { selectedPeriod = period }
-                                                .padding(horizontal = 12.dp, vertical = 6.dp),
                                             fontFamily = SCDreamFontFamily
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "드롭다운",
+                                            tint = Gray700,
+                                            modifier = Modifier.size(16.dp)
+                                        )
                                     }
+                                    DropdownMenu(
+                                        expanded = showMinuteDropdown,
+                                        onDismissRequest = { showMinuteDropdown = false },
+                                        modifier = Modifier.background(Gray0)
+                                    ) {
+                                        minuteOptions.forEach { option ->
+                                            DropdownMenuItem(
+                                                text = { 
+                                                    Text(
+                                                        text = option, 
+                                                        fontSize = 12.sp, 
+                                                        fontFamily = SCDreamFontFamily,
+                                                        color = Gray700
+                                                    ) 
+                                                },
+                                                onClick = {
+                                                    selectedPeriod = option
+                                                    showMinuteDropdown = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                // 일/주/월/년 버튼들
+                                listOf("일", "주", "월", "년").forEach { period ->
+                                    Text(
+                                        text = period,
+                                        fontSize = 12.sp,
+                                        color = Gray700,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (selectedPeriod == period) Gray200 else Color.Transparent)
+                                            .clickable { selectedPeriod = period }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                 }
                             }
 
-                            // 차트 표시
-                            if (isShowingCandleChart) {
-                                // 캔들 차트
-                                CandleChartView(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(300.dp)
-                                        .padding(vertical = 8.dp)
-                                )
-                            } else {
-                                // 기존 라인 차트
-                                AndroidView(
-                                    factory = { context ->
-                                        LineChart(context).apply {
-                                            description.isEnabled = false
-                                            legend.isEnabled = false
-                                            setTouchEnabled(true)
-                                            setScaleEnabled(true)
-                                            isDoubleTapToZoomEnabled = true
-
-                                            xAxis.isEnabled = false
-                                            axisLeft.isEnabled = false
-                                            axisRight.isEnabled = false
-
-                                            val entries = listOf(
-                                                Entry(0f, 55000f),
-                                                Entry(1f, 57000f),
-                                                Entry(2f, 54000f),
-                                                Entry(3f, 58000f),
-                                                Entry(4f, 56000f),
-                                                Entry(5f, 60000f),
-                                                Entry(6f, 57000f),
-                                                Entry(7f, 53000f)
-                                            )
-
-                                            val dataSet = LineDataSet(entries, "주가").apply {
-                                                color = ChartRed.toArgb()
-                                                setDrawCircles(false)
-                                                setDrawValues(false)
-                                                lineWidth = 2f
-                                                mode = LineDataSet.Mode.LINEAR
-                                                setDrawHorizontalHighlightIndicator(false)
-                                                setDrawVerticalHighlightIndicator(true)
-                                                highlightLineWidth = 1f
-                                                highLightColor = Gray500.toArgb()
-                                            }
-
-                                            val dates = listOf(
-                                                "2024-03-01", "2024-03-02", "2024-03-03", "2024-03-04",
-                                                "2024-03-05", "2024-03-06", "2024-03-07", "2024-03-08"
-                                            )
-
-                                            val marker = ChartMarkerView(context, dates).apply {
-                                                setBackgroundColor(android.graphics.Color.WHITE)
-                                                setPadding(8, 8, 8, 8)
-                                                setElevation(4f)
-                                                setBackgroundResource(R.drawable.marker_background)
-                                            }
-                                            marker.chartView = this
-                                            this.marker = marker
-
-                                            // 최고/최저 Entry
-                                            val maxEntry = entries.maxByOrNull { it.y }
-                                            val minEntry = entries.minByOrNull { it.y }
-
-                                            // 화면 경계를 고려한 레이블 위치 조정 로직
-                                            val maxEntryX = maxEntry?.let {
-                                                if (it.x >= entries.size - 2) {
-                                                    it.x - 0.5f
-                                                } else if (it.x <= 1) {
-                                                    it.x + 0.5f
-                                                } else it.x
-                                            }
-                                            
-                                            val minEntryX = minEntry?.let {
-                                                if (it.x >= entries.size - 2) {
-                                                    it.x - 0.5f
-                                                } else if (it.x <= 1) {
-                                                    it.x + 0.5f
-                                                } else it.x
-                                            }
-
-                                            val maxLabelEntry = maxEntry?.let { Entry(maxEntryX ?: it.x, it.y + 250f) }
-                                            val minLabelEntry = minEntry?.let { Entry(minEntryX ?: it.x, it.y - 1150f) }
-
-                                            val maxValueSet = LineDataSet(listOfNotNull(maxLabelEntry), "Max").apply {
-                                                setDrawValues(true)
-                                                setDrawCircles(false)
-                                                color = AndroidColor.TRANSPARENT
-                                                valueTextColor = Gray700.toArgb()
-                                                valueTextSize = 12f
-                                                setValueFormatter(object : ValueFormatter() {
-                                                    override fun getPointLabel(entry: Entry?): String {
-                                                        return "최고 ${entry?.y?.minus(250f)?.toInt()?.toString() ?: ""}"
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f)
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isChartLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(48.dp),
+                                        color = Secondary500
+                                    )
+                                } else if (chartData?.chartData.isNullOrEmpty()) {
+                                    Text(
+                                        text = "차트 데이터가 없습니다",
+                                        fontSize = 16.sp,
+                                        color = Gray500,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                } else {
+                                    // 캔들 차트
+                                    AndroidView(
+                                        modifier = Modifier.fillMaxSize(),
+                                        factory = { ctx ->
+                                            CandleStickChart(ctx).apply {
+                                                description.isEnabled = false
+                                                legend.isEnabled = false
+                                                
+                                                // 터치 관련 설정
+                                                setTouchEnabled(true)
+                                                isHighlightPerDragEnabled = true
+                                                isHighlightPerTapEnabled = true
+                                                marker = null
+                                                setDrawMarkers(false)
+                                                
+                                                // 스크롤/줌 설정
+                                                setScaleEnabled(true)
+                                                setDrawGridBackground(false)
+                                                isDragEnabled = true
+                                                isScaleXEnabled = true
+                                                isScaleYEnabled = true
+                                                
+                                                // 스크롤 동작 개선
+                                                setDragDecelerationEnabled(true)
+                                                setDragDecelerationFrictionCoef(0.9f)
+                                                
+                                                // 차트 표시 설정
+                                                setVisibleXRangeMaximum(30f)  // 한 번에 보이는 캔들 개수
+                                                setVisibleXRangeMinimum(10f)  // 최소 보이는 캔들 개수
+                                                
+                                                // 차트 여백 설정
+                                                setViewPortOffsets(40f, 20f, 40f, 20f)
+                                                
+                                                // 스크롤 이벤트 리스너 추가
+                                                setOnChartGestureListener(object : OnChartGestureListener {
+                                                    override fun onChartScale(me: MotionEvent?, scaleX: Float, scaleY: Float) {}
+                                                    override fun onChartFling(me1: MotionEvent?, me2: MotionEvent?, velocityX: Float, velocityY: Float) {}
+                                                    override fun onChartSingleTapped(me: MotionEvent?) {}
+                                                    override fun onChartDoubleTapped(me: MotionEvent?) {}
+                                                    override fun onChartLongPressed(me: MotionEvent?) {}
+                                                    override fun onChartTranslate(me: MotionEvent?, dX: Float, dY: Float) {
+                                                        onChartScroll(dX)
                                                     }
+                                                    override fun onChartGestureStart(me: MotionEvent?, lastPerformedGesture: ChartTouchListener.ChartGesture?) {}
+                                                    override fun onChartGestureEnd(me: MotionEvent?, lastPerformedGesture: ChartTouchListener.ChartGesture?) {}
                                                 })
-                                            }
 
-                                            val minValueSet = LineDataSet(listOfNotNull(minLabelEntry), "Min").apply {
-                                                setDrawValues(true)
-                                                setDrawCircles(false)
-                                                color = AndroidColor.TRANSPARENT
-                                                valueTextColor = Gray700.toArgb()
-                                                valueTextSize = 12f
-                                                setValueFormatter(object : ValueFormatter() {
-                                                    override fun getPointLabel(entry: Entry?): String {
-                                                        return "최저 ${entry?.y?.plus(750f)?.toInt()?.toString() ?: ""}"
+                                                val entries = chartData?.chartData
+                                                    ?.sortedBy { it.date }  // 날짜순으로 정렬
+                                                    ?.takeLast(100)
+                                                    ?.mapIndexed { index, data ->
+                                                        CandleEntry(
+                                                            index.toFloat(),
+                                                            data.highPrice.toFloatOrNull() ?: 0f,
+                                                            data.lowPrice.toFloatOrNull() ?: 0f,
+                                                            data.openPrice.toFloatOrNull() ?: 0f,
+                                                            data.currentPrice.toFloatOrNull() ?: 0f
+                                                        )
+                                                    } ?: listOf()
+
+                                                if (entries.isNotEmpty()) {
+                                                    val dataSet = CandleDataSet(entries, "주가").apply {
+                                                        color = AndroidColor.BLACK
+                                                        shadowColorSameAsCandle = true
+                                                        increasingColor = ChartRed.toArgb()
+                                                        increasingPaintStyle = Paint.Style.FILL
+                                                        decreasingColor = ChartBlue.toArgb()
+                                                        decreasingPaintStyle = Paint.Style.FILL
+                                                        neutralColor = Gray500.toArgb()
+                                                        setDrawValues(false)
+                                                        highLightColor = AndroidColor.TRANSPARENT
+                                                        shadowWidth = 1f
+                                                        barSpace = 0.1f  // 캔들 사이 간격 조정
                                                     }
-                                                })
-                                            }
 
-                                            var isHighlighting = false
+                                                    data = CandleData(dataSet)
 
-                                            val initialDataSets = listOf<ILineDataSet>(dataSet, maxValueSet, minValueSet)
-                                            data = LineData(initialDataSets)
-                                            notifyDataSetChanged()
-
-                                            fun updateChart() {
-                                                maxValueSet.setDrawValues(!isHighlighting)
-                                                minValueSet.setDrawValues(!isHighlighting)
-
-                                                val dataSets = listOf<ILineDataSet>(
-                                                    dataSet,
-                                                    maxValueSet,
-                                                    minValueSet
-                                                )
-
-                                                data = LineData(dataSets)
-                                                invalidate()
-                                            }
-
-                                            setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
-                                                override fun onValueSelected(e: Entry?, h: Highlight?) {
-                                                    isHighlighting = true
-                                                    updateChart()
-                                                }
-
-                                                override fun onNothingSelected() {
-                                                    isHighlighting = false
-                                                    updateChart()
-                                                }
-                                            })
-
-                                            setOnTouchListener { _, event ->
-                                                when (event.action) {
-                                                    android.view.MotionEvent.ACTION_DOWN -> {
-                                                        parent?.requestDisallowInterceptTouchEvent(true)
+                                                    // X축 설정
+                                                    xAxis.apply {
+                                                        position = XAxis.XAxisPosition.BOTTOM
+                                                        setDrawGridLines(false)
+                                                        labelCount = 5
+                                                        textColor = Gray500.toArgb()
+                                                        valueFormatter = object : ValueFormatter() {
+                                                            override fun getFormattedValue(value: Float): String {
+                                                                val index = value.toInt()
+                                                                return if (index >= 0 && index < entries.size) {
+                                                                    val date = chartData?.chartData?.get(index)?.date ?: ""
+                                                                    when {
+                                                                        // 분봉 (YYYYMMDDHHmm)
+                                                                        selectedPeriod.endsWith("분") && date.length >= 12 -> {
+                                                                            val hour = date.substring(8, 10)
+                                                                            val minute = date.substring(10, 12)
+                                                                            "$hour:$minute"
+                                                                        }
+                                                                        // 일봉 (YYYYMMDD)
+                                                                        selectedPeriod == "일" && date.length >= 8 -> {
+                                                                            val month = date.substring(4, 6)
+                                                                            val day = date.substring(6, 8)
+                                                                            "$month.$day"
+                                                                        }
+                                                                        // 주봉 (YYYYMMDD)
+                                                                        selectedPeriod == "주" && date.length >= 8 -> {
+                                                                            val month = date.substring(4, 6)
+                                                                            val day = date.substring(6, 8)
+                                                                            "$month.$day"
+                                                                        }
+                                                                        // 월봉 (YYYYMM)
+                                                                        selectedPeriod == "월" && date.length >= 6 -> {
+                                                                            val year = date.substring(0, 4)
+                                                                            val month = date.substring(4, 6)
+                                                                            "$year.$month"
+                                                                        }
+                                                                        // 연봉 (YYYY)
+                                                                        selectedPeriod == "년" && date.length >= 4 -> {
+                                                                            date.substring(0, 4)
+                                                                        }
+                                                                        else -> ""
+                                                                    }
+                                                                } else ""
+                                                            }
+                                                        }
+                                                        granularity = 1f
+                                                        setAvoidFirstLastClipping(true)
                                                     }
-                                                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                                                        parent?.requestDisallowInterceptTouchEvent(false)
-                                                        highlightValue(null)
-                                                        isHighlighting = false
-                                                        updateChart()
+                                                    
+                                                    // Y축 설정
+                                                    axisRight.isEnabled = false
+                                                    axisLeft.apply {
+                                                        setDrawGridLines(true)
+                                                        textColor = Gray500.toArgb()
+                                                        setLabelCount(5, true)
+                                                        setPosition(YAxis.YAxisLabelPosition.OUTSIDE_CHART)
                                                     }
-                                                }
-                                                false
-                                            }
 
-                                            updateChart()
+                                                    // 초기 위치 설정 - 가장 최근 데이터 표시
+                                                    moveViewToX(entries.size.toFloat())
+                                                    setVisibleXRangeMaximum(50f)  // 한 번에 보이는 캔들 개수 조정
+                                                    invalidate()
+                                                }
+                                            }
                                         }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(300.dp)
-                                        .padding(vertical = 8.dp)
-                                )
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                item {
-                    // 보유 정보
+                    // 호가창 추가
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 16.dp),
                         colors = CardDefaults.cardColors(containerColor = Gray50)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            // 보유 수량
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "수량",
-                                    fontSize = 14.sp,
-                                    color = Gray500,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                                Text(
-                                    text = "10.0589",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.W500,
-                                    color = Gray700,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                            }
-
-                            // 평가금액
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "평가금액",
-                                    fontSize = 14.sp,
-                                    color = Gray500,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                                Text(
-                                    text = "$2,285.93",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.W500,
-                                    color = Gray700,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                            }
-
-                            // 평단가
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "평단가",
-                                    fontSize = 14.sp,
-                                    color = Gray500,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                                Text(
-                                    text = "$227.30",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.W500,
-                                    color = Gray700,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                            }
-
-                            // 총 수익
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "총 수익",
-                                    fontSize = 14.sp,
-                                    color = Gray500,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                                Text(
-                                    text = "$0.00 (0.00%)",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.W500,
-                                    color = Gray700,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                            }
-                        }
-                    }
-
-                    // 호가창 (별도의 Card)
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Gray50)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            Text(
-                                text = "호가잔량",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Gray700,
-                                fontFamily = SCDreamFontFamily,
-                                modifier = Modifier.padding(bottom = 12.dp)
+                        stockBidAsk?.let { bidAsk ->
+                            StockBidAskView(
+                                stockBidAsk = bidAsk,
+                                modifier = Modifier.padding(8.dp)
                             )
-
-                            // 매도 호가 (위쪽 5개)
-                            val sellOrders = listOf(
-                                Triple("1200", "152500", "650"),
-                                Triple("900", "152000", "750"),
-                                Triple("800", "151500", "850"),
-                                Triple("700", "151000", "950"),
-                                Triple("600", "150500", "1050")
-                            )
-
-                            val maxSellVolume = sellOrders.maxOf { it.first.toInt() }
-                            val maxBuyVolume = sellOrders.maxOf { it.third.toInt() }
-
-                            sellOrders.forEach { (askVolume, price, bidVolume) ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // 매도 잔량
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(24.dp)
-                                    ) {
-                                        Text(
-                                            text = askVolume,
-                                            fontSize = 12.sp,
-                                            color = ChartBlue,
-                                            fontFamily = SCDreamFontFamily,
-                                            modifier = Modifier.align(Alignment.CenterEnd)
-                                        )
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth(askVolume.toFloat() / maxSellVolume)
-                                                .height(24.dp)
-                                                .background(
-                                                    color = ChartBlue.copy(alpha = 0.1f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                )
-                                                .align(Alignment.CenterEnd)
-                                        )
-                                    }
-
-                                    // 가격
-                                    Text(
-                                        text = price,
-                                        fontSize = 12.sp,
-                                        color = Gray700,
-                                        fontFamily = SCDreamFontFamily,
-                                        modifier = Modifier
-                                            .padding(horizontal = 12.dp)
-                                            .width(60.dp),
-                                        textAlign = TextAlign.Center
-                                    )
-
-                                    // 매수 잔량
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(24.dp)
-                                    ) {
-                                        Text(
-                                            text = bidVolume,
-                                            fontSize = 12.sp,
-                                            color = ChartRed,
-                                            fontFamily = SCDreamFontFamily,
-                                            modifier = Modifier.align(Alignment.CenterStart)
-                                        )
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth(bidVolume.toFloat() / maxBuyVolume)
-                                                .height(24.dp)
-                                                .background(
-                                                    color = ChartRed.copy(alpha = 0.1f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                )
-                                                .align(Alignment.CenterStart)
-                                        )
-                                    }
-                                }
-                            }
-
-                            // 현재가 표시
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "150000",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ChartRed,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                            }
-
-                            // 매수 호가 (아래쪽 5개)
-                            val buyOrders = listOf(
-                                Triple("1200", "149500", "650"),
-                                Triple("900", "149000", "750"),
-                                Triple("800", "148500", "850"),
-                                Triple("700", "148000", "950"),
-                                Triple("600", "147500", "1050")
-                            )
-
-                            val maxSellVolume2 = buyOrders.maxOf { it.first.toInt() }
-                            val maxBuyVolume2 = buyOrders.maxOf { it.third.toInt() }
-
-                            buyOrders.forEach { (askVolume, price, bidVolume) ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // 매도 잔량
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(24.dp)
-                                    ) {
-                                        Text(
-                                            text = askVolume,
-                                            fontSize = 12.sp,
-                                            color = ChartBlue,
-                                            fontFamily = SCDreamFontFamily,
-                                            modifier = Modifier.align(Alignment.CenterEnd)
-                                        )
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth(askVolume.toFloat() / maxSellVolume2)
-                                                .height(24.dp)
-                                                .background(
-                                                    color = ChartBlue.copy(alpha = 0.1f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                )
-                                                .align(Alignment.CenterEnd)
-                                        )
-                                    }
-
-                                    // 가격
-                                    Text(
-                                        text = price,
-                                        fontSize = 12.sp,
-                                        color = Gray700,
-                                        fontFamily = SCDreamFontFamily,
-                                        modifier = Modifier
-                                            .padding(horizontal = 12.dp)
-                                            .width(60.dp),
-                                        textAlign = TextAlign.Center
-                                    )
-
-                                    // 매수 잔량
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(24.dp)
-                                    ) {
-                                        Text(
-                                            text = bidVolume,
-                                            fontSize = 12.sp,
-                                            color = ChartRed,
-                                            fontFamily = SCDreamFontFamily,
-                                            modifier = Modifier.align(Alignment.CenterStart)
-                                        )
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth(bidVolume.toFloat() / maxBuyVolume2)
-                                                .height(24.dp)
-                                                .background(
-                                                    color = ChartRed.copy(alpha = 0.1f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                )
-                                                .align(Alignment.CenterStart)
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.W400,
-            color = Gray500,
-            fontFamily = SCDreamFontFamily
-        )
-        Text(
-            text = value,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.W500,
-            color = Gray700,
-            fontFamily = SCDreamFontFamily
-        )
-    }
-}
-
-// 캔들 차트 Composable 추가
-@Composable
-fun CandleChartView(modifier: Modifier = Modifier) {
-    val candleEntries = remember {
-        listOf(
-            CandleEntry(0f, 57000f, 54000f, 55000f, 57000f), // x, high, low, open, close
-            CandleEntry(1f, 58000f, 56000f, 57000f, 56000f),
-            CandleEntry(2f, 56000f, 53000f, 56000f, 54000f),
-            CandleEntry(3f, 59000f, 57000f, 54000f, 58000f),
-            CandleEntry(4f, 58000f, 55000f, 58000f, 56000f),
-            CandleEntry(5f, 62000f, 59000f, 56000f, 60000f),
-            CandleEntry(6f, 61000f, 56000f, 60000f, 57000f),
-            CandleEntry(7f, 57000f, 52000f, 57000f, 53000f)
-        )
-    }
-    
-    val dates = remember {
-        listOf(
-            "2024-03-01", "2024-03-02", "2024-03-03", "2024-03-04",
-            "2024-03-05", "2024-03-06", "2024-03-07", "2024-03-08"
-        )
-    }
-
-    AndroidView(
-        factory = { context ->
-            CandleStickChart(context).apply {
-                setBackgroundColor(android.graphics.Color.WHITE)
-                description.isEnabled = false
-                legend.isEnabled = false
-                setTouchEnabled(true)
-
-                setOnTouchListener { _, event ->
-                    when (event.action) {
-                        android.view.MotionEvent.ACTION_DOWN -> {
-                            parent?.requestDisallowInterceptTouchEvent(true)
-                        }
-                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                            parent?.requestDisallowInterceptTouchEvent(false)
-                            highlightValue(null)
-                        }
-                    }
-                    false
-                }
-
-                val xAxis = xAxis
-                xAxis.position = XAxis.XAxisPosition.BOTTOM
-                xAxis.setDrawGridLines(false)
-                xAxis.labelCount = 4
-                xAxis.valueFormatter = object : ValueFormatter() {
-                    override fun getFormattedValue(value: Float): String {
-                        val index = value.toInt()
-                        return if (index >= 0 && index < dates.size) {
-                            dates[index].substring(5) // "MM-DD" 형식으로 표시
-                        } else {
-                            ""
-                        }
-                    }
-                }
-
-                axisRight.isEnabled = false
-                
-                axisLeft.setDrawGridLines(true)
-                axisLeft.valueFormatter = object : ValueFormatter() {
-                    override fun getFormattedValue(value: Float): String {
-                        return "${value.toInt()}"
-                    }
-                }
-                
-                // 마커뷰 설정
-                val candleMarkerView = ChartMarkerView(context, dates).apply {
-                    setBackgroundColor(android.graphics.Color.WHITE)
-                    setPadding(8, 8, 8, 8)
-                    setElevation(4f)
-                    setBackgroundResource(R.drawable.marker_background)
-                }
-                candleMarkerView.chartView = this
-                marker = candleMarkerView
-
-                val dataSet = CandleDataSet(candleEntries, "주가").apply {
-                    color = android.graphics.Color.BLACK
-                    shadowColorSameAsCandle = true
-                    increasingColor = ChartRed.toArgb() // 상승 캔들 색상
-                    increasingPaintStyle = Paint.Style.FILL
-                    decreasingColor = ChartBlue.toArgb() // 하락 캔들 색상
-                    decreasingPaintStyle = Paint.Style.FILL
-                    neutralColor = Gray500.toArgb()
-                    setDrawValues(false) // 값 표시 비활성화
-                    setHighlightLineWidth(1.5f)
-                    setHighLightColor(Gray700.toArgb())
-                }
-
-                val data = CandleData(dataSet)
-                setData(data)
-                invalidate()
-            }
-        },
-        modifier = modifier
-    )
-}
-
-// 캔들 차트용 마커뷰 클래스
-class ChartMarkerView(
-    context: android.content.Context,
-    private val dates: List<String>
-) : com.github.mikephil.charting.components.MarkerView(context, R.layout.candle_marker_view) {
-    
-    private val tvDate: android.widget.TextView = findViewById(R.id.tvDate)
-    private val tvOpen: android.widget.TextView = findViewById(R.id.tvOpen)
-    private val tvHigh: android.widget.TextView = findViewById(R.id.tvHigh)
-    private val tvLow: android.widget.TextView = findViewById(R.id.tvLow)
-    private val tvClose: android.widget.TextView = findViewById(R.id.tvClose)
-    
-    override fun refreshContent(e: Entry?, highlight: Highlight?) {
-        if (e is CandleEntry) {
-            val index = e.x.toInt()
-            val date = if (index >= 0 && index < dates.size) dates[index] else ""
-            
-            tvDate.text = date
-            tvOpen.text = "시가: ${e.open.toInt().toLocaleString()}원"
-            tvHigh.text = "고가: ${e.high.toInt().toLocaleString()}원"
-            tvLow.text = "저가: ${e.low.toInt().toLocaleString()}원"
-            tvClose.text = "종가: ${e.close.toInt().toLocaleString()}원"
-        }
-        super.refreshContent(e, highlight)
-    }
-    
-    override fun getOffset(): MPPointF {
-        return MPPointF(-(width / 2f), -height.toFloat())
-    }
-}
-
-// 숫자에 천 단위 콤마 추가 확장 함수
-fun Int.toLocaleString(): String {
-    return String.format("%,d", this)
-}
-
-@Composable
-private fun OrderInfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            color = Gray500,
-            fontFamily = SCDreamFontFamily
-        )
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.W500,
-            color = Gray700,
-            fontFamily = SCDreamFontFamily
-        )
     }
 }

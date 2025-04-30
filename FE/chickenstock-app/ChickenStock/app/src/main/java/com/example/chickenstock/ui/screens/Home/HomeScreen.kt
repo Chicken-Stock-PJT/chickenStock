@@ -1,11 +1,13 @@
 package com.example.chickenstock.ui.screens.home
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
@@ -29,20 +31,26 @@ import coil.compose.AsyncImage
 import com.example.chickenstock.viewmodel.MainViewModel
 import com.example.chickenstock.ui.components.SegmentedControl
 import com.example.chickenstock.ui.components.StockListItem
-import com.example.chickenstock.ui.components.MoreButton
 import com.example.chickenstock.ui.components.StockItem
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import com.example.chickenstock.ui.components.MoreButton
 import com.example.chickenstock.viewmodel.AuthViewModel
 import com.example.chickenstock.api.RetrofitClient
 import com.example.chickenstock.api.MemberService
 import com.example.chickenstock.api.SimpleProfileResponse
+import com.example.chickenstock.api.WatchlistItem
 import com.example.chickenstock.api.PortfolioWebSocket
 import com.example.chickenstock.model.PortfolioData
 import com.example.chickenstock.model.Position
 import com.example.chickenstock.model.StockUpdate
 import com.example.chickenstock.model.TotalData
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.launch
+import com.example.chickenstock.api.StockService
+import com.example.chickenstock.model.RankingItem
 
 // 임시 데이터 클래스
 data class UserAssetInfo(
@@ -72,6 +80,11 @@ fun Int.toFormattedString(): String {
     return String.format("%,d", this)
 }
 
+// Long 확장 함수 추가
+fun Long.toFormattedString(): String {
+    return String.format("%,d", this)
+}
+
 // AssetInfoRow 컴포넌트 추가
 @Composable
 fun AssetInfoRow(label: String, value: String) {
@@ -96,24 +109,37 @@ fun AssetInfoRow(label: String, value: String) {
 
 // FavoriteStock 데이터 클래스 추가
 data class FavoriteStock(
+    val stockCode: String,
     val stockName: String,
-    val stockLogo: Int,
-    val currentPrice: Int,
-    val fluctuationRate: Float
+    val currentPrice: String,
+    val fluctuationRate: String
 )
 
 // FavoriteStockItem 컴포넌트 추가
 @Composable
 fun FavoriteStockItem(
     stock: FavoriteStock,
-    onFavoriteClick: () -> Unit,
-    onItemClick: () -> Unit
+    navController: NavHostController,
+    authViewModel: AuthViewModel,
+    viewModel: MainViewModel
 ) {
+    val isInWatchlist = viewModel.watchlist.value.contains(stock.stockCode)
+    val scope = rememberCoroutineScope()
+    
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
-            .clickable(onClick = onItemClick),
+            .clickable {
+                navController.navigate(Screen.StockDetail.createRoute(
+                    stockCode = stock.stockCode,
+                    currentPrice = stock.currentPrice,
+                    fluctuationRate = stock.fluctuationRate
+                )) {
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
         shape = RoundedCornerShape(16.dp),
         color = Color(0xFFF8F8F8),
         shadowElevation = 2.dp
@@ -131,7 +157,7 @@ fun FavoriteStockItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AsyncImage(
-                    model = stock.stockLogo,
+                    model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${stock.stockCode}.png",
                     contentDescription = "주식 로고",
                     modifier = Modifier
                         .size(40.dp)
@@ -142,7 +168,7 @@ fun FavoriteStockItem(
                 Column {
                     Text(
                         text = stock.stockName,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.W700,
                         fontFamily = SCDreamFontFamily
                     )
@@ -150,19 +176,19 @@ fun FavoriteStockItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${stock.currentPrice.toFormattedString()}원",
-                            fontSize = 12.sp,
+                            text = "${stock.currentPrice.replace("""[+\-]""".toRegex(), "")}원",
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
                         )
                         Text(
-                            text = " ${if (stock.fluctuationRate > 0) "+" else ""}${String.format("%.2f", stock.fluctuationRate)}%",
+                            text = " ${stock.fluctuationRate}%",
                             color = when {
-                                stock.fluctuationRate > 0 -> Color.Red
-                                stock.fluctuationRate < 0 -> Color.Blue
+                                stock.fluctuationRate.startsWith("+") -> Color.Red
+                                stock.fluctuationRate.startsWith("-") -> Color.Blue
                                 else -> Color.Gray
                             },
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
                         )
@@ -172,13 +198,25 @@ fun FavoriteStockItem(
             
             // 오른쪽: 하트 아이콘
             IconButton(
-                onClick = onFavoriteClick,
+                onClick = {
+                    if (authViewModel.isLoggedIn.value) {
+                        scope.launch {
+                            viewModel.removeFromWatchlist(
+                                stockCode = stock.stockCode,
+                                onSuccess = {
+                                    // 삭제 후 관심 종목 목록 다시 로드
+                                    viewModel.loadWatchlist()
+                                }
+                            )
+                        }
+                    }
+                },
                 modifier = Modifier.size(22.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.FavoriteBorder,
-                    contentDescription = "즐겨찾기",
-                    tint = Gray300,
+                    imageVector = Icons.Filled.Favorite,
+                    contentDescription = "관심 종목 삭제",
+                    tint = Color(0xFFFF4081),
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -198,38 +236,21 @@ fun HomeScreen(
     
     // API 상태 관리
     var userProfile by remember { mutableStateOf<SimpleProfileResponse?>(null) }
-    var portfolioData by remember { mutableStateOf<PortfolioData?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    // API 상태 관리
+    var stockRankings by remember { mutableStateOf<List<RankingItem>>(emptyList()) }
+    
+    // 포트폴리오 데이터는 ViewModel에서 관리
+    val portfolioData = viewModel.portfolioData.value
+    
+    // Context 가져오기
+    val context = LocalContext.current
 
-    // 임시 관심 종목 데이터
-    val dummyFavoriteStocks = remember {
-        listOf(
-            StockItem(
-                stockCode = "005930",
-                stockName = "삼성전자",
-                market = "KOSPI",
-                currentPrice = "73,200",
-                fluctuationRate = "-0.40",
-                tradeAmount = "950"
-            ),
-            StockItem(
-                stockCode = "000660",
-                stockName = "SK하이닉스",
-                market = "KOSPI",
-                currentPrice = "174,100",
-                fluctuationRate = "-3.50",
-                tradeAmount = "850"
-            ),
-            StockItem(
-                stockCode = "042660",
-                stockName = "한화오션",
-                market = "KOSPI",
-                currentPrice = "77,100",
-                fluctuationRate = "-2.80",
-                tradeAmount = "750"
-            )
-        )
+    // ViewModel 서비스 초기화
+    LaunchedEffect(Unit) {
+        viewModel.initializeServices(context)
     }
     
     // 웹소켓 연결
@@ -243,24 +264,8 @@ fun HomeScreen(
     LaunchedEffect(webSocket) {
         webSocket?.stockUpdateFlow?.collect { update ->
             update?.let { stockUpdate ->
-                // 포트폴리오 데이터 업데이트
-                portfolioData = portfolioData?.copy(
-                    totalAsset = stockUpdate.totalData.totalAsset,
-                    totalProfitLoss = stockUpdate.totalData.totalProfitLoss,
-                    totalReturnRate = stockUpdate.totalData.totalReturnRate,
-                    positions = portfolioData?.positions?.map { position ->
-                        if (position.stockCode == stockUpdate.stockCode) {
-                            position.copy(
-                                currentPrice = stockUpdate.currentPrice,
-                                valuationAmount = stockUpdate.valuationAmount,
-                                profitLoss = stockUpdate.profitLoss,
-                                returnRate = stockUpdate.returnRate
-                            )
-                        } else {
-                            position
-                        }
-                    } ?: emptyList()
-                )
+                // 포트폴리오 데이터 업데이트를 ViewModel에서 처리
+                viewModel.updatePortfolioData(stockUpdate)
             }
         }
     }
@@ -282,11 +287,13 @@ fun HomeScreen(
     }
 
     // API 호출
-    val context = LocalContext.current
     val memberService = remember { RetrofitClient.getInstance(context).create(MemberService::class.java) }
     
+    // API 서비스 생성
+    val stockService = remember { RetrofitClient.getInstance(context).create(StockService::class.java) }
+    
     // 프로필 정보와 포트폴리오 정보 로드
-    LaunchedEffect(authViewModel.isLoggedIn.value) {
+    LaunchedEffect(Unit) {
         if (authViewModel.isLoggedIn.value) {
             isLoading = true
             try {
@@ -299,13 +306,79 @@ fun HomeScreen(
                 // 포트폴리오 정보 로드
                 val portfolioResponse = memberService.getPortfolio()
                 if (portfolioResponse.isSuccessful) {
-                    portfolioData = portfolioResponse.body()
+                    viewModel.setPortfolioData(portfolioResponse.body())
                 }
+
+                // 관심 종목 목록 로드
+                viewModel.loadWatchlist()
+                Log.d("HomeScreen", "관심 종목 조회 결과: ${viewModel.watchlistItems.value}")
             } catch (e: Exception) {
                 error = e.message ?: "알 수 없는 오류가 발생했습니다."
             } finally {
                 isLoading = false
             }
+        }
+    }
+
+    // API 엔드포인트 결정
+    val currentEndpoint = remember(selectedSortIndex) {
+        when (selectedSortIndex) {
+            0 -> "stock/ranking/tradeAmount" // 거래대금
+            1 -> "stock/ranking/fluctuationRate" // 급상승
+            2 -> "stock/ranking/fluctuationRate" // 급하락
+            3 -> "stock/ranking/volume" // 거래량
+            else -> "stock/ranking/tradeAmount"
+        }
+    }
+
+    // sortType 결정
+    val currentSortType = remember(selectedSortIndex) {
+        when (selectedSortIndex) {
+            0 -> "1" // 거래대금
+            1 -> "1" // 급상승 (상승률)
+            2 -> "3" // 급하락 (하락률)
+            3 -> "1" // 거래량 (기본값 1 사용)
+            else -> "1"
+        }
+    }
+
+    // 초기 데이터 로드
+    LaunchedEffect(selectedSortIndex) {
+        isLoading = true
+        stockRankings = emptyList() // 초기화
+        try {
+            val response = if (selectedSortIndex in listOf(1, 2)) {
+                // 급상승/급하락의 경우
+                stockService.getFluctuationRateRanking(
+                    marketType = "000",
+                    sortType = currentSortType
+                )
+            } else if (selectedSortIndex == 3) {
+                // 거래량의 경우
+                stockService.getVolumeRanking(
+                    marketType = "000"
+                )
+            } else {
+                // 거래대금의 경우
+                stockService.getTradeAmountRanking(
+                    marketType = "000"
+                )
+            }
+
+            if (response.isSuccessful) {
+                response.body()?.let { rankingResponse ->
+                    stockRankings = rankingResponse.rankingItems
+                    Log.d("HomeScreen", "실시간 종목 랭킹 조회 결과: $stockRankings")
+                } ?: run {
+                    error = "데이터가 없습니다."
+                }
+            } else {
+                error = "데이터를 불러오는데 실패했습니다. (${response.code()})"
+            }
+        } catch (e: Exception) {
+            error = e.message ?: "알 수 없는 오류가 발생했습니다."
+        } finally {
+            isLoading = false
         }
     }
 
@@ -363,7 +436,10 @@ fun HomeScreen(
                                     Spacer(modifier = Modifier.height(24.dp))
                                     
                                     // 총 자산
-                                    AssetInfoRow("총 자산", "${profile.memberMoney}원")
+                                    AssetInfoRow(
+                                        "총 자산", 
+                                        "${profile.memberMoney.toLong().toFormattedString()}원"
+                                    )
                                     
                                     Spacer(modifier = Modifier.height(8.dp))
                                     
@@ -525,32 +601,46 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.height(16.dp))
                             
                             // 관심 종목 목록
-                            dummyFavoriteStocks.forEach { stock ->
-                                FavoriteStockItem(
-                                    stock = FavoriteStock(
-                                        stockName = stock.stockName,
-                                        stockLogo = R.drawable.logo,
-                                        currentPrice = stock.currentPrice.replace(",", "").toInt(),
-                                        fluctuationRate = stock.fluctuationRate.toFloat()
-                                    ),
-                                    onFavoriteClick = { /* 즐겨찾기 기능 */ },
-                                    onItemClick = { /* 종목 상세 화면으로 이동 */ }
+                            if (viewModel.watchlistItems.value.isEmpty()) {
+                                Text(
+                                    text = "관심 종목이 없습니다.",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.W500,
+                                    fontFamily = SCDreamFontFamily,
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(vertical = 16.dp)
                                 )
+                            } else {
+                                viewModel.watchlistItems.value.take(3).forEach { item ->
+                                    FavoriteStockItem(
+                                        stock = FavoriteStock(
+                                            stockCode = item.stockCode,
+                                            stockName = item.stockName,
+                                            currentPrice = item.currentPrice.toString(),
+                                            fluctuationRate = item.changeRate
+                                        ),
+                                        navController = navController,
+                                        authViewModel = authViewModel,
+                                        viewModel = viewModel
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                // 관심 종목이 4개 이상일 때만 더보기 버튼 표시
+                                if (viewModel.watchlistItems.value.size >= 4) {
+                                    MoreButton(
+                                        onClick = {
+                                            navController.navigate("${Screen.MyPage.route}?tab=favorite") {
+                                                launchSingleTop = true
+                                                popUpTo(Screen.Home.route)
+                                            }
+                                        },
+                                        text = "관심 종목 더보기",
+                                        modifier = Modifier.padding(horizontal = 16.dp)
+                                    )
+                                }
                             }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            // 관심 종목 더보기 버튼
-                            MoreButton(
-                                onClick = {
-                                    navController.navigate("${Screen.MyPage.route}?tab=favorite") {
-                                        launchSingleTop = true
-                                        popUpTo(Screen.Home.route)
-                                    }
-                                },
-                                text = "관심 종목 더보기",
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
                         }
                     } else {
                         // 비로그인 상태: 기존 배너 표시
@@ -625,19 +715,40 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        val items = listOf(
-                            StockItem("086520", "에코프로", "KOSDAQ", "1230000", "+5.60", "1200"),
-                            StockItem("005930", "삼성전자", "KOSPI", "73200", "-0.40", "950"),
-                            StockItem("035720", "카카오", "KOSPI", "48500", "-1.20", "850")
-                        )
-
-                        items.forEach { stock ->
-                            StockListItem(
-                                stock = stock,
-                                navController = navController,
-                                authViewModel = authViewModel,
-                                onFavoriteClick = { /* 즐겨찾기 기능 */ }
+                        // API 호출 결과에 따른 상태 표시
+                        if (isLoading) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Color(0xFFFFEB3B))
+                            }
+                        } else if (error != null) {
+                            Text(
+                                text = error!!,
+                                color = Color.Red,
+                                modifier = Modifier.padding(32.dp)
                             )
+                        } else {
+                            stockRankings.take(3).forEach { rankingItem ->
+                                StockListItem(
+                                    stock = StockItem(
+                                        stockCode = rankingItem.stockCode.split("_")[0],
+                                        stockName = rankingItem.stockName,
+                                        market = "",
+                                        currentPrice = rankingItem.currentPrice.replace("[+-]".toRegex(), ""),
+                                        fluctuationRate = rankingItem.fluctuationRate,
+                                        tradeAmount = when (selectedSortIndex) {
+                                            3 -> rankingItem.tradeVolume?.toString() ?: "0" // 거래량 탭일 때는 tradeVolume 사용
+                                            1, 2 -> rankingItem.contractStrength ?: "0" // 급상승/급하락 탭
+                                            else -> rankingItem.tradeAmount ?: "0" // 거래대금 탭
+                                        }
+                                    ),
+                                    navController = navController,
+                                    authViewModel = authViewModel,
+                                    viewModel = viewModel
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))

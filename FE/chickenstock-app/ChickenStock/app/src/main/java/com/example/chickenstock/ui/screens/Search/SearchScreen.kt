@@ -26,6 +26,17 @@ import com.example.chickenstock.navigation.Screen
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.draw.clip
+import com.example.chickenstock.data.StockRepository
+import com.example.chickenstock.data.Stock
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.flow.collect
+import androidx.compose.ui.platform.LocalContext
+import android.content.Context
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 data class SearchResult(
     val name: String,
@@ -45,107 +56,129 @@ data class PopularSearchItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(navController: NavController) {
+    val context = LocalContext.current
+    val backStackEntry = navController.currentBackStackEntry
     var searchQuery by remember { mutableStateOf("") }
-    val keyboardController = LocalSoftwareKeyboardController.current
     
-    // 뒤로가기 버튼 처리
-    BackHandler {
-        keyboardController?.hide()
-        navController.navigateUp()
-    }
+    // SharedPreferences에서 최근 검색어 불러오기
+    val prefs = context.getSharedPreferences("recent_searches", Context.MODE_PRIVATE)
+    val gson = Gson()
     
-    // 최근 검색어 데이터
-    val recentSearches = remember { listOf("삼성") }
-    
-    // 인기 검색어 데이터
-    val popularSearches = remember {
-        listOf(
-            PopularSearchItem(1, "삼성", "UP"),
-            PopularSearchItem(2, "엔비디아", "SAME"),
-            PopularSearchItem(3, "대한제당", "DOWN"),
-            PopularSearchItem(4, "네이버", "DOWN"),
-            PopularSearchItem(5, "테슬라", "DOWN"),
-            PopularSearchItem(6, "닌텐도", "SAME")
+    // 최근 검색어 상태 관리
+    var recentSearches by remember { 
+        mutableStateOf(
+            try {
+                val json = prefs.getString("searches", "[]")
+                gson.fromJson<List<Stock>>(json, object : TypeToken<List<Stock>>() {}.type) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
         )
     }
 
-    Scaffold(
-        containerColor = Color.White
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp)
+    // 최근 검색어 저장 함수
+    fun saveRecentSearches(searches: List<Stock>) {
+        prefs.edit().apply {
+            putString("searches", gson.toJson(searches))
+            apply()
+        }
+    }
+    
+    // savedStateHandle에서 검색어를 실시간으로 가져오기
+    LaunchedEffect(backStackEntry?.savedStateHandle) {
+        backStackEntry?.savedStateHandle?.getStateFlow<String>("searchQuery", "")?.collect { query ->
+            searchQuery = query
+        }
+    }
+    
+    // 검색어 자동완성 결과
+    val autoCompleteResults = remember(searchQuery) {
+        if (searchQuery.isBlank()) {
+            emptyList()
+        } else {
+            StockRepository.searchStocks(searchQuery)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+    ) {
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // 최근 검색 섹션
+        Text(
+            text = "최근 검색",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = SCDreamFontFamily,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // 최근 검색 섹션
-            Text(
-                text = "최근 검색",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = SCDreamFontFamily,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (recentSearches.isEmpty()) {
-                    Text(
-                        text = "최근 검색어가 없습니다.",
-                        color = Gray500,
-                        fontFamily = SCDreamFontFamily,
-                        fontSize = 14.sp
+            if (recentSearches.isEmpty()) {
+                Text(
+                    text = "최근 검색어가 없습니다.",
+                    color = Gray500,
+                    fontFamily = SCDreamFontFamily,
+                    fontSize = 14.sp
+                )
+            } else {
+                recentSearches.forEach { stock ->
+                    RecentSearchChip(
+                        keyword = stock.shortName,
+                        onRemove = {
+                            recentSearches = recentSearches.filter { it.shortCode != stock.shortCode }
+                            saveRecentSearches(recentSearches)
+                        },
+                        onClick = {
+                            navController.navigate("stock_detail/${stock.shortCode}")
+                        }
                     )
-                } else {
-                    recentSearches.forEach { keyword ->
-                        RecentSearchChip(
-                            keyword = keyword,
-                            onRemove = { /* 검색어 삭제 구현 */ }
-                        )
-                    }
                 }
             }
+        }
+
+        // 검색 결과 표시
+        if (searchQuery.isNotBlank()) {
+            Spacer(modifier = Modifier.height(24.dp))
             
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // 인기 검색 섹션
             Text(
-                text = "인기 검색",
+                text = "검색 결과",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SCDreamFontFamily,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
             
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                for (i in 0 until popularSearches.size step 2) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // 왼쪽 항목
-                        PopularSearchItemView(
-                            item = popularSearches[i],
-                            modifier = Modifier.weight(1f),
-                            onClick = { /* 검색어 클릭 처리 */ }
+            if (autoCompleteResults.isEmpty()) {
+                Text(
+                    text = "검색 결과가 없습니다.",
+                    color = Gray500,
+                    fontFamily = SCDreamFontFamily,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            } else {
+                LazyColumn {
+                    items(autoCompleteResults) { stock ->
+                        AutoCompleteItem(
+                            stock = stock,
+                            onClick = {
+                                // 최근 검색어에 추가
+                                if (!recentSearches.any { it.shortCode == stock.shortCode }) {
+                                    val newSearches = (listOf(stock) + recentSearches).take(5)
+                                    recentSearches = newSearches
+                                    saveRecentSearches(newSearches)
+                                }
+                                // 상세 페이지로 이동 (종목 코드만 사용)
+                                navController.navigate("stock_detail/${stock.shortCode}")
+                            }
                         )
-                        
-                        // 오른쪽 항목 (있는 경우)
-                        if (i + 1 < popularSearches.size) {
-                            PopularSearchItemView(
-                                item = popularSearches[i + 1],
-                                modifier = Modifier.weight(1f),
-                                onClick = { /* 검색어 클릭 처리 */ }
-                            )
-                        } else {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
                     }
                 }
             }
@@ -153,16 +186,18 @@ fun SearchScreen(navController: NavController) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecentSearchChip(
     keyword: String,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onClick: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = Color(0xFFFFF8D6),
-        modifier = Modifier.height(32.dp)
+        modifier = Modifier
+            .height(32.dp)
+            .clickable { onClick() }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp),
@@ -186,6 +221,42 @@ fun RecentSearchChip(
                     .clickable { onRemove() }
             )
         }
+    }
+}
+
+@Composable
+fun AutoCompleteItem(
+    stock: Stock,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 12.dp, horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(
+                text = stock.shortName,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = SCDreamFontFamily
+            )
+            Text(
+                text = stock.shortCode,
+                fontSize = 14.sp,
+                color = Gray500,
+                fontFamily = SCDreamFontFamily
+            )
+        }
+        Text(
+            text = stock.market,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = SCDreamFontFamily
+        )
     }
 }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
@@ -23,8 +24,9 @@ import androidx.navigation.NavController
 import com.example.chickenstock.navigation.Screen
 import com.example.chickenstock.ui.theme.Gray300
 import com.example.chickenstock.viewmodel.AuthViewModel
-import coil.compose.rememberAsyncImagePainter
-import coil.transform.CircleCropTransformation
+import com.example.chickenstock.viewmodel.MainViewModel
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 
 data class StockItem(
     val stockCode: String,
@@ -40,11 +42,15 @@ fun StockListItem(
     stock: StockItem,
     navController: NavController,
     authViewModel: AuthViewModel,
-    onFavoriteClick: () -> Unit = {},
+    viewModel: MainViewModel,
     showContractStrength: Boolean = false,
     showTradeVolume: Boolean = false
 ) {
     var showLoginDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    
+    // 관심 종목 여부 확인
+    val isInWatchlist = viewModel.watchlist.value.contains(stock.stockCode)
     
     val isUp = stock.fluctuationRate.startsWith("+")
     val fluctuationColor = when {
@@ -107,7 +113,11 @@ fun StockListItem(
             .fillMaxWidth()
             .padding(vertical = 8.dp)
             .clickable { 
-                navController.navigate(Screen.StockDetail.createRoute(stock.stockCode)) {
+                navController.navigate(Screen.StockDetail.createRoute(
+                    stockCode = stock.stockCode,
+                    currentPrice = stock.currentPrice,
+                    fluctuationRate = stock.fluctuationRate
+                )) {
                     launchSingleTop = true
                     restoreState = true
                 }
@@ -132,7 +142,19 @@ fun StockListItem(
                 IconButton(
                     onClick = {
                         if (authViewModel.isLoggedIn.value) {
-                            onFavoriteClick()
+                            if (isInWatchlist) {
+                                viewModel.removeFromWatchlist(
+                                    stockCode = stock.stockCode,
+                                    onSuccess = {},
+                                    onError = {}
+                                )
+                            } else {
+                                viewModel.addToWatchlist(
+                                    stockCode = stock.stockCode,
+                                    onSuccess = {},
+                                    onError = {}
+                                )
+                            }
                         } else {
                             showLoginDialog = true
                         }
@@ -140,9 +162,9 @@ fun StockListItem(
                     modifier = Modifier.size(22.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.FavoriteBorder,
-                        contentDescription = "Favorite",
-                        tint = Gray300,
+                        imageVector = if (isInWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = if (isInWatchlist) "관심 종목 삭제" else "관심 종목 추가",
+                        tint = if (isInWatchlist) Color(0xFFFF4081) else Gray300,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -199,23 +221,20 @@ fun StockListItem(
                 Column(
                     horizontalAlignment = Alignment.End
                 ) {
+                    val (label, value, unit) = when {
+                        showContractStrength -> Triple("체결강도", stock.tradeAmount, "%")
+                        showTradeVolume -> Triple("거래량", stock.tradeAmount, "주")
+                        else -> Triple("거래대금", stock.tradeAmount, "원")
+                    }
                     Text(
-                        text = when {
-                            showContractStrength -> "체결강도"
-                            showTradeVolume -> "거래량"
-                            else -> "거래대금"
-                        },
+                        text = label,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.W500,
                         color = Color.Gray,
                         fontFamily = SCDreamFontFamily
                     )
                     Text(
-                        text = when {
-                            showContractStrength -> "${stock.tradeAmount}%"
-                            showTradeVolume -> "${stock.tradeAmount}주"
-                            else -> "${stock.tradeAmount}원"
-                        },
+                        text = "$value$unit",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.W500,
                         fontFamily = SCDreamFontFamily,

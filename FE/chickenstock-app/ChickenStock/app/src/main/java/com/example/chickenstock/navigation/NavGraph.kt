@@ -35,8 +35,9 @@ sealed class Screen(val route: String) {
     object FindPW : Screen("findpw")
     object Verification : Screen("verification")
     object SignupSuccess : Screen("signup_success")
-    object StockDetail : Screen("stock_detail/{stockCode}") {
-        fun createRoute(stockCode: String) = "stock_detail/$stockCode"
+    object StockDetail : Screen("stock_detail/{stockCode}/{currentPrice}/{fluctuationRate}") {
+        fun createRoute(stockCode: String, currentPrice: String, fluctuationRate: String) = 
+            "stock_detail/$stockCode/$currentPrice/$fluctuationRate"
     }
 }
 
@@ -56,7 +57,11 @@ fun NavGraph(
             HomeScreen(navController = navController, viewModel = viewModel, authViewModel = authViewModel)
         }
         composable(Screen.Stock.route) {
-            StockScreen(navController = navController, authViewModel = authViewModel)
+            StockScreen(
+                navController = navController,
+                authViewModel = authViewModel,
+                viewModel = viewModel
+            )
         }
         composable(
             route = Screen.MyPage.route + "?tab={tab}",
@@ -96,20 +101,29 @@ fun NavGraph(
         composable(
             route = Screen.StockDetail.route,
             arguments = listOf(
-                navArgument("stockCode") { type = NavType.StringType }
+                navArgument("stockCode") { type = NavType.StringType },
+                navArgument("currentPrice") { type = NavType.StringType },
+                navArgument("fluctuationRate") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val stockCode = backStackEntry.arguments?.getString("stockCode") ?: ""
-            // 임시 데이터 생성
+            val currentPrice = backStackEntry.arguments?.getString("currentPrice") ?: ""
+            val fluctuationRate = backStackEntry.arguments?.getString("fluctuationRate") ?: ""
+            
             val stock = StockItem(
                 stockCode = stockCode,
-                stockName = "삼성전자",
+                stockName = ".",
                 market = "KOSPI",
-                currentPrice = "73200",
-                fluctuationRate = "-0.40",
+                currentPrice = currentPrice,
+                fluctuationRate = fluctuationRate,
                 tradeAmount = "950"
             )
-            StockDetailScreen(navController = navController, stock = stock)
+            StockDetailScreen(
+                navController = navController, 
+                stock = stock,
+                viewModel = viewModel,
+                authViewModel = authViewModel
+            )
         }
         composable(
             route = "verification?email={email}&name={name}&nickname={nickname}&password={password}",

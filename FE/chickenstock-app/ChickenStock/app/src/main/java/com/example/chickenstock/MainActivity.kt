@@ -55,10 +55,17 @@ import android.content.pm.PackageInfo
 import android.util.Base64
 import java.security.MessageDigest
 import com.example.chickenstock.data.TokenManager
+import android.content.Intent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusState
+import androidx.compose.ui.platform.LocalFocusManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // 딥링크로 들어온 경우 처리
+        handleDeepLink(intent?.data)
         
         // 토큰 값 로그 출력
         val tokenManager = TokenManager.getInstance(this)
@@ -125,6 +132,55 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun handleDeepLink(uri: android.net.Uri?) {
+        uri?.let {
+            when {
+                it.scheme == "chickenstock" && it.host == "oauth2callback" -> {
+                    // OAuth2 콜백 처리
+                    val code = it.getQueryParameter("code")
+                    val state = it.getQueryParameter("state")
+                    val error = it.getQueryParameter("error")
+                    
+                    Log.d("OAuth2Callback", "Received callback - code: $code, state: $state, error: $error")
+                    
+                    if (error != null) {
+                        // 에러 처리
+                        Log.e("OAuth2Callback", "OAuth2 error: $error")
+                        // TODO: 에러 메시지 표시
+                        return
+                    }
+                    
+                    if (code != null) {
+                        // 인증 코드를 사용하여 토큰 요청
+                        lifecycleScope.launch {
+                            try {
+                                val authService = RetrofitClient.getInstance(this@MainActivity)
+                                    .create(AuthService::class.java)
+                                    
+                                // TODO: 토큰 요청 API 호출
+                                // val response = authService.getToken(code)
+                                
+                                // TODO: 토큰 저장
+                                // val tokenManager = TokenManager.getInstance(this@MainActivity)
+                                // tokenManager.saveTokens(response.accessToken, response.refreshToken)
+                                
+                                Log.d("OAuth2Callback", "Token request successful")
+                            } catch (e: Exception) {
+                                Log.e("OAuth2Callback", "Token request failed", e)
+                                // TODO: 에러 메시지 표시
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDeepLink(intent.data)
+    }
 }
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -137,6 +193,8 @@ fun SearchTopAppBar(
     onSearchIconClick: () -> Unit
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    var isSearchFieldFocused by remember { mutableStateOf(false) }
     
     val iconOffsetX by animateDpAsState(
         targetValue = if (isSearchExpanded) (-45).dp else 0.dp,
@@ -179,7 +237,8 @@ fun SearchTopAppBar(
             ) { expanded ->
                 if (expanded) {
                     IconButton(onClick = { 
-                        keyboardController?.hide() // 키보드 숨기기
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
                         onBackClick() 
                     }) {
                         Icon(
@@ -209,7 +268,10 @@ fun SearchTopAppBar(
             ) {
                 // 검색 아이콘 (이동)
                 IconButton(
-                    onClick = onSearchIconClick,
+                    onClick = {
+                        onSearchIconClick()
+                        isSearchFieldFocused = true
+                    },
                     modifier = Modifier.offset(x = iconOffsetX)
                 ) {
                     Icon(
@@ -223,7 +285,7 @@ fun SearchTopAppBar(
                 // 검색창 (아이콘 오른쪽에서 확장됨)
                 Box(
                     modifier = Modifier
-                        .offset(x = iconOffsetX + 40.dp, y = 3.dp)  // 수직 위치 조정
+                        .offset(x = iconOffsetX + 40.dp, y = 3.dp)
                         .width(textFieldWidth)
                         .height(40.dp)
                         .graphicsLayer(alpha = alpha)
@@ -241,7 +303,10 @@ fun SearchTopAppBar(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp),
+                            .padding(horizontal = 12.dp)
+                            .onFocusChanged { focusState ->
+                                isSearchFieldFocused = focusState.isFocused
+                            },
                         decorationBox = { innerTextField ->
                             Box(modifier = Modifier.fillMaxWidth()) {
                                 if (searchText.isEmpty()) {
@@ -276,6 +341,20 @@ fun MainScreen(
     
     LaunchedEffect(currentRoute) {
         isSearchExpanded = currentRoute.startsWith("search")
+    }
+
+    // 검색어가 변경될 때마다 SearchScreen으로 전달
+    LaunchedEffect(searchText) {
+        if (isSearchExpanded) {
+            navController.currentBackStackEntry?.savedStateHandle?.set("searchQuery", searchText)
+        }
+    }
+
+    // 검색 화면으로 이동할 때 검색어 초기화
+    LaunchedEffect(isSearchExpanded) {
+        if (isSearchExpanded) {
+            navController.currentBackStackEntry?.savedStateHandle?.set("searchQuery", searchText)
+        }
     }
 
     // 현재 route에 따라 selectedIndex 업데이트
@@ -333,7 +412,11 @@ fun MainScreen(
                 SearchTopAppBar(
                     isSearchExpanded = isSearchExpanded,
                     searchText = searchText,
-                    onSearchTextChange = { searchText = it },
+                    onSearchTextChange = { 
+                        searchText = it
+                        // 검색어가 변경될 때마다 즉시 SearchScreen에 전달
+                        navController.currentBackStackEntry?.savedStateHandle?.set("searchQuery", it)
+                    },
                     onBackClick = {
                         isSearchExpanded = false
                         navController.navigateUp()

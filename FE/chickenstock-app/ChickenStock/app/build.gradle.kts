@@ -92,5 +92,5 @@ dependencies {
     implementation("com.kakao.sdk:v2-user:2.19.0")
 
     // 웹소켓 관련 의존성
-    implementation("com.squareup.okhttp3:okhttp:4.9.3")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
