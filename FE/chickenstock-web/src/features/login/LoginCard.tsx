@@ -5,8 +5,9 @@ import googleLogin from "@/assets/google.svg";
 import kakaoLogin from "@/assets/kakao.svg";
 import naverLogin from "@/assets/naver.svg";
 import { Link, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuthStore } from "@/shared/store/auth";
+import { getWatchlist } from "../watchlist/api";
 
 const LoginCard = () => {
   const navigate = useNavigate();
@@ -14,13 +15,6 @@ const LoginCard = () => {
     email: "",
     password: "",
   });
-
-  useEffect(() => {
-    const { accessToken } = useAuthStore.getState();
-    if (accessToken) {
-      void useAuthStore.getState().getSimpleProfile();
-    }
-  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -36,6 +30,7 @@ const LoginCard = () => {
       const response = await useAuthStore.getState().login(formData.email, formData.password);
       useAuthStore.getState().setAccessToken(response.accessToken);
       await useAuthStore.getState().getSimpleProfile();
+      await getWatchlist();
       void navigate("/");
     } catch (err) {
       console.error(err);

@@ -50,6 +50,7 @@ const StockList = () => {
           // rankingType에 따라 props를 올바르게 타입 지정
           const stockWithRank = {
             ...stock,
+            stockCode: stock.stockCode.slice(0, 6), // stockCode의 앞 6자리만 사용
             rank: index + 1,
             rankingType, // 명시적으로 rankingType 지정
           } as StockProps; // StockProps로 타입 단언

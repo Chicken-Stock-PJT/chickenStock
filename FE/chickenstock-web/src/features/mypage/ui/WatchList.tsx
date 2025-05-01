@@ -1,82 +1,36 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import { Input } from "@/shared/libs/ui/input";
-import { Search, Heart, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
-
+import { Search, Heart } from "lucide-react";
+import { useGetWatchlist } from "@/features/watchlist/model/queries";
+import { Watchlist } from "@/features/watchlist/model/types";
+import { useDeleteWatchlist } from "@/features/watchlist/model/mutations";
+import { useNavigate } from "react-router-dom";
 // 모의 데이터 - 관심종목
-const initialWatchlist = [
-  {
-    code: "005930",
-    name: "삼성전자",
-    price: 72800,
-    change: 1300,
-    changePercent: 1.82,
-    volume: 12345678,
-  },
-  {
-    code: "000660",
-    name: "SK하이닉스",
-    price: 168500,
-    change: 3500,
-    changePercent: 2.12,
-    volume: 8765432,
-  },
-  {
-    code: "035720",
-    name: "카카오",
-    price: 56700,
-    change: -1200,
-    changePercent: -2.07,
-    volume: 3456789,
-  },
-  {
-    code: "035420",
-    name: "NAVER",
-    price: 216500,
-    change: 2500,
-    changePercent: 1.17,
-    volume: 2345678,
-  },
-  {
-    code: "051910",
-    name: "LG화학",
-    price: 498000,
-    change: -7000,
-    changePercent: -1.39,
-    volume: 987654,
-  },
-  {
-    code: "373220",
-    name: "LG에너지솔루션",
-    price: 435000,
-    change: 5000,
-    changePercent: 1.16,
-    volume: 876543,
-  },
-  {
-    code: "207940",
-    name: "삼성바이오로직스",
-    price: 789000,
-    change: -11000,
-    changePercent: -1.37,
-    volume: 765432,
-  },
-];
 
 const WatchList = () => {
-  const [watchlist, setWatchlist] = useState(initialWatchlist);
+  const navigate = useNavigate();
+  const { data: initialWatchlist } = useGetWatchlist();
+
+  const [watchlist, setWatchlist] = useState<Watchlist[]>([]);
+  useEffect(() => {
+    if (initialWatchlist && "watchList" in initialWatchlist) {
+      setWatchlist(initialWatchlist.watchList);
+    }
+  }, [initialWatchlist]);
+
   const [searchTerm, setSearchTerm] = useState("");
 
-  // 관심종목 삭제
-  const handleWatchList = (code: string) => {
-    setWatchlist(watchlist.filter((stock) => stock.code !== code));
-  };
+  const deleteMutation = useDeleteWatchlist();
 
+  const handleWatchList = (code: string) => {
+    deleteMutation.mutate(code, {});
+  };
   // 검색 필터링
   const filteredWatchlist = watchlist.filter(
     (stock) =>
-      stock.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      stock.code.includes(searchTerm),
+      stock.stockName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      stock.stockCode.includes(searchTerm),
   );
 
   return (
@@ -111,47 +65,48 @@ const WatchList = () => {
           <div className="divide-y">
             {filteredWatchlist.length > 0 ? (
               filteredWatchlist.map((stock) => (
-                <div key={stock.code} className="grid grid-cols-5 items-center gap-4 p-4">
-                  <div className="flex items-center">
-                    <Heart
-                      className="size-4"
-                      stroke="red"
-                      fill="red"
-                      onClick={() => handleWatchList(stock.code)}
-                    />
-                    <div className="ml-4">
-                      <div className="font-medium">{stock.name}</div>
-                      <div className="text-xs text-muted-foreground">{stock.code}</div>
+                <div key={stock.stockCode} className="flex items-center">
+                  <Heart
+                    className="ml-4 size-4 cursor-pointer"
+                    stroke="red"
+                    fill="red"
+                    onClick={() => handleWatchList(stock.stockCode)}
+                  />
+                  <div
+                    className="grid w-full cursor-pointer grid-cols-5 items-center gap-4 p-4"
+                    onClick={() => void navigate(`/stocks/${stock.stockCode}`)}
+                  >
+                    <div className="flex items-center">
+                      <div>
+                        <div className="font-medium">{stock.stockName}</div>
+                        <div className="text-xs text-muted-foreground">{stock.stockCode}</div>
+                      </div>
                     </div>
+                    <div className="text-right">{stock.currentPrice.toLocaleString()}원</div>
+                    <div
+                      className={`text-right ${
+                        stock.priceChange.startsWith("+")
+                          ? "text-red-500"
+                          : stock.priceChange.startsWith("-")
+                            ? "text-blue-500"
+                            : "text-gray-500"
+                      }`}
+                    >
+                      {stock.priceChange}원
+                    </div>
+                    <div
+                      className={`flex items-center justify-end text-right ${
+                        stock.priceChange.startsWith("+")
+                          ? "text-red-500"
+                          : stock.priceChange.startsWith("-")
+                            ? "text-blue-500"
+                            : "text-gray-500"
+                      }`}
+                    >
+                      {stock.changeRate}%
+                    </div>
+                    <div className="text-right">{stock.tradingVolume}</div>
                   </div>
-                  <div className="text-right">{stock.price.toLocaleString()}원</div>
-                  <div
-                    className={`text-right ${
-                      stock.change > 0
-                        ? "text-red-500"
-                        : stock.change < 0
-                          ? "text-blue-500"
-                          : "text-gray-500"
-                    }`}
-                  >
-                    {stock.change > 0 ? "+" : ""}
-                    {stock.change.toLocaleString()}원
-                  </div>
-                  <div
-                    className={`flex items-center justify-end text-right ${
-                      stock.change > 0
-                        ? "text-red-500"
-                        : stock.change < 0
-                          ? "text-blue-500"
-                          : "text-gray-500"
-                    }`}
-                  >
-                    {stock.change > 0 && <ArrowUpIcon className="mr-1 size-4" />}
-                    {stock.change < 0 && <ArrowDownIcon className="mr-1 size-4" />}
-                    {stock.change > 0 ? "+" : ""}
-                    {stock.changePercent.toFixed(2)}%
-                  </div>
-                  <div className="text-right">{stock.volume.toLocaleString()}</div>
                 </div>
               ))
             ) : (

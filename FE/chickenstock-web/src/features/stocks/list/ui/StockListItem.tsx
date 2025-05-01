@@ -1,14 +1,20 @@
 import { Heart } from "lucide-react";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { StockProps } from "../model/types";
+import useWatchlistStore from "@/features/watchlist/model/store";
+import { useWatchlistToggle } from "@/features/watchlist/model/hooks";
 
 const StockListItem = (props: StockProps) => {
-  console.log(props);
-  const navigate = useNavigate();
-  const [like, setLike] = useState<boolean>(false);
+  const { isInWatchlist } = useWatchlistStore();
+  const { toggleWatchlist } = useWatchlistToggle();
 
-  const handleClick = () => navigate(`/stocks/${props.stockCode}`);
+  const isCurrentInWatchlist = isInWatchlist(props.stockCode);
+
+  const navigate = useNavigate();
+
+  const handleClick = () => {
+    void navigate(`/stocks/${props.stockCode}`);
+  };
 
   const renderSpecificColumns = () => {
     switch (props.rankingType) {
@@ -37,8 +43,10 @@ const StockListItem = (props: StockProps) => {
       case "fluctuationRate":
         return (
           <>
-            <div className="w-1/6 text-right">{props.contractStrength}</div>
-            <div className="w-1/6 text-right">
+            <div className="w-1/6 text-right hover:bg-gray-50" onClick={handleClick}>
+              {props.contractStrength}
+            </div>
+            <div className="w-1/6 text-right hover:bg-gray-50" onClick={handleClick}>
               매수: {Number(props.buyRemaining).toLocaleString()}
               <br />
               매도: {Number(props.sellRemaining).toLocaleString()}
@@ -51,16 +59,16 @@ const StockListItem = (props: StockProps) => {
   return (
     <div
       className="flex cursor-pointer items-center justify-between border-b p-4 hover:bg-gray-50"
-      onClick={() => void handleClick()}
+      onClick={handleClick}
     >
       <div className="flex w-1/4 items-center gap-4">
         <Heart
-          className="cursor-pointer"
-          fill={like ? "red" : "none"}
-          stroke={like ? "red" : "black"}
+          fill={isCurrentInWatchlist ? "red" : "none"}
+          stroke={isCurrentInWatchlist ? "red" : "black"}
+          className={`cursor-pointer transition-opacity ${isCurrentInWatchlist ? "hover:opacity-20" : "hover:fill-gray-300 hover:stroke-none"}`}
           onClick={(e) => {
             e.stopPropagation();
-            setLike(!like);
+            toggleWatchlist(props.stockCode);
           }}
         />
         <div className="flex w-full items-center gap-4">

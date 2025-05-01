@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { useAuthStore } from "@/shared/store/auth";
 import { LoginResponse } from "@/shared/store/types";
+import { getWatchlist } from "@/features/watchlist/api";
 
 const LoginRedirect = () => {
   const [searchParams] = useSearchParams();
@@ -23,6 +24,7 @@ const LoginRedirect = () => {
           const accessToken = response.data.accessToken;
           useAuthStore.getState().setAccessToken(accessToken);
           await useAuthStore.getState().getSimpleProfile();
+          await getWatchlist();
           void navigate("/");
         } catch (error) {
           console.error(error);
