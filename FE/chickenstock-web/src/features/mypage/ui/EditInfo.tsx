@@ -11,7 +11,7 @@ import { Input } from "@/shared/libs/ui/input";
 import { useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
 import { useAuthStore } from "@/shared/store/auth";
-import useUpdateNickname from "../model/queries";
+import { useUpdateNickname } from "../model/queries";
 
 const EditInfo = () => {
   const { simpleProfile } = useAuthStore();

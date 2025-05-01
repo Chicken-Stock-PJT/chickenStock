@@ -2,7 +2,6 @@ import { useMutation } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth";
 import { updateNickname } from "../api";
 import { AxiosError } from "axios";
-
 interface ErrorResponse {
   status: number;
   code: string;
@@ -12,7 +11,7 @@ interface ErrorResponse {
   timestamp: string;
 }
 
-const useUpdateNickname = () => {
+export const useUpdateNickname = () => {
   //   const queryClient = useQueryClient();
   const { mutateAsync } = useMutation({
     mutationFn: (nickname: string) => updateNickname(nickname),
@@ -28,5 +27,3 @@ const useUpdateNickname = () => {
   });
   return { mutateAsync };
 };
-
-export default useUpdateNickname;
