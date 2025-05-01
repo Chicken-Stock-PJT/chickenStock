@@ -1,6 +1,6 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth";
-import { updateNickname } from "../api";
+import { getPortfolio, updateNickname } from "../api";
 import { AxiosError } from "axios";
 interface ErrorResponse {
   status: number;
@@ -26,4 +26,12 @@ export const useUpdateNickname = () => {
     },
   });
   return { mutateAsync };
+};
+
+export const useGetPortfolio = () => {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["portfolio"],
+    queryFn: getPortfolio,
+  });
+  return { data, isLoading, error };
 };
