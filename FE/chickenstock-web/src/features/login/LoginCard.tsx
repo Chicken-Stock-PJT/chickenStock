@@ -7,7 +7,7 @@ import naverLogin from "@/assets/naver.svg";
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuthStore } from "@/shared/store/auth";
-import { getWatchlist } from "../watchlist/api";
+import { useGetWatchlist } from "../watchlist/model/queries";
 
 const LoginCard = () => {
   const navigate = useNavigate();
@@ -15,6 +15,8 @@ const LoginCard = () => {
     email: "",
     password: "",
   });
+
+  const { refetch: refetchWatchlist } = useGetWatchlist();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -30,7 +32,7 @@ const LoginCard = () => {
       const response = await useAuthStore.getState().login(formData.email, formData.password);
       useAuthStore.getState().setAccessToken(response.accessToken);
       await useAuthStore.getState().getSimpleProfile();
-      await getWatchlist();
+      await refetchWatchlist();
       void navigate("/");
     } catch (err) {
       console.error(err);
