@@ -1,25 +1,27 @@
+import { useAuthStore } from "@/shared/store/auth";
 import { DollarSign, TrendingUp } from "lucide-react";
 
 interface User {
   email: string;
   nickname: string;
   joinDate: string;
-  accountBalance: number;
+  accountBalance: string;
   totalProfit: number;
-  profitRate: number;
+  profitRate: string;
   ranking: number;
   totalUsers: number;
   rankingPercentile: number;
 }
 
 const UserInfo = () => {
+  const { simpleProfile } = useAuthStore();
   const user: User = {
     email: "user@example.com",
-    nickname: "치킨러버",
+    nickname: simpleProfile?.nickname ?? "",
     joinDate: "2023-01-15",
-    accountBalance: 12500000,
-    totalProfit: 1850000,
-    profitRate: 17.3,
+    accountBalance: simpleProfile?.memberMoney ?? "0", // 계좌잔고
+    totalProfit: Number(simpleProfile?.memberMoney ?? 0) * Number(simpleProfile?.returnRate ?? 0), // 총 수익
+    profitRate: simpleProfile?.returnRate ?? "0.00%",
     // todayProfit: 125000,
     // todayProfitRate: 1.2,
     ranking: 342,
@@ -71,9 +73,7 @@ const UserInfo = () => {
               <div className="mb-1 text-sm font-medium text-muted-foreground">총 수익률</div>
               <div className="flex items-center">
                 <TrendingUp className="mr-2 size-4 text-green-500" />
-                <span className="text-lg font-semibold text-green-500">
-                  +{user.profitRate.toFixed(2)}%
-                </span>
+                <span className="text-lg font-semibold text-green-500">+{user.profitRate}%</span>
                 <span className="ml-2 text-muted-foreground">
                   (+{user.totalProfit.toLocaleString()}원)
                 </span>
