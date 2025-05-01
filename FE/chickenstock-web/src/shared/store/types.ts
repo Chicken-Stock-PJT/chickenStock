@@ -6,7 +6,7 @@ export interface AuthState {
   logout: () => Promise<void>;
   simpleProfile: SimpleProfile | null;
   getSimpleProfile: () => Promise<SimpleProfile>;
-  setSimpleProfile: (profile: SimpleProfile) => void;
+  setSimpleProfile: (profile: Partial<SimpleProfile>) => void;
   isLoggedIn: boolean | null;
 }
 
