@@ -1,14 +1,24 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import ReactApexChart from "react-apexcharts";
+import { Position } from "../model/types";
 
-const PortfolioChart = () => {
+interface PortfolioChartProps {
+  positions: Position[];
+  totalValuation: number;
+  memberMoney: number;
+}
+
+const PortfolioChart = ({ positions, totalValuation, memberMoney }: PortfolioChartProps) => {
   const options = {
-    series: [44, 55, 41, 17, 15],
+    // series: [memberMoney, ...positions.map((position) => position.valuationAmount)],
+
+    series: positions.map((position) => position.valuationAmount),
     options: {
       chart: {
         type: "donut" as const,
       },
-      labels: ["삼성전자", "SK하이닉스", "카카오", "네이버", "LG화학"],
+      // labels: ["현금", ...positions.map((position) => position.stockName)],
+      labels: positions.map((position) => position.stockName),
       responsive: [
         {
           breakpoint: 480,
@@ -30,7 +40,19 @@ const PortfolioChart = () => {
       <CardHeader>
         <CardTitle>종목별 투자 비중</CardTitle>
         <CardDescription>포트폴리오 내 종목별 비중을 확인합니다.</CardDescription>
+        <div className="ml-4 flex gap-8 pt-4">
+          <div className="py-2">
+            <div className="text-sm font-semibold text-gray-500">현금</div>
+            <div className="font-bold">{memberMoney.toLocaleString()}원</div>
+          </div>
+          <div className="border-l pl-4"></div>
+          <div className="py-2">
+            <div className="text-sm font-semibold text-gray-500">총 평가금액</div>
+            <div className="font-bold">{totalValuation.toLocaleString()}원</div>
+          </div>
+        </div>
       </CardHeader>
+
       <CardContent>
         <div id="chart">
           <ReactApexChart options={options.options} series={options.series} type="donut" />

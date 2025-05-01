@@ -1,6 +1,7 @@
 import apiClient from "@/shared/api/axios";
 import { SimpleProfile } from "@/shared/store/types";
 import {
+  PortfolioResponse,
   UpdateNicknameSuccess,
   UpdatePasswordError,
   UpdatePasswordRequest,
@@ -47,4 +48,9 @@ export const updatePassword = async (
     }
     throw error;
   }
+};
+
+export const getPortfolio = async (): Promise<PortfolioResponse | AxiosError<ErrorResponse>> => {
+  const response = await apiClient.get<PortfolioResponse>("/members/portfolio");
+  return response.data;
 };
