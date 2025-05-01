@@ -10,39 +10,42 @@ import { Label } from "@/shared/libs/ui/label";
 import { Input } from "@/shared/libs/ui/input";
 import { useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
+import { updatePassword } from "../api";
 
 const EditPassword = () => {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [checkPassword, setCheckPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const handlePasswordUpdate = (e: React.FormEvent) => {
+  const [error, setError] = useState<string>("");
+
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
     setIsSubmitting(true);
 
     // 비밀번호 유효성 검사
-    if (newPassword !== confirmPassword) {
-      alert("새 비밀번호와 확인 비밀번호가 일치하지 않습니다.");
+    if (newPassword !== checkPassword) {
+      setError("새 비밀번호와 확인 비밀번호가 일치하지 않습니다.");
       setIsSubmitting(false);
       return;
     }
 
-    // 실제로는 API 호출을 통해 업데이트
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      alert("비밀번호가 변경되었습니다.");
-    }, 1000);
+    await updatePassword({ currentPassword, newPassword, checkPassword });
+    // alert("비밀번호가 변경되었습니다.");
+    setIsSubmitting(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setCheckPassword("");
   };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>비밀번호 변경</CardTitle>
         <CardDescription>계정 비밀번호를 변경합니다.</CardDescription>
       </CardHeader>
-      <form onSubmit={handlePasswordUpdate}>
+      <form onSubmit={(e) => void handlePasswordUpdate(e)}>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="current-password">현재 비밀번호</Label>
@@ -72,11 +75,12 @@ const EditPassword = () => {
             <Input
               id="confirm-password"
               type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              value={checkPassword}
+              onChange={(e) => setCheckPassword(e.target.value)}
               placeholder="새 비밀번호를 다시 입력하세요"
             />
           </div>
+          {error && <div className="text-sm text-red-500">{error}</div>}
         </CardContent>
         <CardFooter>
           <Button type="submit" disabled={isSubmitting}>

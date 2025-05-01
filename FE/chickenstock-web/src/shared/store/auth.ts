@@ -23,7 +23,12 @@ export const useAuthStore = create<AuthState>()(
           set({ simpleProfile: response.data });
           return response.data;
         },
-        setSimpleProfile: (profile) => set({ simpleProfile: profile }),
+        setSimpleProfile: (profile) =>
+          set((state) => ({
+            simpleProfile: state.simpleProfile
+              ? { ...state.simpleProfile, ...profile }
+              : (profile as SimpleProfile),
+          })),
 
         isLoggedIn: null,
         login: async (email: string, password: string) => {
