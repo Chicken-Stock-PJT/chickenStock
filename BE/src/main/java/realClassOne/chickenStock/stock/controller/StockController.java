@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
 import realClassOne.chickenStock.stock.dto.response.StockAskBidResponseDTO;
+import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 import realClassOne.chickenStock.stock.service.StockInfoService;
 
@@ -42,5 +43,12 @@ public class StockController {
         log.info("종목코드 {}의 호가 정보 요청", code);
         StockAskBidResponseDTO askBidInfo = kiwoomStockApiService.getStockAskBidInfo(code);
         return ResponseEntity.ok(askBidInfo);
+    }
+
+    // 주식 종목코드로 현재가 및 기본정보를 조회합니다.
+    @GetMapping("/info/{stockCode}")
+    public ResponseEntity<StockInfoResponseDTO> getStockInfo(@PathVariable String stockCode) {
+        StockInfoResponseDTO response = kiwoomStockApiService.getStockInfo(stockCode);
+        return ResponseEntity.ok(response);
     }
 }
