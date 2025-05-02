@@ -22,9 +22,14 @@ export default function SearchModal({ open, onOpenChange }: SearchModalProps) {
 
   const { data: allStocks = [], isLoading, isFetching } = useStocksQuery();
 
+  // 검색어에 따른 필터링 및 제한된 결과 표시
   const filteredResults = useMemo(() => {
-    if (!searchTerm.trim()) return allStocks;
+    if (!searchTerm.trim()) {
+      // 검색어가 없을 때는 처음 100개만 반환
+      return allStocks.slice(0, 100);
+    }
 
+    // 검색어가 있을 때는 필터링된 결과 모두 표시
     return allStocks.filter(
       (stock) =>
         stock.shortName.toLowerCase().includes(searchTerm.toLowerCase()) ||
