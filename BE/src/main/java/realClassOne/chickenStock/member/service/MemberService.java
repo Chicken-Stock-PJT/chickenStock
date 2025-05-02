@@ -39,7 +39,10 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -66,6 +69,7 @@ public class MemberService {
 
         return MemberResponseDto.from(member);
     }
+
     @Transactional
     public PasswordChangeResponseDTO changePassword(String authorizationHeader, PasswordChangeRequestDTO dto) {
 
@@ -601,9 +605,9 @@ public class MemberService {
     /**
      * 특정 기간의 수익률을 계산합니다.
      *
-     * @param memberId 회원 ID
-     * @param periodType 기간 타입 (daily, weekly, monthly, yearly)
-     * @param periodReturns 결과를 저장할 Map
+     * @param memberId         회원 ID
+     * @param periodType       기간 타입 (daily, weekly, monthly, yearly)
+     * @param periodReturns    결과를 저장할 Map
      * @param currentValuation 현재 평가액
      */
     private void calculatePeriodReturn(Long memberId, String periodType,
@@ -686,9 +690,9 @@ public class MemberService {
      * 특정 시점의 평가액을 추정합니다.
      * 정확한 과거 데이터가 없는 경우 거래 내역을 기반으로 추정합니다.
      *
-     * @param memberId 회원 ID
+     * @param memberId       회원 ID
      * @param targetDateTime 평가액을 계산할 시점
-     * @param histories 해당 시점 이전의 거래 내역
+     * @param histories      해당 시점 이전의 거래 내역
      * @return 추정된 평가액
      */
     private Long estimateHistoricalValuation(Long memberId, LocalDateTime targetDateTime, List<TradeHistory> histories) {
@@ -734,7 +738,7 @@ public class MemberService {
      * 사용자의 관심종목에서 특정 종목을 삭제합니다.
      *
      * @param authorizationHeader 인증 헤더
-     * @param stockCode 삭제할 종목 코드
+     * @param stockCode           삭제할 종목 코드
      * @return 갱신된 관심종목 목록 DTO
      */
     @Transactional
