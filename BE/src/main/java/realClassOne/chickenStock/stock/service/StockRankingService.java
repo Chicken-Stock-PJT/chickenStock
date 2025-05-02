@@ -15,6 +15,7 @@ import realClassOne.chickenStock.stock.dto.common.StockRankingItemDTO;
 import realClassOne.chickenStock.stock.dto.request.StockRankingRequestDTO;
 import realClassOne.chickenStock.stock.dto.response.StockRankingResponseDTO;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
+import realClassOne.chickenStock.stock.repository.StockDataRepository;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +31,7 @@ public class StockRankingService {
     private final ObjectMapper objectMapper;
     private final WebClient kiwoomWebClient;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final StockDataRepository stockDataRepository;
 
     // API URL 및 ID 상수
     private static final String API_URL = "/api/dostk/rkinfo";
@@ -274,6 +276,10 @@ public class StockRankingService {
     /**
      * API 응답을 StockRankingResponseDTO로 변환합니다.
      */
+    /**
+     * API 응답을 StockRankingResponseDTO로 변환합니다.
+     * StockData에 있는 종목 코드만 필터링하여 반환합니다.
+     */
     private StockRankingResponseDTO processResponse(Map<String, Object> response, String rankingType) {
         try {
             int returnCode = (int) response.get("return_code");
@@ -300,9 +306,23 @@ public class StockRankingService {
 
             if (dataList != null && !dataList.isEmpty()) {
                 for (Map<String, Object> item : dataList) {
-                    StockRankingItemDTO itemDTO = mapToRankingItemDTO(item, rankingType);
-                    if (itemDTO != null) {
-                        rankingItems.add(itemDTO);
+                    // 종목 코드 추출 - _AL과 같은 접미사가 있는 경우 제거하여 기본 코드만 추출
+                    String fullStockCode = getString(item, "stk_cd");
+                    String baseStockCode = fullStockCode.split("_")[0]; // _가 있으면 앞부분만 사용
+
+                    // StockData 테이블에 존재하는 종목인지 확인
+                    boolean exists = stockDataRepository.findByShortCode(baseStockCode).isPresent();
+
+                    if (exists) {
+                        // StockData에 있는 종목만 매핑하여 추가
+                        StockRankingItemDTO itemDTO = mapToRankingItemDTO(item, rankingType);
+                        if (itemDTO != null) {
+                            // 원래 API가 반환한 코드가 아닌 DB에 있는 기본 코드로 설정
+                            itemDTO.setStockCode(baseStockCode);
+                            rankingItems.add(itemDTO);
+                        }
+                    } else {
+                        log.debug("StockData에 존재하지 않는 종목 코드 무시: {}", fullStockCode);
                     }
                 }
             }
