@@ -7,7 +7,7 @@ export interface AuthState {
   simpleProfile: SimpleProfile | null;
   getSimpleProfile: () => Promise<SimpleProfile>;
   setSimpleProfile: (profile: Partial<SimpleProfile>) => void;
-  isLoggedIn: boolean | null;
+  isLoggedIn: boolean;
 }
 
 export interface SimpleProfile {

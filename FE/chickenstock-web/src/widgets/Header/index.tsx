@@ -4,11 +4,13 @@ import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
 import SearchModal from "@/features/stocks/search/ui/SearchModal";
 import { useAuthStore } from "@/shared/store/auth";
+import HeaderDropdown from "@/widgets/Header/HeaderDropdown";
 
 const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const navigate = useNavigate();
   const { simpleProfile } = useAuthStore();
+  const isLogin = useAuthStore((state) => state.isLoggedIn);
 
   return (
     <div className="sticky top-0 z-50 flex h-14 w-screen items-center bg-white px-4">
@@ -60,19 +62,31 @@ const Header = () => {
           </div>
         </nav>
       </div>
-      {simpleProfile ? (
-        <div
-          className="flex w-1/3 cursor-pointer justify-end"
-          onClick={() => void navigate("mypage")}
-        >
-          {simpleProfile.nickname}
+      {isLogin ? (
+        <div className="mr-10 flex w-1/3 items-center justify-end gap-8 text-lg font-semibold">
+          <div className="flex items-start rounded-md bg-primary-100 p-2 px-4 text-xs">
+            <div className="">잔고: \{Number(simpleProfile?.memberMoney).toLocaleString()}</div>
+          </div>
+          <div className="flex items-start rounded-md bg-primary-100 p-2 px-4 text-xs">
+            <div
+              className={`${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
+            >
+              수익률: {simpleProfile?.returnRate}%
+            </div>
+          </div>
+          <HeaderDropdown nickname={simpleProfile?.nickname ?? ""} />
         </div>
       ) : (
         <div
-          className="flex w-1/3 cursor-pointer justify-end"
+          className="mr-10 flex w-1/3 cursor-pointer justify-end gap-10"
           onClick={() => void navigate("login")}
         >
-          로그인
+          <Link to="/login" className="font-semibold">
+            로그인
+          </Link>
+          <Link to="/signup" className="font-semibold">
+            회원가입
+          </Link>
         </div>
       )}
       <SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />

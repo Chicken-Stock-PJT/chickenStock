@@ -1,7 +1,7 @@
 import { OrderRowProps } from "@/features/stocks/orderBook/model/types";
 
 const OrderRow = ({ price, askVolume, bidVolume, max, isCurrentPrice = false }: OrderRowProps) => {
-  console.log(price, askVolume, bidVolume, max, isCurrentPrice);
+  // console.log(price, askVolume, bidVolume, max, isCurrentPrice);
   // 가격 포맷팅 함수
   const formatPrice = (price: number) => {
     return price.toLocaleString();
