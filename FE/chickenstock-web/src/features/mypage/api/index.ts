@@ -2,6 +2,7 @@ import apiClient from "@/shared/api/axios";
 import { SimpleProfile } from "@/shared/store/types";
 import {
   PortfolioResponse,
+  TransactionResponse,
   UpdateNicknameSuccess,
   UpdatePasswordError,
   UpdatePasswordRequest,
@@ -52,5 +53,18 @@ export const updatePassword = async (
 
 export const getPortfolio = async (): Promise<PortfolioResponse | AxiosError<ErrorResponse>> => {
   const response = await apiClient.get<PortfolioResponse>("/members/portfolio");
+  return response.data;
+};
+
+export const getTransactions = async ({
+  size,
+  cursor,
+}: {
+  size: number;
+  cursor: string;
+}): Promise<TransactionResponse | AxiosError<ErrorResponse>> => {
+  const response = await apiClient.get<TransactionResponse>(
+    `/trade-histories?size=${size}/transactions&cursor=${cursor}`,
+  );
   return response.data;
 };

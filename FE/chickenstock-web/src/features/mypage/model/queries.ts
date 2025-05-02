@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth";
-import { getPortfolio, updateNickname } from "../api";
+import { getPortfolio, getTransactions, updateNickname } from "../api";
 import { AxiosError } from "axios";
 interface ErrorResponse {
   status: number;
@@ -32,6 +32,14 @@ export const useGetPortfolio = () => {
   const { data, isLoading, error } = useQuery({
     queryKey: ["portfolio"],
     queryFn: getPortfolio,
+  });
+  return { data, isLoading, error };
+};
+
+export const useGetTransactions = () => {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["transactions"],
+    queryFn: getTransactions,
   });
   return { data, isLoading, error };
 };

@@ -47,3 +47,19 @@ export interface Position {
   profitLoss: number; // 손익 (평가금액 - 매입금액)
   returnRate: number; // 수익률 (%)
 }
+
+export interface TransactionResponse {
+  tradeHistories: TradeHistory[];
+  realizedProfit: number;
+  hasNext: boolean; // 다음 페이지 있음.
+  nextCursor: string;
+}
+
+export interface TradeHistory {
+  stockName: string;
+  tradeType: string;
+  quantity: number;
+  unitPrice: number;
+  createdAt: string;
+  tradedAt: string;
+}
