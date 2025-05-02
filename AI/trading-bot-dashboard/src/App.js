@@ -7,7 +7,9 @@ import RecentTrades from './components/RecentTrades';
 import Positions from './components/Positions';
 import Alert from './components/Alert';
 import TokenManager from './components/TokenManager';
+import PriceMonitor from './components/PriceMonitor'; // 새로 추가한 컴포넌트
 import Login from './components/login'; // 로그인 컴포넌트 가져오기
+import EnvelopeIndicators from './components/EnvelopeIndicators';
 
 function App() {
   const [statusInfo, setStatusInfo] = useState({
@@ -33,6 +35,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showPriceMonitor, setShowPriceMonitor] = useState(false); // 가격 모니터 표시 여부
+  const [showEnvelopeIndicators, setShowEnvelopeIndicators] = useState(false); // Envelope 지표 표시 여부
   
   // API URL 기본 경로
   const API_BASE_URL = 'http://localhost:8000';
@@ -315,6 +319,11 @@ function App() {
     }
   };
   
+  // 가격 모니터 토글 함수
+  const togglePriceMonitor = () => {
+    setShowPriceMonitor(!showPriceMonitor);
+  };
+  
   // 초기 인증 상태 확인
   useEffect(() => {
     const checkAuth = async () => {
@@ -336,6 +345,11 @@ function App() {
     
     checkAuth();
   }, []);
+
+  // 3. Envelope 지표 토글 함수 추가
+  const toggleEnvelopeIndicators = () => {
+    setShowEnvelopeIndicators(!showEnvelopeIndicators);
+  };
   
   // 데이터 로드 및 토큰 갱신 인터벌 설정
   useEffect(() => {
@@ -396,6 +410,10 @@ function App() {
           isLoading={isLoading}
           onLogout={handleLogout}
           isAuthenticated={isAuthenticated}
+          togglePriceMonitor={togglePriceMonitor}
+          showPriceMonitor={showPriceMonitor}
+          toggleEnvelopeIndicators={toggleEnvelopeIndicators}
+          showEnvelopeIndicators={showEnvelopeIndicators}
         />
         
         <div className="col-md-10 main-content">
@@ -403,8 +421,23 @@ function App() {
             <div className="col-md-6">
               <TokenManager onRefresh={loadDashboardData} />
             </div>
+            <div className="col-md-6 text-end">
+              <button 
+                className={`btn ${showPriceMonitor ? 'btn-secondary' : 'btn-primary'} mb-3`}
+                onClick={togglePriceMonitor}
+              >
+                {showPriceMonitor ? '실시간 시세 숨기기' : '실시간 시세 보기'}
+              </button>
+            </div>
           </div>
-          
+          {/* 실시간 가격 정보 컴포넌트 */}
+          {showPriceMonitor && (
+            <div className="row mt-3">
+              <div className="col-md-12">
+                <PriceMonitor apiBaseUrl={API_BASE_URL} />
+              </div>
+            </div>
+          )}          
           <div className="row mt-3">
             <div className="col-md-4">
               <AccountInfo accountInfo={accountInfo} />
@@ -413,11 +446,32 @@ function App() {
               <RecentTrades trades={trades} />
             </div>
           </div>
-          
           <div className="row mt-3">
             <div className="col-md-12">
               <Positions positions={accountInfo.positions || []} />
             </div>
+          </div>
+          {/* Envelope 지표 컴포넌트 */}
+          {showEnvelopeIndicators && (
+            <div className="row mt-3">
+              <div className="col-md-12">
+                <EnvelopeIndicators apiBaseUrl={API_BASE_URL} />
+              </div>
+            </div>
+          )}
+          <div className="col-md-6 text-end">
+            <button 
+              className={`btn ${showPriceMonitor ? 'btn-secondary' : 'btn-primary'} mb-3 me-2`}
+              onClick={togglePriceMonitor}
+            >
+              {showPriceMonitor ? '실시간 시세 숨기기' : '실시간 시세 보기'}
+            </button>
+            <button 
+              className={`btn ${showEnvelopeIndicators ? 'btn-secondary' : 'btn-primary'} mb-3`}
+              onClick={toggleEnvelopeIndicators}
+            >
+              {showEnvelopeIndicators ? 'Envelope 지표 숨기기' : 'Envelope 지표 보기'}
+            </button>
           </div>
         </div>
       </div>

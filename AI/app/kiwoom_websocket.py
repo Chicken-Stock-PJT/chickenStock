@@ -3,8 +3,10 @@ import asyncio
 import json
 from typing import Dict, List, Callable, Any
 import aiohttp
+from datetime import datetime
 
 from app.stock_cache import StockCache
+from app.kiwoom_auth import KiwoomAuthClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +39,32 @@ class KiwoomWebSocket:
         # 구독 그룹 관리
         self._subscription_groups = []
         self._current_group_index = 0
+
+        # 키움 API 토큰 클라이언트 추가
+        self.kiwoom_auth_client = KiwoomAuthClient()
+        
+        # 키움 API 토큰 캐싱
+        self.current_kiwoom_token = None
     
-    async def connect(self, access_token: str) -> bool:
+    async def connect(self, kiwoom_token: str = None) -> bool:
         """웹소켓 연결 및 로그인"""
         try:
+            # 키움 API 토큰 가져오기 또는 전달받은 토큰 사용
+            if kiwoom_token:
+                self.current_kiwoom_token = kiwoom_token
+            else:
+                self.current_kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+
+            if not self.current_kiwoom_token:
+                logger.error("키움 API 토큰을 가져올 수 없습니다.")
+                return False
+
             # 웹소켓 연결 시도
             await self._start_websocket()
             
             # 웹소켓 로그인 시도
-            login_success = await self._websocket_login(access_token)
+            login_success = await self._websocket_login(self.current_kiwoom_token)
+            
             if not login_success:
                 logger.warning("웹소켓 로그인 실패")
                 return False
@@ -76,21 +95,22 @@ class KiwoomWebSocket:
             self.websocket = None
             return False
 
-    async def _websocket_login(self, access_token: str):
-        """웹소켓 로그인 처리"""
+    async def _websocket_login(self, kiwoom_token: str):
+        """웹소켓 로그인 처리 - 키움증권 API 토큰 사용"""
         if not self.websocket or self.websocket.closed:
             logger.error("웹소켓 연결이 없어 로그인할 수 없습니다.")
             return False
         
         try:
-            # 로그인 메시지 생성 - 액세스 토큰 사용
+            # 로그인 메시지 생성 - 키움증권 API 토큰 사용
             login_data = {
                 "trnm": "LOGIN",
-                "token": access_token
+                "token": kiwoom_token
             }
             
-            # 로그인 요청 전송
-            await self.websocket.send_json(login_data)
+            # 로그인 요청 전송 (딕셔너리를 문자열로 직렬화하여 전송)
+            login_message = json.dumps(login_data)
+            await self.websocket.send_str(login_message)
             logger.info("웹소켓 로그인 요청 전송")
             
             # 로그인 응답 대기
@@ -115,29 +135,47 @@ class KiwoomWebSocket:
         """구독 그룹 준비"""
         self._subscription_groups = []
         
+        # all_symbols가 딕셔너리 리스트인 경우(객체 리스트) 코드 문자열만 추출
+        if all_symbols and isinstance(all_symbols[0], dict):
+            # 종목 코드만 추출
+            symbol_codes = []
+            for stock in all_symbols:
+                if 'shortCode' in stock:
+                    symbol_codes.append(stock['shortCode'])
+                elif 'code' in stock:
+                    symbol_codes.append(stock['code'])
+            all_symbols = symbol_codes
+        
         # group_size씩 그룹화
         for i in range(0, len(all_symbols), group_size):
             self._subscription_groups.append(all_symbols[i:i+group_size])
         
         logger.info(f"{len(self._subscription_groups)}개 구독 그룹 생성 (그룹당 최대 {group_size}개 종목)")
         self._current_group_index = 0
+        return True
     
-    async def start_rotating_subscriptions(self, callback: Callable = None, access_token: str = None):
-        """3초마다 다른 그룹을 구독하는 로테이션 시작"""
+    async def start_rotating_subscriptions(self, callback: Callable = None, kiwoom_token: str = None):
+        """3초마다 다른 그룹을 구독하는 로테이션 시작 - 키움증권 API 토큰 사용"""
         # 콜백 함수 설정
         if callback:
             self.real_data_callback = callback
         
+        # 키움 API 토큰 설정
+        if kiwoom_token:
+            self.current_kiwoom_token = kiwoom_token
+        
         # 구독 태스크 시작
         if not self._subscription_task or self._subscription_task.done():
-            self._subscription_task = asyncio.create_task(self._subscription_rotation_loop(access_token))
+            self._subscription_task = asyncio.create_task(self._subscription_rotation_loop())
+            return True
+        return False
     
-    async def _subscription_rotation_loop(self, access_token: str = None):
-        """구독 로테이션 루프"""
+    async def _subscription_rotation_loop(self):
+        """구독 로테이션 루프 - 키움증권 API 토큰 사용"""
         try:
             # 웹소켓 연결 및 로그인
             if not self.connected:
-                ws_connected = await self.connect(access_token)
+                ws_connected = await self.connect(self.current_kiwoom_token)
                 if not ws_connected:
                     logger.error("웹소켓 연결 실패: 실시간 데이터 구독을 할 수 없습니다.")
                     return
@@ -160,7 +198,7 @@ class KiwoomWebSocket:
                             self.stock_cache.add_subscribed_symbol(code)
                         
                         # 3초 대기
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(10)
                     else:
                         logger.warning("구독할 그룹이 없습니다.")
                         await asyncio.sleep(3)
@@ -180,25 +218,40 @@ class KiwoomWebSocket:
             if self.websocket and not self.websocket.closed:
                 await self._unregister_realtime_data(list(self.stock_cache.subscribed_symbols))
             self.stock_cache.clear_subscribed_symbols()
-
+            
     async def _register_realtime_data(self, codes: List[str]):
-        """실시간 데이터 구독 등록"""
+        """실시간 데이터 구독 등록 - 키움증권 API 토큰 사용"""
         if not self.websocket or self.websocket.closed:
             logger.error("웹소켓 연결이 없습니다.")
             return False
         
         try:
+            # 키움 API 토큰이 없으면 재발급
+            if not self.current_kiwoom_token:
+                self.current_kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+                if not self.current_kiwoom_token:
+                    logger.error("키움 API 토큰을 발급할 수 없습니다.")
+                    return False
+            
+            # 각 종목별로 딕셔너리 생성
+            data_items = []
+            for code in codes:
+                data_items.append({
+                    "item": code,  # 각 종목 코드를 개별 문자열로
+                    "type": ["0B"]  # 현재가
+                })
+            
             # 실시간 데이터 구독 요청 메시지 생성
             subscribe_data = {
                 "trnm": "REG",
-                "data": {
-                    "item": codes,
-                    "type": ["0B"]  # 현재가
-                }
+                "grp_no": "1",
+                "refresh": "1",
+                "data": data_items  # 각 종목별 딕셔너리가 담긴 리스트
             }
-            
+
             # 요청 전송
-            await self.websocket.send_json(subscribe_data)
+            subscribe_message = json.dumps(subscribe_data)
+            await self.websocket.send_str(subscribe_message)
             logger.info(f"{len(codes)}개 종목 실시간 시세 구독 요청 전송")
             
             return True
@@ -207,7 +260,7 @@ class KiwoomWebSocket:
             return False
 
     async def _unregister_realtime_data(self, codes: List[str] = None):
-        """실시간 데이터 구독 해지"""
+        """실시간 데이터 구독 해지 - 키움증권 API 토큰 사용"""
         if not self.websocket or self.websocket.closed:
             return False
         
@@ -218,17 +271,31 @@ class KiwoomWebSocket:
             if not items:
                 return True
             
+            # 키움 API 토큰이 없으면 재발급
+            if not self.current_kiwoom_token:
+                self.current_kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+                if not self.current_kiwoom_token:
+                    logger.error("키움 API 토큰을 발급할 수 없습니다.")
+                    return False
+            
+            # 각 종목별로 딕셔너리 생성
+            data_items = []
+            for code in items:
+                data_items.append({
+                    "item": code,  # 각 종목 코드를 개별 문자열로
+                    "type": ["0B"]  # 현재가
+                })
+            
             # 실시간 데이터 구독 해지 요청 메시지 생성
             unsubscribe_data = {
                 "trnm": "REMOVE",
-                "data": {
-                    "item": items,
-                    "type": ["0B"]  # 현재가
-                }
+                "grp_no": "1",
+                "data": data_items  # 각 종목별 딕셔너리가 담긴 리스트
             }
             
             # 요청 전송
-            await self.websocket.send_json(unsubscribe_data)
+            unsubscribe_message = json.dumps(unsubscribe_data)
+            await self.websocket.send_str(unsubscribe_message)
             logger.info(f"{len(items)}개 종목 실시간 시세 구독 해지 요청 전송")
             
             return True
@@ -237,33 +304,101 @@ class KiwoomWebSocket:
             return False
     
     async def handle_websocket_message(self):
-        """웹소켓 메시지 처리 루프"""
+        """웹소켓 메시지 처리 루프 - 키움증권 API 토큰 사용"""
         try:
+            # 가격 업데이트 통계를 위한 카운터
+            update_counter = 0
+            last_log_time = datetime.now()
+            
+            logger.info("웹소켓 메시지 처리 루프 시작")
+            
             while self.connected and self.websocket and not self.websocket.closed:
                 msg = await self.websocket.receive()
+                logger.info(f"메시지 수신됨: {msg}")
                 
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     try:
                         data = json.loads(msg.data)
+                        logger.debug(f"웹소켓 메시지 수신: {data}")
                         
-                        # 실시간 시세 데이터 처리
-                        if data.get("trnm") == "PUSH" and data.get("type") == "0B":
-                            code = data.get("item")
-                            price = int(data.get("price", 0))
+                        # 원본 메시지 구조 로깅
+                        logger.info(f"메시지 타입: {data.get('trnm')}, 키: {list(data.keys())}")
+                        
+                        # 실시간 시세 데이터 처리 - 응답 메시지 형식에 맞게 수정
+                        if data.get("trnm") == "REAL":
+                            data_list = data.get("data", [])
+                            logger.info(f"REAL 데이터 개수: {len(data_list)}")
                             
-                            if code and price > 0:
-                                # 캐시 업데이트
-                                self.stock_cache.update_price(code, price)
+                            for item in data_list:
+                                item_type = item.get("type")
+                                item_code = item.get("item")
+                                logger.info(f"아이템: type={item_type}, item={item_code}")
                                 
-                                # 콜백 함수 호출
-                                if self.real_data_callback:
-                                    stock_name = self.stock_cache.get_stock_name(code)
-                                    self.real_data_callback(code, price, stock_name)
-                    
+                                if item_type == "0B":  # 주식체결 타입
+                                    values = item.get("values", {})
+                                    logger.info(f"values 키: {list(values.keys())}")
+                                    
+                                    price_str = values.get("10", "0")  # 현재가
+                                    logger.info(f"현재가 문자열: {price_str}")
+                                    
+                                    # 현재가가 문자열로 오므로 정수로 변환 (부호 처리)
+                                    try:
+                                        # 부호가 포함된 문자열 처리
+                                        price = int(price_str.replace('+', '').replace('-', '').replace(',', ''))
+                                        logger.info(f"실시간 가격 수신: 종목={item_code}, 가격={price}")
+                                        
+                                        if item_code and price > 0:
+                                            # 캐시 업데이트
+                                            prev_price = self.stock_cache.get_price(item_code)
+                                            self.stock_cache.update_price(item_code, price)
+                                            logger.info(f"가격 캐시 업데이트: {item_code} - {price}")
+                                            
+                                            # 업데이트 카운터 증가
+                                            update_counter += 1
+                                            
+                                            # 가격 변경 로깅
+                                            if prev_price != price:
+                                                logger.debug(f"가격 변경: {item_code} - {prev_price} → {price}")
+                                            
+                                            # 콜백 함수 호출
+                                            if self.real_data_callback:
+                                                stock_name = self.stock_cache.get_stock_name(item_code)
+                                                self.real_data_callback(item_code, price, stock_name)
+                                    except ValueError as ve:
+                                        logger.error(f"현재가 변환 오류: {price_str} - {str(ve)}")
+                        
+                        # 등록 응답 처리
+                        elif data.get("trnm") == "REG":
+                            return_code = data.get("return_code")
+                            return_msg = data.get("return_msg", "")
+                            
+                            if return_code == 0:
+                                logger.info("실시간 시세 구독 등록 성공")
+                            else:
+                                logger.error(f"실시간 시세 구독 등록 실패: {return_code} - {return_msg}")
+                        
+                        # 10초마다 가격 업데이트 통계 로깅
+                        current_time = datetime.now()
+                        if (current_time - last_log_time).total_seconds() >= 10:
+                            cache_size = len(self.stock_cache.price_cache)
+                            logger.info(f"실시간 가격 업데이트: 지난 10초간 {update_counter}건 수신, 현재 캐시 크기: {cache_size}건")
+                            
+                            # 몇 개 샘플 데이터 로깅 (최대 5개)
+                            sample_items = list(self.stock_cache.price_cache.items())[:5]
+                            if sample_items:
+                                samples = ", ".join([f"{code}: {price}" for code, price in sample_items])
+                                logger.info(f"가격 샘플: {samples}")
+                            
+                            # 카운터 및 시간 초기화
+                            update_counter = 0
+                            last_log_time = current_time
+                            
                     except json.JSONDecodeError:
                         logger.error(f"JSON 파싱 오류: {msg.data}")
                     except Exception as e:
                         logger.error(f"웹소켓 메시지 처리 중 오류: {str(e)}")
+                        import traceback
+                        logger.error(traceback.format_exc())
                 
                 elif msg.type == aiohttp.WSMsgType.CLOSED:
                     logger.warning("웹소켓 연결이 종료되었습니다.")
@@ -272,12 +407,14 @@ class KiwoomWebSocket:
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     logger.error(f"웹소켓 오류: {msg.data}")
                     break
-        
+            
         except asyncio.CancelledError:
             logger.info("웹소켓 메시지 처리 루프가 취소되었습니다.")
         
         except Exception as e:
             logger.error(f"웹소켓 메시지 처리 루프 오류: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         finally:
             # 연결 종료 시 재연결 시도
@@ -285,7 +422,7 @@ class KiwoomWebSocket:
                 logger.info("웹소켓 메시지 처리 루프 종료, 5초 후 재연결 시도")
                 await asyncio.sleep(5)
                 if self.session:
-                    asyncio.create_task(self.connect(None))  # 액세스 토큰은 외부에서 다시 제공해야 함
+                    asyncio.create_task(self.connect(self.current_kiwoom_token))
 
     async def close(self):
         """웹소켓 연결 종료"""

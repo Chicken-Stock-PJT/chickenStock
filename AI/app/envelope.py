@@ -83,6 +83,13 @@ class ChartDataProcessor:
         # 캐시가 이미 유효하면 스킵
         if self.is_cache_valid() and len(self.indicators_cache) > 0:
             logger.info("Using existing valid cache for envelope indicators")
+            
+            # 기존 캐시에서 샘플 지표 로깅 (처음 5개 종목)
+            sample_symbols = list(self.indicators_cache.keys())[:5]
+            for symbol in sample_symbols:
+                indicator = self.indicators_cache[symbol]
+                logger.info(f"Envelope 지표 (캐시) - {symbol}: MA20={indicator['MA20']:.2f}, 상한선={indicator['upperBand']:.2f}, 하한선={indicator['lowerBand']:.2f}")
+            
             return len(self.indicators_cache)
         
         # 배치 처리를 위한 설정
@@ -119,15 +126,20 @@ class ChartDataProcessor:
         
         # 캐시 저장
         self._save_cache()
-            
+        
+        # 계산된 지표 샘플 로깅 (처음 5개 종목)
+        sample_symbols = list(self.indicators_cache.keys())[:5]
+        for symbol in sample_symbols:
+            indicator = self.indicators_cache[symbol]
+            logger.info(f"Envelope 지표 (샘플) - {symbol}: MA20={indicator['MA20']:.2f}, 상한선={indicator['upperBand']:.2f}, 하한선={indicator['lowerBand']:.2f}")
+        
         logger.info(f"Completed preloading envelope indicators. Cached {success_count}/{len(symbols)} symbols")
         return success_count
     
     async def _calculate_indicator_for_symbol(self, symbol: str, kiwoom_api) -> bool:
         """REST API를 사용하여 종목의 일봉 데이터 요청 및 Envelope 지표 계산"""
         try:
-            # 일봉 데이터 요청 - 처음 호출 시에만 force_reload=True, 이후에는 캐시 사용
-            # KiwoomAPI의 차트 데이터 캐시를 활용
+            # 일봉 데이터 요청
             is_first_load = not self.is_cache_valid() or symbol not in self.indicators_cache
             chart_data = await kiwoom_api.get_daily_chart_data(
                 symbol, 
@@ -139,34 +151,70 @@ class ChartDataProcessor:
                 logger.warning(f"Insufficient data for {symbol}: {len(chart_data) if chart_data else 0} days")
                 return False
             
-            # 데이터프레임 생성
+            # 데이터프레임 생성 및 처리
             df = pd.DataFrame(chart_data)
             
+            # NaN 또는 누락된 값 처리
+            if 'close' not in df.columns:
+                logger.warning(f"종목 {symbol}의 데이터에 'close' 컬럼이 없습니다.")
+                return False
+                
+            # 숫자 데이터 확인
+            df['close'] = pd.to_numeric(df['close'], errors='coerce')
+            
+            # NaN 값 제거
+            df = df.dropna(subset=['close'])
+            
+            if len(df) < 20:
+                logger.warning(f"종목 {symbol}의 유효한 종가 데이터가 20개 미만입니다: {len(df)}개")
+                return False
+                
             # 20일 이동평균선 계산
             df['ma20'] = df['close'].rolling(window=20).mean()
             
-            # 최신 데이터의 MA20 가져오기
-            ma20 = df['ma20'].iloc[0]  # 내림차순 정렬된 데이터에서 첫 번째가 최신
+            # 계산 결과 확인
+            if df['ma20'].isna().all():
+                logger.warning(f"종목 {symbol}의 MA20 계산 결과가 모두 NaN입니다.")
+                return False
+            
+            # 최신 데이터의 MA20 가져오기 (NaN 아닌 첫 번째 값)
+            ma20_values = df['ma20'].dropna()
+            if len(ma20_values) == 0:
+                logger.warning(f"종목 {symbol}의 유효한 MA20 값이 없습니다.")
+                return False
+                
+            ma20 = ma20_values.iloc[0]
             
             # Envelope 상하한 계산 (20%)
             upper_band = ma20 * (1 + self.envelope_percentage)
             lower_band = ma20 * (1 - self.envelope_percentage)
             
             # 최신 날짜와 종가
-            latest_date = df['date'].iloc[0]
-            last_close = df['close'].iloc[0]
+            latest_date = df['date'].iloc[0] if 'date' in df.columns and len(df) > 0 else None
+            last_close = df['close'].iloc[0] if len(df) > 0 else None
+            
+            if not latest_date or not last_close:
+                logger.warning(f"종목 {symbol}의 최신 데이터를 추출할 수 없습니다.")
+                return False
             
             # 캐시에 저장
             self.indicators_cache[symbol] = {
-                "MA20": ma20,
-                "upperBand": upper_band,
-                "lowerBand": lower_band,
+                "MA20": float(ma20),
+                "upperBand": float(upper_band),
+                "lowerBand": float(lower_band),
                 "date": latest_date,
-                "lastPrice": last_close,
-                "currentPrice": last_close  # 초기값은 차트의 마지막 가격
+                "lastPrice": float(last_close),
+                "currentPrice": float(last_close)  # 초기값은 차트의 마지막 가격
             }
             
-            logger.debug(f"Calculated envelope for {symbol}: MA20={ma20:.2f}, Upper={upper_band:.2f}, Lower={lower_band:.2f}")
+            # 매수/매도 신호 계산
+            signal = "중립"
+            if last_close >= upper_band:
+                signal = "매도"
+            elif last_close <= lower_band:
+                signal = "매수"
+            
+            logger.debug(f"Calculated envelope for {symbol}: MA20={ma20:.2f}, Upper={upper_band:.2f}, Lower={lower_band:.2f}, 현재가={last_close:.2f}, 신호={signal}")
             return True
             
         except Exception as e:

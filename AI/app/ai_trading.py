@@ -1,273 +1,211 @@
 import logging
 import asyncio
+from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+import random
 
-from app.config import settings
-from app.models import TradeDecision
 from app.envelope import ChartDataProcessor
 
 logger = logging.getLogger(__name__)
 
 class TradingModel:
-    """Envelope 전략 기반 자동매매 모델"""
+    """Envelope 전략 기반 AI 트레이딩 모델"""
     
     def __init__(self, kiwoom_api):
-        """모델 초기화"""
+        """Envelope 전략 트레이딩 모델 초기화"""
         self.kiwoom_api = kiwoom_api
+        self.backend_client = None
         
-        # Envelope 지표 처리기
+        # 차트 데이터 처리기 초기화
         self.chart_processor = ChartDataProcessor()
         
-        # 계좌 정보
-        self.account = {
-            "cash_balance": 0,
-            "positions": {},
-            "total_asset_value": 0
-        }
+        # 매매 의사결정 캐시
+        self.decision_cache = {}
         
-        # 매매 파라미터
-        self.position_size_pct = settings.POSITION_SIZE_PCT
-        self.max_positions = settings.MAX_POSITIONS
+        # 매매 관련 설정
+        self.max_positions = 10  # 최대 보유 종목 수
+        self.trade_amount_per_stock = 1000000  # 종목당 매매 금액 (100만원)
+        self.min_holding_period = 3  # 최소 보유 기간 (일)
         
-        # 실시간 가격 데이터
-        self.realtime_prices = {}  # 종목 코드 -> {price, name, timestamp}
+        # 실행 상태
+        self.is_running = False
         
-        # 거래 관리
-        self.pending_decisions = {}  # 종목 코드 -> 매매 결정
-        self.trade_history = {}  # 종목 코드 -> 매매 이력
+        # 매수 후보 종목 목록 (매수 신호가 발생한 종목)
+        self.buy_candidates = []
         
-        # 모델 상태
-        self.running = False
+        # 매도 후보 종목 목록 (매도 신호가 발생한 종목)
+        self.sell_candidates = []
         
-        # 차트 데이터 초기화 상태
-        self.chart_data_initialized = False
+        logger.info("AI 트레이딩 모델 초기화 완료")
+    
+    def set_backend_client(self, backend_client):
+        """백엔드 클라이언트 설정"""
+        self.backend_client = backend_client
     
     async def start(self):
         """트레이딩 모델 시작"""
-        self.account = self.kiwoom_api.account_info
-        self.running = True
-        logger.info("트레이딩 모델 시작됨")
-        return True
+        if self.is_running:
+            logger.warning("트레이딩 모델이 이미 실행 중입니다.")
+            return
+        
+        self.is_running = True
+        logger.info("트레이딩 모델 시작")
+        
+        # 차트 데이터 및 Envelope 지표 초기화
+        filtered_symbols = list(self.kiwoom_api.stock_cache.stock_info_cache.keys())
+        if filtered_symbols:
+            logger.info(f"Envelope 지표 계산 시작: {len(filtered_symbols)}개 종목")
+            
+            # Envelope 지표 계산 (시간이 오래 걸릴 수 있음)
+            success_count = await self.chart_processor.preload_envelope_indicators(filtered_symbols, self.kiwoom_api)
+            
+            logger.info(f"Envelope 지표 계산 완료: {success_count}/{len(filtered_symbols)}개")
+        else:
+            logger.warning("필터링된 종목이 없습니다.")
+        
+        # 매매 신호 모니터링 시작
+        asyncio.create_task(self.monitor_signals())
     
     async def stop(self):
-        """트레이딩 모델 정지"""
-        self.running = False
-        logger.info("트레이딩 모델 정지됨")
-        return True
+        """트레이딩 모델 중지"""
+        self.is_running = False
+        logger.info("트레이딩 모델 중지")
     
-    async def initialize_chart_data(self, symbols: List[str]):
-        """모든 종목의 차트 데이터를 불러와 캐싱하고 Envelope 지표 계산
-        
-        Args:
-            symbols (list): 종목코드 리스트
-        
-        Returns:
-            bool: 성공 여부
-        """
-        try:
-            if self.chart_data_initialized:
-                logger.info("차트 데이터 초기화가 이미 완료되었습니다.")
-                return True
-            
-            logger.info(f"{len(symbols)}개 종목에 대한 차트 데이터 초기화 시작")
-            
-            # 1. 차트 데이터 초기화 (일괄 처리)
-            batch_size = 20
-            total_batches = (len(symbols) + batch_size - 1) // batch_size
-            processed_count = 0
-            
-            for batch_idx in range(total_batches):
-                start_idx = batch_idx * batch_size
-                end_idx = min(start_idx + batch_size, len(symbols))
-                current_batch = symbols[start_idx:end_idx]
-                
-                # 배치 내 모든 요청을 병렬로 실행
-                tasks = []
-                for symbol in current_batch:
-                    # 서버 시작 시 한 번만 API에서 데이터를 불러옴 (force_reload=True)
-                    task = self.kiwoom_api.get_daily_chart_data(symbol, period=60, force_reload=True)
-                    tasks.append(task)
-                
-                # 모든 태스크 완료 대기
-                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # 결과 확인
-                for i, result in enumerate(batch_results):
-                    if isinstance(result, Exception):
-                        logger.error(f"종목 {current_batch[i]} 차트 데이터 조회 실패: {str(result)}")
-                    elif result and len(result) > 0:
-                        processed_count += 1
-                
-                # 배치 간 잠깐 대기 (API 제한 고려)
-                await asyncio.sleep(0.5)
-                
-                # 진행 상황 로깅
-                logger.info(f"차트 데이터 초기화 진행: {processed_count}/{len(symbols)} 완료 ({batch_idx+1}/{total_batches} 배치)")
-            
-            # 2. 차트 데이터를 기반으로 Envelope 지표 계산 및 캐싱
-            logger.info("Envelope 지표 계산 시작")
-            indicator_count = await self.chart_processor.preload_envelope_indicators(symbols, self.kiwoom_api)
-            logger.info(f"Envelope 지표 계산 완료: {indicator_count}개 종목")
-            
-            # 초기화 완료 상태 설정
-            self.chart_data_initialized = True
-            
-            # 데이터 정리 및 메모리 최적화를 위해 캐시 파일 저장
-            self.chart_processor._save_cache()
-            
-            logger.info(f"차트 데이터 초기화 완료: {processed_count}/{len(symbols)} 성공")
-            return True
-            
-        except Exception as e:
-            logger.error(f"차트 데이터 초기화 중 오류: {str(e)}")
-            return False
-    
-    def handle_realtime_price(self, code: str, price: int, stock_name: str = ""):
+    async def handle_realtime_price(self, symbol, price):
         """실시간 가격 데이터 처리"""
-        try:
-            # 차트 데이터 초기화 완료 전이면 처리 건너뛰기
-            if not self.chart_data_initialized:
-                return
-                
-            # 가격 데이터 캐싱
-            self.realtime_prices[code] = {
-                "price": price,
-                "name": stock_name,
-                "timestamp": datetime.now()
-            }
-            
-            # 거래 이력 확인 (동일 종목 하루 1회 제한)
-            if code in self.trade_history:
-                last_trade_date = self.trade_history[code].get("date")
-                if last_trade_date and last_trade_date.date() == datetime.now().date():
-                    return  # 오늘 이미 거래한 종목은 스킵
-            
-            # 지표와 현재가 비교하여 거래 결정 생성
-            self._create_trade_decision(code, price)
+        if not self.is_running:
+            return
         
-        except Exception as e:
-            logger.error(f"실시간 가격 처리 중 오류 ({code}): {str(e)}")
-    
-    def _create_trade_decision(self, code: str, price: float):
-        """거래 결정 생성"""
-        try:
-            # 차트 데이터 초기화 완료 전이면 처리 건너뛰기
-            if not self.chart_data_initialized:
-                return
-                
-            # Envelope 지표 조회 (ChartDataProcessor의 캐시 사용)
-            indicators = self.chart_processor.get_envelope_indicators(code, price)
-            if not indicators:
-                return
-            
-            # 필요한 값 추출
-            ma20 = indicators.get("MA20", 0)
-            upper_band = indicators.get("upperBand", 0)
-            lower_band = indicators.get("lowerBand", 0)
-            
-            # 현재 보유 포지션 확인
-            has_position = code in self.account.get("positions", {})
-            
-            # 거래 결정
-            action = None
-            quantity = 0
-            reason = ""
-            
-            # 매수 신호: 현재가가 하단 밴드 아래에 있고 포지션이 없는 경우
-            if price <= lower_band and not has_position:
-                action = "buy"
-                # 자금의 설정된 비율 이내로 매수
-                available_cash = self.account.get("cash_balance", 0)
-                investment_amount = min(available_cash * self.position_size_pct, available_cash)
-                quantity = max(1, int(investment_amount / price))  # 최소 1주
-                reason = "하단 밴드 터치"
-                
-                logger.info(f"매수 신호 감지: {code}, 가격: {price}, 하단밴드: {lower_band}, 수량: {quantity}")
-            
-            # 매도 신호: 현재가가 상단 밴드 위에 있고 포지션이 있는 경우
-            elif price >= upper_band and has_position:
-                action = "sell"
-                quantity = self.account["positions"][code].get("quantity", 0)
-                reason = "상단 밴드 터치"
-                
-                logger.info(f"매도 신호 감지: {code}, 가격: {price}, 상단밴드: {upper_band}, 수량: {quantity}")
-            
-            # 거래 결정이 있으면 저장
-            if action and quantity > 0:
-                self.pending_decisions[code] = {
-                    "symbol": code,
-                    "action": action,
-                    "quantity": quantity,
-                    "price": price,
-                    "price_type": "market",
-                    "reason": reason,
-                    "timestamp": datetime.now()
-                }
+        # Envelope 지표 가져오기 (현재가 업데이트)
+        envelope = self.chart_processor.get_envelope_indicators(symbol, price)
         
-        except Exception as e:
-            logger.error(f"거래 결정 생성 중 오류 ({code}): {str(e)}")
+        if not envelope:
+            return
+        
+        # 매수/매도 신호 확인
+        current_price = envelope.get("currentPrice", 0)
+        upper_band = envelope.get("upperBand", 0)
+        lower_band = envelope.get("lowerBand", 0)
+        ma20 = envelope.get("MA20", 0)
+        
+        # 신호 저장
+        if current_price >= upper_band:
+            # 상단 밴드 터치 - 매도 신호
+            if symbol not in self.sell_candidates:
+                self.sell_candidates.append(symbol)
+                logger.info(f"매도 신호 발생: {symbol}, 현재가: {current_price:.2f}, 상한선: {upper_band:.2f}")
+        
+        elif current_price <= lower_band:
+            # 하단 밴드 터치 - 매수 신호
+            if symbol not in self.buy_candidates:
+                self.buy_candidates.append(symbol)
+                logger.info(f"매수 신호 발생: {symbol}, 현재가: {current_price:.2f}, 하한선: {lower_band:.2f}")
     
-    async def get_trade_decisions(self) -> List[Dict]:
-        """현재 대기 중인 모든 매매 결정 가져오기"""
-        if not self.running or not self.chart_data_initialized:
+    async def monitor_signals(self):
+        """매매 신호 주기적 모니터링 및 처리"""
+        logger.info("매매 신호 모니터링 시작")
+        
+        while self.is_running:
+            try:
+                # 1분마다 매매 신호 확인
+                await asyncio.sleep(60)
+                
+                # 계좌 정보 확인
+                if not self.kiwoom_api.account_info:
+                    logger.warning("계좌 정보가 없습니다.")
+                    continue
+                
+                # 매수/매도 신호 로깅
+                if self.buy_candidates:
+                    logger.info(f"현재 매수 후보 종목: {len(self.buy_candidates)}개")
+                    sample_candidates = self.buy_candidates[:5]  # 샘플 5개만 로깅
+                    logger.info(f"매수 후보 샘플: {sample_candidates}")
+                
+                if self.sell_candidates:
+                    logger.info(f"현재 매도 후보 종목: {len(self.sell_candidates)}개")
+                    sample_candidates = self.sell_candidates[:5]  # 샘플 5개만 로깅
+                    logger.info(f"매도 후보 샘플: {sample_candidates}")
+                
+            except Exception as e:
+                logger.error(f"매매 신호 모니터링 중 오류: {str(e)}")
+                await asyncio.sleep(30)  # 오류 발생 시 30초 대기
+    
+    async def get_trade_decisions(self) -> List[Dict[str, Any]]:
+        """매매 의사결정 목록 반환"""
+        if not self.is_running:
+            logger.warning("트레이딩 모델이 실행 중이지 않습니다.")
             return []
         
         decisions = []
-        
         try:
-            # 계좌 정보 업데이트
-            self.account = self.kiwoom_api.account_info
+            # 계좌 정보 확인
+            if not self.kiwoom_api.account_info:
+                logger.warning("계좌 정보가 없습니다.")
+                return []
             
-            # 포지션 수 제한 확인
-            current_positions = len(self.account.get("positions", {}))
+            cash_balance = self.kiwoom_api.account_info.get("cash_balance", 0)
+            positions = self.kiwoom_api.account_info.get("positions", {})
             
-            # 모든 대기 중인 결정을 처리
-            for code, decision in list(self.pending_decisions.items()):
-                # 매수인데 최대 포지션 수에 도달한 경우 스킵
-                if decision["action"] == "buy" and current_positions >= self.max_positions:
-                    logger.info(f"최대 포지션 수 도달: {code} 매수 결정 무시")
-                    continue
+            # 매수 결정 처리
+            if cash_balance > self.trade_amount_per_stock and len(positions) < self.max_positions and self.buy_candidates:
+                # 매수 후보에서 종목 선택 (첫 번째 종목)
+                symbol = self.buy_candidates[0]
                 
-                # 종목명 추가
-                decision["name"] = self.kiwoom_api.stock_cache.get_stock_name(code)
-                
-                # 결정 추가
-                decisions.append(decision)
-                
-                # 거래 이력 업데이트 (당일 중복 거래 방지)
-                self.trade_history[code] = {
-                    "action": decision["action"],
-                    "price": decision["price"],
-                    "quantity": decision["quantity"],
-                    "date": datetime.now()
-                }
+                # 현재가 확인
+                current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                if not current_price or current_price <= 0:
+                    logger.warning(f"종목 {symbol}의 현재가를 조회할 수 없습니다.")
+                else:
+                    # 매수 수량 계산 (종목당 거래 금액 기준)
+                    quantity = int(self.trade_amount_per_stock / current_price)
+                    
+                    if quantity > 0:
+                        # 매수 결정 추가
+                        decision = {
+                            "symbol": symbol,
+                            "action": "buy",
+                            "quantity": quantity,
+                            "price": current_price,
+                            "reason": "Envelope 하한선 터치",
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        decisions.append(decision)
+                        
+                        # 매수 후보에서 제거
+                        self.buy_candidates.remove(symbol)
+                        
+                        logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}")
             
-            # 대기 목록 초기화
-            self.pending_decisions.clear()
+            # 매도 결정 처리
+            for symbol, position in positions.items():
+                # 매도 후보에 있는 보유 종목만 처리
+                if symbol in self.sell_candidates:
+                    current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                    quantity = position.get("quantity", 0)
+                    
+                    if current_price and quantity > 0:
+                        # 매도 결정 추가
+                        decision = {
+                            "symbol": symbol,
+                            "action": "sell",
+                            "quantity": quantity,
+                            "price": current_price,
+                            "reason": "Envelope 상한선 터치",
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        decisions.append(decision)
+                        
+                        # 매도 후보에서 제거
+                        self.sell_candidates.remove(symbol)
+                        
+                        logger.info(f"매도 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}")
             
-            logger.info(f"{len(decisions)}개 매매 결정 반환")
+            # 매매 결정이 있는 경우 로깅
+            if decisions:
+                logger.info(f"매매 결정 생성: {len(decisions)}개")
+            
             return decisions
         
         except Exception as e:
-            logger.error(f"매매 결정 처리 중 오류: {str(e)}")
+            logger.error(f"매매 의사결정 생성 중 오류: {str(e)}")
             return []
-    
-    async def process_trade_result(self, symbol: str, action: str, quantity: int, price: float):
-        """거래 결과 처리"""
-        try:
-            # 거래 이력 업데이트
-            self.trade_history[symbol] = {
-                "action": action.lower(),
-                "price": price,
-                "quantity": quantity,
-                "date": datetime.now()
-            }
-            
-            logger.info(f"거래 결과 처리: {symbol} {action} {quantity}주 @ {price}")
-            
-            # 계좌 정보 업데이트 요청
-            await self.kiwoom_api.request_account_info()
-        
-        except Exception as e:
-            logger.error(f"거래 결과 처리 중 오류: {str(e)}")

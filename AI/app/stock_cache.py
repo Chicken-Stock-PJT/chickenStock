@@ -30,35 +30,45 @@ class StockCache:
             self.kospi_symbols.clear()
             self.kosdaq_symbols.clear()
             
+            skipped_count = 0
             logger.info(f"종목 정보 초기화 시작: {len(stock_list)}개 종목")
             
             # 종목 정보 캐싱 - 누락된 종목 코드만 건너뛰고 나머지는 모두 저장
             for stock in stock_list:
                 code = stock.get("shortCode")
                 if not code:
+                    skipped_count += 1
+                    logger.warning(f"종목 코드가 누락된 데이터 건너뜀: {stock}")
                     continue  # 종목 코드가 없는 경우만 건너뜀
                 
                 # 나머지 정보는 있는 그대로 저장 (기본값 필요 없음)
                 self.stock_info_cache[code] = {
                     "shortCode": code,
-                    "shortName": stock.get("shortName", ""),
+                    "name": stock.get("shortName", ""),
                     "market": stock.get("market", ""),
                     "stockType": stock.get("stockType", ""),
                     "faceValue": stock.get("faceValue", "0")
                 }
                 
-                # 코스피/코스닥 분류 (필요한 경우에만)
-                market = stock.get("market", "")
-                if market == "KOSPI":
+                # 코스피/코스닥 분류 - 대소문자 구분 없이 확인
+                market = stock.get("market", "").upper()
+                if "KOSPI" in market:
                     self.kospi_symbols.append(code)
-                elif market == "KOSDAQ":
+                elif "KOSDAQ" in market:
                     self.kosdaq_symbols.append(code)
+                else:
+                    logger.warning(f"알 수 없는 시장 유형: {code} - {market}")
+            
+            unknown_market_count = len(self.stock_info_cache) - len(self.kospi_symbols) - len(self.kosdaq_symbols)
             
             logger.info(f"종목 정보 캐시 초기화 완료: 총 {len(self.stock_info_cache)}개 종목")
-            logger.info(f"코스피 종목 수: {len(self.kospi_symbols)}, 코스닥 종목 수: {len(self.kosdaq_symbols)}")
+            logger.info(f"코스피 종목 수: {len(self.kospi_symbols)}, 코스닥 종목 수: {len(self.kosdaq_symbols)}, 기타: {unknown_market_count}개")
+            
+            if skipped_count > 0:
+                logger.warning(f"종목 코드 누락으로 건너뛴 데이터: {skipped_count}개")
             
             return True
-            
+                
         except Exception as e:
             logger.error(f"종목 정보 캐시 초기화 중 오류: {str(e)}")
             return False
@@ -66,7 +76,7 @@ class StockCache:
     def get_stock_name(self, code: str) -> str:
         """종목 코드로 종목명 조회"""
         stock = self.stock_info_cache.get(code, {})
-        return stock.get("shortName", "")
+        return stock.get("name", "")
     
     def get_market_type(self, code: str) -> str:
         """종목 코드로 시장 구분 조회"""

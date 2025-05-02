@@ -22,10 +22,10 @@ class KiwoomAPI:
         self.base_url = settings.API_BASE_URL
         self.websocket_url = settings.WEBSOCKET_API_URL
         
-        # 인증 클라이언트
+        # 인증 클라이언트 (백엔드 서버 인증용)
         self.auth_client = auth_client
 
-        # 키움 API 토큰 클라이언트 추가
+        # 키움 API 토큰 클라이언트 (키움증권 API 인증용)
         self.kiwoom_auth_client = KiwoomAuthClient()
         
         # HTTP 세션
@@ -86,9 +86,9 @@ class KiwoomAPI:
                     }
                 )
             
-            # 인증 상태 확인
+            # 백엔드 서버 인증 상태 확인
             if not self.auth_client.is_authenticated:
-                logger.error("인증되지 않았습니다. 먼저 로그인이 필요합니다.")
+                logger.error("백엔드 서버 인증되지 않았습니다. 먼저 로그인이 필요합니다.")
                 return False
             
             # 키움 API 토큰 발급 (최초 1회)
@@ -96,10 +96,6 @@ class KiwoomAPI:
             if not kiwoom_token:
                 logger.error("키움 API 토큰 발급 실패")
                 return False
-
-            # 종목 정보는 외부(백엔드 클라이언트)에서 제공받도록 변경
-            # 계좌 정보도 외부(백엔드 클라이언트)에서 제공받도록 변경
-            # 이 두 가지는 이제 BackendClient에서 처리
             
             # 웹소켓 클라이언트 초기화
             self.websocket_client = KiwoomWebSocket(
@@ -126,15 +122,16 @@ class KiwoomAPI:
         return False
     
     async def get_filtered_symbols(self, top_kospi: int = 450, top_kosdaq: int = 150) -> List[str]:
-        """시가총액 기준으로 종목 필터링 - 연속조회 지원"""
+        """시가총액 기준으로 종목 필터링"""
         try:
             # 키움 API 토큰 가져오기
             kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+            
             if not kiwoom_token:
                 logger.error("키움 API 토큰을 가져올 수 없습니다")
                 return []
 
-            # API 요청 헤더 구성
+            # 키움 API 요청 헤더 구성
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
@@ -150,83 +147,54 @@ class KiwoomAPI:
                 # 로깅 추가
                 logger.info(f"{market_name} 시장 종목 조회 시작")
                 
-                # 연속조회를 위한 변수 초기화
-                cont_yn = 'Y'  # 처음에는 데이터가 있다고 가정
-                next_key = ''
-                page_count = 0
-                all_market_stocks = []
+                # 요청 파라미터
+                params = {'mrkt_tp': market_code}
                 
-                # 연속조회 루프 시작
-                while cont_yn == 'Y':
-                    page_count += 1
-                    logger.info(f"{market_name} 시장 종목 조회 - 페이지 {page_count}")
+                async with self.session.post(
+                    f"{self.base_url}/api/dostk/stkinfo", 
+                    headers=headers, 
+                    json=params
+                ) as response:
+                    logger.info(f"{market_name} 시장 조회 응답 상태: {response.status}")
                     
-                    # 요청 파라미터
-                    params = {'mrkt_tp': market_code}
-                    
-                    # 연속조회 키가 있으면 추가
-                    if next_key:
-                        headers['cont-yn'] = 'Y'
-                        headers['next-key'] = next_key
-                    
-                    async with self.session.post(
-                        f"{self.base_url}/api/dostk/stkinfo", 
-                        headers=headers, 
-                        json=params
-                    ) as response:
-                        logger.info(f"{market_name} 시장 조회 응답 상태: {response.status}")
+                    if response.status == 200:
+                        data = await response.json()
+                        stocks = data.get('list', [])
                         
-                        if response.status == 200:
-                            data = await response.json()
-                            stocks = data.get('list', [])
-                            
-                            logger.info(f"{market_name} 시장 페이지 {page_count}의 종목 수: {len(stocks)}")
-                            
-                            # 종목 정보 처리
-                            for stock in stocks:
-                                try:
-                                    list_count = int(stock.get('listCount', '0').replace(',', ''))
-                                    last_price = int(stock.get('lastPrice', '0').replace(',', ''))
-                                    
-                                    market_cap = list_count * last_price
-                                    
-                                    all_market_stocks.append({
-                                        'code': stock.get('code'),
-                                        'name': stock.get('name'),
-                                        'market_cap': market_cap
-                                    })
-                                except (ValueError, TypeError) as e:
-                                    logger.warning(f"종목 처리 중 오류: {e}")
-                                    continue
-                            
-                            # 응답 헤더에서 연속조회 정보 확인
-                            cont_yn = response.headers.get('cont-yn', 'N')
-                            next_key = response.headers.get('next-key', '')
-                            
-                            logger.info(f"{market_name} 연속조회 여부: {cont_yn}, 다음 키: {next_key}")
-                            
-                            # 만약 더 이상 데이터가 없거나 충분한 데이터를 모았다면 종료
-                            if cont_yn != 'Y' or len(all_market_stocks) >= max(top_kospi, top_kosdaq) * 2:
-                                break
-                            
-                            # 연속조회 사이에 잠시 대기 (API 제한 고려)
-                            await asyncio.sleep(0.5)
-                        else:
-                            logger.error(f"{market_name} 종목 정보 조회 실패: HTTP {response.status}")
-                            error_body = await response.text()
-                            logger.error(f"오류 응답: {error_body}")
-                            break
-                
-                # 시가총액 기준 정렬
-                all_market_stocks.sort(key=lambda x: x['market_cap'], reverse=True)
-                
-                # 상위 N개 종목 선택 (코스피 450, 코스닥 150)
-                top_count = top_kospi if market_name == 'KOSPI' else top_kosdaq
-                selected_stocks = all_market_stocks[:top_count]
-                
-                logger.info(f"{market_name} 시장 전체 조회 종목 수: {len(all_market_stocks)}, 상위 {len(selected_stocks)}개 선택")
-                
-                all_stocks.extend([stock['code'] for stock in selected_stocks])
+                        logger.info(f"{market_name} 시장 종목 수: {len(stocks)}")
+                        
+                        # 종목 정보 처리
+                        all_market_stocks = []
+                        for stock in stocks:
+                            try:
+                                list_count = int(stock.get('listCount', '0').replace(',', ''))
+                                last_price = int(stock.get('lastPrice', '0').replace(',', ''))
+                                
+                                market_cap = list_count * last_price
+                                
+                                all_market_stocks.append({
+                                    'code': stock.get('code'),
+                                    'name': stock.get('name'),
+                                    'market_cap': market_cap
+                                })
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"종목 처리 중 오류: {e}")
+                                continue
+                        
+                        # 시가총액 기준 정렬
+                        all_market_stocks.sort(key=lambda x: x['market_cap'], reverse=True)
+                        
+                        # 상위 N개 종목 선택 (코스피 450, 코스닥 150)
+                        top_count = top_kospi if market_name == 'KOSPI' else top_kosdaq
+                        selected_stocks = all_market_stocks[:top_count]
+                        
+                        logger.info(f"{market_name} 시장 전체 조회 종목 수: {len(all_market_stocks)}, 상위 {top_count}개 선택")
+                        
+                        all_stocks.extend([stock['code'] for stock in selected_stocks])
+                    else:
+                        logger.error(f"{market_name} 종목 정보 조회 실패: HTTP {response.status}")
+                        error_body = await response.text()
+                        logger.error(f"오류 응답: {error_body}")
 
             logger.info(f"총 선택된 종목 수: {len(all_stocks)}")
             return all_stocks
@@ -243,12 +211,17 @@ class KiwoomAPI:
             # 세션이 없으면 생성
             if not self.session:
                 self.session = aiohttp.ClientSession()
+
+            kiwoom_token = await self.kiwoom_auth_client.get_access_token()
                 
             # 차트 캐시 초기화
             self.chart_cache = {}
             
-            # 동시 요청 제한 (10개씩 처리)
-            batch_size = 10
+            # 필터링된 종목 리스트 저장 (다른 메소드에서 접근할 수 있도록)
+            self.filtered_stockcode_list = symbols
+            
+            # 동시 요청 제한 (5개씩 처리)
+            batch_size = 5
             total_batches = (len(symbols) + batch_size - 1) // batch_size
             processed_count = 0
             
@@ -257,27 +230,32 @@ class KiwoomAPI:
                 end_idx = min(start_idx + batch_size, len(symbols))
                 current_batch = symbols[start_idx:end_idx]
                 
-                # 배치 내 모든 요청을 병렬로 실행
-                tasks = []
-                for code in current_batch:
-                    task = self.get_daily_chart_data(code, from_date=from_date, period=period, force_reload=True)
-                    tasks.append(task)
+                logger.info(f"처리 중인 배치: {batch_index+1}/{total_batches}, 종목: {current_batch}")
                 
-                # 모든 태스크 완료 대기
-                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                # 배치 내 종목 병렬 처리 (gather 사용)
+                tasks = [
+                    self.get_daily_chart_data(
+                        code, 
+                        from_date=from_date,
+                        period=period,
+                        force_reload=True,
+                        kiwoom_token=kiwoom_token
+                    ) for code in current_batch
+                ]
                 
-                # 결과 확인
-                for i, result in enumerate(batch_results):
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # 결과 처리
+                for i, result in enumerate(results):
+                    code = current_batch[i]
                     if isinstance(result, Exception):
-                        logger.error(f"종목 {current_batch[i]} 차트 데이터 조회 실패: {str(result)}")
-                    else:
+                        logger.error(f"종목 {code} 차트 데이터 조회 실패: {str(result)}")
+                    elif result and len(result) > 0:
                         processed_count += 1
+                        logger.debug(f"종목 {code} 차트 데이터 조회 성공: {len(result)}개 데이터")
                 
-                # 배치 간 잠깐 대기 (API 제한 고려)
-                await asyncio.sleep(0.5)
-                
-                # 진행 상황 로깅
-                logger.info(f"차트 데이터 초기화 진행: {processed_count}/{len(symbols)} 완료 ({(batch_index+1)}/{total_batches} 배치)")
+                # 배치 간 간격 (API 부하 제어)
+                await asyncio.sleep(1)
             
             logger.info(f"차트 데이터 일괄 초기화 완료: {processed_count}/{len(symbols)} 성공")
             return processed_count > 0
@@ -286,7 +264,7 @@ class KiwoomAPI:
             logger.error(f"차트 데이터 일괄 초기화 중 오류: {str(e)}")
             return False
     
-    async def get_daily_chart_data(self, code, from_date=None, to_date=None, period=None, force_reload=False):
+    async def get_daily_chart_data(self, code, from_date=None, to_date=None, period=None, force_reload=None, kiwoom_token=None):
         """일별 차트 데이터 조회 - Envelope 지표 계산용"""
         try:
             # 캐시 키 생성 (코드 + 기간 정보로)
@@ -297,11 +275,12 @@ class KiwoomAPI:
             
             # 키움 API 토큰 가져오기
             kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+        
             if not kiwoom_token:
                 logger.error(f"키움 API 토큰을 가져올 수 없습니다: {code}")
                 return []
                 
-            # API 요청 헤더 구성 (키움 API 토큰 사용)
+            # 키움 API 요청 헤더 구성
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
@@ -322,9 +301,9 @@ class KiwoomAPI:
                 params["base_dt"] = datetime.now().strftime("%Y%m%d")
 
             # API 요청
-            async with self.session.get(
+            async with self.session.post(
                 f"{self.base_url}/api/dostk/chart",
-                params=params,
+                json=params,
                 headers=headers
             ) as response:
                 if response.status == 200:
@@ -347,13 +326,7 @@ class KiwoomAPI:
                     
                     # 날짜 기준 내림차순 정렬 (최신 데이터가 앞에 오도록)
                     all_data.sort(key=lambda x: x["date"], reverse=True)
-                    
-                    # 조회 기간에 맞게 데이터 필터링
-                    if from_date:
-                        all_data = [item for item in all_data if item["date"] >= from_date]
-                    if period:
-                        all_data = all_data[:period]
-                    
+
                     logger.info(f"일봉 데이터 조회 성공: {code}, {len(all_data)}개 데이터")
                     
                     # 캐시 초기화 (필요 시)
@@ -383,7 +356,7 @@ class KiwoomAPI:
             
             # 웹소켓 연결 및 로그인
             kiwoom_token = await self.kiwoom_auth_client.get_access_token()
-            logger.info(kiwoom_token)
+            
             connected = await self.websocket_client.connect(kiwoom_token)
             if not connected:
                 logger.error("웹소켓 연결 실패")
@@ -401,7 +374,7 @@ class KiwoomAPI:
                 # 구독 로테이션 시작
                 await self.websocket_client.start_rotating_subscriptions(
                     callback=real_data_callback,
-                    access_token=self.auth_client.access_token
+                    kiwoom_token=kiwoom_token  # 변경: access_token에서 kiwoom_token으로 변경
                 )
                 
                 # 메시지 처리 루프 시작
@@ -430,10 +403,16 @@ class KiwoomAPI:
         if not self.websocket_client:
             logger.error("웹소켓 클라이언트가 초기화되지 않았습니다.")
             return False
+        
+        # 키움 API 토큰 가져오기
+        kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+        if not kiwoom_token:
+            logger.error("키움 API 토큰을 가져올 수 없습니다.")
+            return False
             
         return await self.websocket_client.start_rotating_subscriptions(
             callback=callback,
-            access_token=self.auth_client.access_token
+            kiwoom_token=kiwoom_token  # 변경: access_token에서 kiwoom_token으로 변경
         )
         
     async def handle_websocket_message(self):
@@ -460,12 +439,12 @@ class KiwoomAPI:
                     "executed_price": 0
                 }
             
-            # 인증 상태 확인
+            # 백엔드 서버 인증 상태 확인
             if not self.auth_client.is_authenticated:
-                logger.error("인증되지 않았습니다. 거래를 실행할 수 없습니다.")
+                logger.error("백엔드 서버 인증되지 않았습니다. 거래를 실행할 수 없습니다.")
                 return {
                     "success": False,
-                    "message": "인증되지 않았습니다. 거래를 실행할 수 없습니다.",
+                    "message": "백엔드 서버 인증되지 않았습니다. 거래를 실행할 수 없습니다.",
                     "executed_quantity": 0,
                     "executed_price": 0
                 }
@@ -499,7 +478,7 @@ class KiwoomAPI:
                     "executed_price": 0
                 }
             
-            # 백엔드 API를 통한 주문 전송
+            # 백엔드 API를 통한 주문 전송 (백엔드 서버 API 토큰 사용)
             headers = self.auth_client.get_authorization_header()
             
             async with self.session.post(
