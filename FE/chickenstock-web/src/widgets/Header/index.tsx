@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
-import SearchModal from "./SearchModal";
+import SearchModal from "@/features/stocks/search/ui/SearchModal";
 import { useAuthStore } from "@/shared/store/auth";
 
 const Header = () => {
@@ -54,14 +54,7 @@ const Header = () => {
               <Search
                 size={28}
                 onClick={() => setIsSearchOpen(!isSearchOpen)}
-                className="rounded-full p-1.5 text-gray-400 transition-colors duration-200 hover:text-primary"
-              />
-              <input
-                type="text"
-                placeholder="검색어를 입력하세요"
-                className={`ml-3 bg-transparent outline-none ${
-                  isSearchOpen ? "w-48 opacity-100" : "w-0 opacity-0"
-                } transition-all duration-300`}
+                className=" cursor-pointer rounded-full p-1.5 text-gray-400 transition-colors duration-200 hover:text-primary"
               />
             </div>
           </div>
