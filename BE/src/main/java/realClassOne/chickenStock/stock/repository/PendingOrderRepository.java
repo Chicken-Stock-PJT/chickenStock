@@ -25,4 +25,6 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
 
     @Query("SELECT po FROM PendingOrder po JOIN FETCH po.stockData WHERE po.status = realClassOne.chickenStock.stock.entity.PendingOrder$OrderStatus.PENDING")
     List<PendingOrder> findPendingOrdersWithStockData();
+
+    boolean existsByStockDataShortCodeAndStatus(String stockCode, PendingOrder.OrderStatus status);
 }

@@ -26,4 +26,7 @@ public interface HoldingPositionRepository extends JpaRepository<HoldingPosition
     // 특정 종목 코드에 대해 필터링
     @Query("SELECT hp FROM HoldingPosition hp JOIN FETCH hp.stockData sd WHERE hp.member.memberId = :memberId AND sd.shortCode = :stockCode")
     List<HoldingPosition> findWithStockDataByMemberIdAndStockCode(@Param("memberId") Long memberId, @Param("stockCode") String stockCode);
+
+    boolean existsByStockDataShortCode(String stockCode);
+
 }

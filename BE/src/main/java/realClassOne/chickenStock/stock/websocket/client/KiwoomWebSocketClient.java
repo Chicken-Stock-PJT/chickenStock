@@ -19,6 +19,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Component
 @Slf4j
@@ -42,6 +43,10 @@ public class KiwoomWebSocketClient {
 
     // 종목별 최신 가격 데이터 캐시
     private final Map<String, JsonNode> latestPriceDataCache = new ConcurrentHashMap<>();
+
+    // 목적에 따른 구독 진행
+    private final Map<String, Set<String>> stockSubscriptionPurposes = new ConcurrentHashMap<>();
+    private final ReentrantReadWriteLock subscriptionLock = new ReentrantReadWriteLock();
 
     // 최신 가격 데이터 반환 메서드
     public JsonNode getLatestStockPriceData(String stockCode) {
@@ -378,6 +383,111 @@ public class KiwoomWebSocketClient {
         } catch (Exception e) {
             log.error("키움증권 WebSocket 재연결 시도 중 오류 발생", e);
         }
+    }
+
+    // 목적을 지정하여 구독하는 메서드
+    public synchronized boolean subscribeStockWithPurpose(String stockCode, String purpose) {
+        if (stockCode == null || stockCode.trim().isEmpty()) {
+            log.error("유효하지 않은 종목 코드: {}", stockCode);
+            return false;
+        }
+
+        stockCode = stockCode.trim();
+
+        subscriptionLock.writeLock().lock();
+        try {
+            // 목적 추가
+            Set<String> purposes = stockSubscriptionPurposes.computeIfAbsent(stockCode, k -> ConcurrentHashMap.newKeySet());
+            purposes.add(purpose);
+
+            log.info("종목 {} 구독 목적 추가: {}, 총 목적 수: {}", stockCode, purpose, purposes.size());
+
+            // 실제 구독 처리 (기존 메서드 활용)
+            return subscribeStock(stockCode);
+        } finally {
+            subscriptionLock.writeLock().unlock();
+        }
+    }
+
+    // 특정 목적의 구독을 해제하는 메서드
+    public synchronized boolean unsubscribeStockForPurpose(String stockCode, String purpose) {
+        if (stockCode == null || stockCode.trim().isEmpty()) {
+            log.error("유효하지 않은 종목 코드: {}", stockCode);
+            return false;
+        }
+
+        stockCode = stockCode.trim();
+
+        subscriptionLock.writeLock().lock();
+        try {
+            // 목적 제거
+            Set<String> purposes = stockSubscriptionPurposes.get(stockCode);
+            if (purposes != null) {
+                purposes.remove(purpose);
+                log.info("종목 {} 구독 목적 제거: {}, 남은 목적 수: {}", stockCode, purpose, purposes.size());
+
+                // 모든 목적이 제거되면 실제 구독 해제
+                if (purposes.isEmpty()) {
+                    stockSubscriptionPurposes.remove(stockCode);
+                    log.info("종목 {} 모든 구독 목적 제거됨, 구독 해제", stockCode);
+                    return unsubscribeStock(stockCode);
+                }
+            }
+
+            // 다른 목적이 남아있으면 구독 유지
+            return true;
+        } finally {
+            subscriptionLock.writeLock().unlock();
+        }
+    }
+
+    // 특정 목적의 구독 여부 확인
+    public boolean hasSubscriptionPurpose(String stockCode, String purposePrefix) {
+        if (stockCode == null || stockCode.trim().isEmpty()) {
+            return false;
+        }
+
+        stockCode = stockCode.trim();
+
+        subscriptionLock.readLock().lock();
+        try {
+            Set<String> purposes = stockSubscriptionPurposes.get(stockCode);
+            if (purposes == null || purposes.isEmpty()) {
+                return false;
+            }
+
+            // 특정 접두사로 시작하는 목적이 있는지 확인
+            return purposes.stream().anyMatch(p -> p.startsWith(purposePrefix));
+        } finally {
+            subscriptionLock.readLock().unlock();
+        }
+    }
+
+    // 특정 목적으로 구독 중인 종목들 조회
+    public Set<String> getStocksWithPurpose(String purposePrefix) {
+        subscriptionLock.readLock().lock();
+        try {
+            Set<String> result = new HashSet<>();
+
+            for (Map.Entry<String, Set<String>> entry : stockSubscriptionPurposes.entrySet()) {
+                String stockCode = entry.getKey();
+                Set<String> purposes = entry.getValue();
+
+                if (purposes.stream().anyMatch(p -> p.startsWith(purposePrefix))) {
+                    result.add(stockCode);
+                }
+            }
+
+            return result;
+        } finally {
+            subscriptionLock.readLock().unlock();
+        }
+    }
+
+    // 모든 구독 목적 조회
+    public Set<String> getSubscriptionPurposes(String stockCode) {
+        Set<String> purposes = stockSubscriptionPurposes.get(stockCode);
+        return purposes != null ? Collections.unmodifiableSet(purposes) : Collections.emptySet();
     }
 
 
