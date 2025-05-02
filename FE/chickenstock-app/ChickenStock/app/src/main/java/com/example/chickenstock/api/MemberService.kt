@@ -33,6 +33,9 @@ interface MemberService {
     @GET("members/portfolio")
     suspend fun getPortfolio(): Response<PortfolioData>
 
+    @GET("members/asset-allocation")
+    suspend fun getAssetAllocation(): Response<AssetAllocationResponse>
+
     @GET("members/watchlist")
     suspend fun getWatchlist(): Response<WatchlistResponse>
 

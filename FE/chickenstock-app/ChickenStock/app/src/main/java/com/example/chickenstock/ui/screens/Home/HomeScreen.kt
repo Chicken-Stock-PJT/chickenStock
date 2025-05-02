@@ -383,7 +383,17 @@ fun HomeScreen(
     }
 
     Scaffold(
-        containerColor = Color.White
+        containerColor = Gray0,
+        topBar = {
+            if (authViewModel.isLoggedIn.value) {
+                TopAppBar(
+                    title = { },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.White
+                    )
+                )
+            }
+        }
     ) { innerPadding ->
         Column(
             modifier = Modifier

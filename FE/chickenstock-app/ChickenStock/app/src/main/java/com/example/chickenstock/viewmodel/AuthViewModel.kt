@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.example.chickenstock.data.TokenManager
 
 class AuthViewModel(private val context: Context) : ViewModel() {
     private val _isLoggedIn = mutableStateOf(false)
@@ -36,6 +37,9 @@ class AuthViewModel(private val context: Context) : ViewModel() {
 
     fun logout() {
         _isLoggedIn.value = false
+        _token.value = null
+        // 토큰 삭제
+        TokenManager.getInstance(context).clearTokens()
         // 로그인 상태 저장
         saveLoginState(false)
     }

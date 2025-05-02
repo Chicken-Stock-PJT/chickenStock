@@ -35,6 +35,9 @@ class WebSocketManager private constructor() {
     fun connect(stockCode: String) {
         Log.d(TAG, "웹소켓 연결 시도: $WEBSOCKET_URL")
         
+        // 기존 연결이 있다면 먼저 해제
+        disconnect()
+        
         val request = Request.Builder()
             .url(WEBSOCKET_URL)
             .build()
@@ -55,25 +58,14 @@ class WebSocketManager private constructor() {
                 Log.d(TAG, "메시지 수신: $text")
                 try {
                     val jsonObject = JSONObject(text)
-                    when (jsonObject.getString("type")) {
-                        "stockPrice" -> {
-                            // 데이터 포맷팅
-                            jsonObject.apply {
-                                put("currentPrice", getString("currentPrice").replace("""[+\-]""".toRegex(), ""))
-                                val changeRate = getString("changeRate")
-                                val formattedChangeRate = if (changeRate.startsWith("-")) {
-                                    "($changeRate%)"
-                                } else if (changeRate.startsWith("+") || changeRate.toFloatOrNull() ?: 0f > 0f) {
-                                    "(+$changeRate%)"
-                                } else {
-                                    "(0%)"
-                                }
-                                put("changeRate", formattedChangeRate)
-                            }
-                            val stockPrice = gson.fromJson(jsonObject.toString(), StockPrice::class.java)
+                    val type = jsonObject.optString("type", "")
+                    
+                    when (type) {
+                        "price" -> {
+                            val stockPrice = gson.fromJson(text, StockPrice::class.java)
                             _stockPrice.value = stockPrice
                         }
-                        "stockBidAsk" -> {
+                        "bidask" -> {
                             val stockBidAsk = gson.fromJson(text, StockBidAsk::class.java)
                             _stockBidAsk.value = stockBidAsk
                         }
@@ -84,22 +76,46 @@ class WebSocketManager private constructor() {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket 연결 실패: ${t.message}")
-                if (response != null) {
-                    Log.e(TAG, "응답 코드: ${response.code}")
-                    Log.e(TAG, "응답 메시지: ${response.message}")
-                }
+                Log.e(TAG, "WebSocket 연결 실패", t)
+                _stockPrice.value = null
+                _stockBidAsk.value = null
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket 연결 종료: $reason")
+                _stockPrice.value = null
+                _stockBidAsk.value = null
             }
         })
     }
 
     fun disconnect() {
-        webSocket?.close(1000, "정상 종료")
-        webSocket = null
+        webSocket?.let { ws ->
+            try {
+                ws.close(1000, "정상 종료")
+            } catch (e: Exception) {
+                Log.e(TAG, "WebSocket 종료 중 오류 발생", e)
+            } finally {
+                webSocket = null
+                _stockPrice.value = null
+                _stockBidAsk.value = null
+            }
+        }
+    }
+
+    fun sendCloseMessage(stockCode: String) {
+        webSocket?.let { ws ->
+            try {
+                val closeMessage = JSONObject().apply {
+                    put("action", "unsubscribe")
+                    put("stockCode", stockCode)
+                }.toString()
+                ws.send(closeMessage)
+                Log.d(TAG, "구독 해제 메시지 전송: $closeMessage")
+            } catch (e: Exception) {
+                Log.e(TAG, "구독 해제 메시지 전송 실패", e)
+            }
+        }
     }
 }
 

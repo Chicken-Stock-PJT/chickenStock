@@ -43,6 +43,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chickenstock.viewmodel.AuthViewModel
 import com.example.chickenstock.navigation.Screen
+import android.util.Log
+import com.example.chickenstock.api.RetrofitClient
+import com.example.chickenstock.api.MemberService
+import com.example.chickenstock.api.SimpleProfileResponse
+import com.example.chickenstock.api.AssetAllocationResponse
 
 // 새로운 포트폴리오 데이터 클래스들 추가
 data class PortfolioData(
@@ -74,6 +79,47 @@ fun MyPageScreen(
     authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory(LocalContext.current)),
     initialTab: String? = null  // 초기 탭 파라미터 추가
 ) {
+    val context = LocalContext.current
+    // API 상태 관리
+    var userProfile by remember { mutableStateOf<SimpleProfileResponse?>(null) }
+    var assetAllocation by remember { mutableStateOf<AssetAllocationResponse?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    // API 호출
+    LaunchedEffect(Unit) {
+        if (authViewModel.isLoggedIn.value) {
+            try {
+                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                
+                // 프로필 정보 가져오기
+                val profileResponse = memberService.getSimpleProfile()
+                if (profileResponse.isSuccessful) {
+                    userProfile = profileResponse.body()
+                    Log.d("MyPageScreen", "프로필 로드 성공: ${userProfile?.nickname}")
+                } else {
+                    error = "프로필 정보를 불러오는데 실패했습니다."
+                    Log.e("MyPageScreen", "프로필 로드 실패: ${profileResponse.code()}")
+                }
+
+                // 자산 비중 정보 가져오기
+                val assetResponse = memberService.getAssetAllocation()
+                if (assetResponse.isSuccessful) {
+                    assetAllocation = assetResponse.body()
+                    Log.d("MyPageScreen", "자산 정보 로드 성공: ${assetAllocation?.totalAsset}")
+                } else {
+                    error = "자산 정보를 불러오는데 실패했습니다."
+                    Log.e("MyPageScreen", "자산 정보 로드 실패: ${assetResponse.code()}")
+                }
+            } catch (e: Exception) {
+                error = "네트워크 오류가 발생했습니다."
+                Log.e("MyPageScreen", "API 호출 실패", e)
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
     // 초기 탭 인덱스 설정
     var selectedTabIndex by remember(initialTab) { 
         mutableStateOf(
@@ -251,31 +297,38 @@ fun MyPageScreen(
                 ) {
                     if (authViewModel.isLoggedIn.value) {
                         // 로그인된 상태
-                        // 프로필 이미지
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black)
-                                .padding(16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "프로필",
-                                tint = Color.White,
-                                modifier = Modifier.size(48.dp)
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = Primary500
+                            )
+                        } else {
+                            // 프로필 이미지
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black)
+                                    .padding(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "프로필",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            // 사용자 이름
+                            Text(
+                                text = userProfile?.nickname ?: "사용자",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = SCDreamFontFamily
                             )
                         }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        // 사용자 이름
-                        Text(
-                            text = "김씨피",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = SCDreamFontFamily
-                        )
                     } else {
                         // 로그인되지 않은 상태
                         Spacer(modifier = Modifier.height(20.dp))
@@ -334,11 +387,37 @@ fun MyPageScreen(
                 
                 // 선택된 탭에 따라 내용 표시
                 when (selectedTabIndex) {
-                    0 -> PortfolioTabContent(
-                        portfolioData = portfolioData,
-                        hasAnimated = hasAnimated,
-                        angleAnimatables = angleAnimatables
-                    )
+                    0 -> {
+                        if (isLoading) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = Primary500
+                                )
+                            }
+                        } else if (error != null) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = error ?: "오류가 발생했습니다.",
+                                    color = Color.Red
+                                )
+                            }
+                        } else {
+                            PortfolioTabContent(
+                                totalAsset = assetAllocation?.totalAsset ?: 0,
+                                cashAmount = assetAllocation?.cashAmount ?: 0,
+                                stockValuation = assetAllocation?.stockValuation ?: 0,
+                                returnRate = userProfile?.returnRate?.toFloatOrNull() ?: 0f,
+                                hasAnimated = hasAnimated,
+                                angleAnimatables = angleAnimatables
+                            )
+                        }
+                    }
                     1 -> TradeHistoryTabContent(tradeRecords = tradeRecords)
                     2 -> FavoriteStocksTabContent(
                         favoriteStocks = favoriteStocks,
@@ -622,7 +701,10 @@ fun Int.toFormattedString(): String {
 // 포트폴리오 탭 내용
 @Composable
 fun PortfolioTabContent(
-    portfolioData: PortfolioData,
+    totalAsset: Int,
+    cashAmount: Int,
+    stockValuation: Int,
+    returnRate: Float,
     hasAnimated: MutableState<Boolean>,
     angleAnimatables: List<Pair<Animatable<Float, AnimationVector1D>, Float>>
 ) {
@@ -661,16 +743,16 @@ fun PortfolioTabContent(
                         .padding(16.dp)
                 ) {
                     // 자산 정보 행
-                    AssetInfoRow("총 자산", "${portfolioData.totalAsset.toFormattedString()} 원")
+                    AssetInfoRow("총 자산", "${totalAsset.toFormattedString()} 원")
                     Spacer(modifier = Modifier.height(8.dp))
-                    AssetInfoRow("가용 자산", "${portfolioData.memberMoney.toFormattedString()} 원")
+                    AssetInfoRow("가용 자산", "${cashAmount.toFormattedString()} 원")
                     Spacer(modifier = Modifier.height(8.dp))
-                    AssetInfoRow("투자 자산", "${portfolioData.totalInvestment.toFormattedString()} 원")
+                    AssetInfoRow("투자 자산", "${stockValuation.toFormattedString()} 원")
                     Spacer(modifier = Modifier.height(8.dp))
                     AssetInfoRow(
                         "수익률", 
-                        "${portfolioData.totalReturnRate}%(${if (portfolioData.totalProfitLoss > 0) "+" else ""}${portfolioData.totalProfitLoss.toFormattedString()} 원)", 
-                        color = if (portfolioData.totalProfitLoss >= 0) Primary500 else Secondary500
+                        "${returnRate}%", 
+                        color = if (returnRate >= 0) Primary500 else Secondary500
                     )
                     
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1170,4 +1252,15 @@ fun FavoriteStockItem(
             }
         }
     }
-} 
+}
+
+// 자산 비중 API 응답 데이터 클래스 추가
+data class AssetAllocationResponse(
+    val totalAsset: Int,      // 총 자산(현금+주식)
+    val cashAmount: Int,      // 현금 자산
+    val stockValuation: Int,  // 주식 평가금액
+    val cashRatio: Float,     // 현금 비중(%)
+    val stockRatio: Float,    // 주식 비중(%)
+    val stocks: List<Any>,    // 기존 코드에서는 개별 종목 없음
+    val updatedAt: String     // 정보 업데이트 시간
+) 

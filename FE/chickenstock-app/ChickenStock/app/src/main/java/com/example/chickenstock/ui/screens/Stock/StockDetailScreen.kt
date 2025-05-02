@@ -252,6 +252,12 @@ fun StockDetailScreen(
     val stockPrice = webSocketManager.stockPrice.collectAsState().value
     val stockBidAsk = webSocketManager.stockBidAsk.collectAsState().value
 
+    // API 데이터 상태
+    var apiStockPrice by remember { mutableStateOf<StockDetailResponse?>(null) }
+    var apiStockBidAsk by remember { mutableStateOf<StockBidAsk?>(null) }
+    var isLoadingPrice by remember { mutableStateOf(false) }
+    var isLoadingBidAsk by remember { mutableStateOf(false) }
+
     // 현재 보유 주식 정보 찾기
     val currentPosition = remember(stock.stockCode) {
         viewModel.portfolioData.value?.positions?.find { position -> 
@@ -259,16 +265,96 @@ fun StockDetailScreen(
         }
     }
 
-    // 웹소켓 연결
+    // 웹소켓 연결 및 API 데이터 로드
     LaunchedEffect(stock.stockCode) {
         Log.d("StockDetailScreen", "웹소켓 연결 시작: ${stock.stockCode}")
         webSocketManager.connect(stock.stockCode)
+
+        // 초기 데이터 로드
+        isLoadingPrice = true
+        isLoadingBidAsk = true
+        try {
+            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+            
+            // 현재가 조회
+            val priceResponse = stockService.getStockInfo(stock.stockCode)
+            if (priceResponse.isSuccessful) {
+                apiStockPrice = priceResponse.body()
+            }
+
+            // 호가 조회
+            val bidAskResponse = stockService.getStockBidAsk(stock.stockCode)
+            if (bidAskResponse.isSuccessful && bidAskResponse.body() != null) {
+                val response = bidAskResponse.body()!!
+                
+                // 매도 호가 및 수량 맵 생성
+                val askPrices = mutableMapOf<String, String>()
+                val askVolumes = mutableMapOf<String, String>()
+                
+                // 매도 10호가부터 1호가까지 (역순)
+                listOf(
+                    response.sel_10th_pre_bid to response.sel_10th_pre_req,
+                    response.sel_9th_pre_bid to response.sel_9th_pre_req,
+                    response.sel_8th_pre_bid to response.sel_8th_pre_req,
+                    response.sel_7th_pre_bid to response.sel_7th_pre_req,
+                    response.sel_6th_pre_bid to response.sel_6th_pre_req,
+                    response.sel_5th_pre_bid to response.sel_5th_pre_req,
+                    response.sel_4th_pre_bid to response.sel_4th_pre_req,
+                    response.sel_3th_pre_bid to response.sel_3th_pre_req,
+                    response.sel_2th_pre_bid to response.sel_2th_pre_req,
+                    response.sel_fpr_bid to response.sel_fpr_req
+                ).forEachIndexed { index, (price, volume) ->
+                    val key = (10 - index).toString()
+                    askPrices[key] = price.replace("""[+\-]""".toRegex(), "")
+                    askVolumes[key] = volume
+                }
+
+                // 매수 호가 및 수량 맵 생성
+                val bidPrices = mutableMapOf<String, String>()
+                val bidVolumes = mutableMapOf<String, String>()
+                
+                // 매수 1호가부터 10호가까지
+                listOf(
+                    response.buy_fpr_bid to response.buy_fpr_req,
+                    response.buy_2th_pre_bid to response.buy_2th_pre_req,
+                    response.buy_3th_pre_bid to response.buy_3th_pre_req,
+                    response.buy_4th_pre_bid to response.buy_4th_pre_req,
+                    response.buy_5th_pre_bid to response.buy_5th_pre_req,
+                    response.buy_6th_pre_bid to response.buy_6th_pre_req,
+                    response.buy_7th_pre_bid to response.buy_7th_pre_req,
+                    response.buy_8th_pre_bid to response.buy_8th_pre_req,
+                    response.buy_9th_pre_bid to response.buy_9th_pre_req,
+                    response.buy_10th_pre_bid to response.buy_10th_pre_req
+                ).forEachIndexed { index, (price, volume) ->
+                    val key = (index + 1).toString()
+                    bidPrices[key] = price.replace("""[+\-]""".toRegex(), "")
+                    bidVolumes[key] = volume
+                }
+
+                apiStockBidAsk = StockBidAsk(
+                    type = "bidask",
+                    stockCode = stock.stockCode,
+                    timestamp = response.bid_req_base_tm,
+                    askPrices = askPrices,
+                    askVolumes = askVolumes,
+                    bidPrices = bidPrices,
+                    bidVolumes = bidVolumes
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("StockDetailScreen", "API 데이터 로드 실패", e)
+        } finally {
+            isLoadingPrice = false
+            isLoadingBidAsk = false
+        }
     }
 
     // 화면이 사라질 때 웹소켓 연결 해제
     DisposableEffect(Unit) {
         onDispose {
             Log.d("StockDetailScreen", "웹소켓 연결 해제")
+            // 종료 메시지 전송 후 연결 해제
+            webSocketManager.sendCloseMessage(stock.stockCode)
             webSocketManager.disconnect()
         }
     }
@@ -472,7 +558,7 @@ fun StockDetailScreen(
 
         // 매도 바텀 시트 초기화
         LaunchedEffect(Unit) {
-            sellPrice = stockPrice?.currentPrice.replace("""[+\-]""".toRegex(), "") ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
+            sellPrice = stockPrice?.currentPrice ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
         }
 
         ModalBottomSheet(
@@ -981,7 +1067,7 @@ fun StockDetailScreen(
 
         // 매수 바텀 시트 초기화
         LaunchedEffect(Unit) {
-            buyPrice = stockPrice?.currentPrice.replace("""[+\-]""".toRegex(), "") ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
+            buyPrice = stockPrice?.currentPrice ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
         }
 
         ModalBottomSheet(
@@ -1565,8 +1651,24 @@ fun StockDetailScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // 현재가 표시 (웹소켓 또는 API 데이터 사용)
+                        val currentPrice = when {
+                            stockPrice != null -> {
+                                Log.d("StockDetailScreen", "웹소켓 현재가 데이터 사용: ${stockPrice.currentPrice}")
+                                stockPrice.currentPrice
+                            }
+                            apiStockPrice != null -> {
+                                Log.d("StockDetailScreen", "API 현재가 데이터 사용: ${apiStockPrice?.currentPrice}")
+                                apiStockPrice?.currentPrice ?: ""
+                            }
+                            else -> {
+                                Log.d("StockDetailScreen", "기본 현재가 데이터 사용: ${stock.currentPrice}")
+                                stock.currentPrice.replace("""[+\-]""".toRegex(), "")
+                            }
+                        }
+                        
                         Text(
-                            text = "${stockPrice?.currentPrice.replace("""[+\-]""".toRegex(), "") ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")}원",
+                            text = "${String.format("%,d", currentPrice.replace("""[+\-,]""".toRegex(), "").toIntOrNull() ?: 0)}원",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
@@ -1578,25 +1680,44 @@ fun StockDetailScreen(
                             color = Color.Gray,
                             fontFamily = SCDreamFontFamily
                         )
-                        val currentPriceValue = stockPrice?.currentPrice?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() 
-                            ?: stock.currentPrice.replace("""[+\-,]""".toRegex(), "").toIntOrNull() 
-                            ?: 0
-                        val fluctuationRate = stockPrice?.changeRate?.replace("""[+\-,%]""".toRegex(), "")?.toFloatOrNull()
-                            ?: stock.fluctuationRate.replace("""[+\-,%]""".toRegex(), "").toFloatOrNull()
-                            ?: 0f
-                        val priceChange = (currentPriceValue * fluctuationRate / 100).toInt()
-                        val isPositive = stockPrice?.let { it.isPositiveChange() }
-                            ?: stock.fluctuationRate.startsWith("+")
 
+                        // 전일대비와 등락률 표시
+                        val (priceChange, changeRate, isPositive) = when {
+                            stockPrice != null -> {
+                                Log.d("StockDetailScreen", "웹소켓 데이터 사용 - 전일대비: ${stockPrice.priceChange}, 등락률: ${stockPrice.changeRate}")
+                                Triple(
+                                    stockPrice.priceChange.replace("""[+\-,]""".toRegex(), "").toIntOrNull() ?: 0,
+                                    stockPrice.changeRate.replace("""[+\-,%]""".toRegex(), "").toFloatOrNull() ?: 0f,
+                                    stockPrice.isPositiveChange()
+                                )
+                            }
+                            apiStockPrice != null -> {
+                                Log.d("StockDetailScreen", "API 데이터 사용 - 전일대비: ${apiStockPrice?.priceChange}, 등락률: ${apiStockPrice?.changeRate}")
+                                Triple(
+                                    apiStockPrice?.priceChange?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() ?: 0,
+                                    apiStockPrice?.changeRate?.replace("""[+\-,%]""".toRegex(), "")?.toFloatOrNull() ?: 0f,
+                                    apiStockPrice?.priceChange?.startsWith("+") ?: false
+                                )
+                            }
+                            else -> {
+                                Log.d("StockDetailScreen", "기본 데이터 사용 - 전일대비: ${stock.priceChange}, 등락률: ${stock.fluctuationRate}")
+                                Triple(
+                                    stock.priceChange.replace("""[+\-,]""".toRegex(), "").toIntOrNull() ?: 0,
+                                    stock.fluctuationRate.replace("""[+\-,%]""".toRegex(), "").toFloatOrNull() ?: 0f,
+                                    stock.fluctuationRate.startsWith("+")
+                                )
+                            }
+                        }
+                        
                         Text(
-                            text = "${if (isPositive) "+" else "-"}${String.format("%,d", Math.abs(priceChange))}원",
+                            text = "${if (isPositive) "+" else "-"}${String.format("%,d", priceChange)}원",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
                             color = if (isPositive) Color.Red else Color.Blue,
                             fontFamily = SCDreamFontFamily
                         )
                         Text(
-                            text = " (${stockPrice?.changeRate ?: stock.fluctuationRate}%)",
+                            text = " (${if (isPositive) "+" else "-"}${String.format("%.2f", changeRate)}%)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
                             color = if (isPositive) Color.Red else Color.Blue,
@@ -1874,7 +1995,9 @@ fun StockDetailScreen(
                             .padding(vertical = 16.dp),
                         colors = CardDefaults.cardColors(containerColor = Gray50)
                     ) {
-                        stockBidAsk?.let { bidAsk ->
+                        // 웹소켓 또는 API 데이터 사용
+                        val bidAskData = stockBidAsk ?: apiStockBidAsk
+                        bidAskData?.let { bidAsk ->
                             StockBidAskView(
                                 stockBidAsk = bidAsk,
                                 modifier = Modifier.padding(8.dp)

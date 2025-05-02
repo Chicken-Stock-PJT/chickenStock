@@ -104,75 +104,75 @@ fun StockScreen(
 
     // 초기 데이터 로드
     LaunchedEffect(selectedMarketIndex, selectedSortIndex) {
-        isLoading = true
-        stockRankings = emptyList() // 초기화
-        try {
-            println("API 호출 시작")
-            println("선택된 탭: ${sortOptions[selectedSortIndex]}")
-            println("마켓 타입: ${marketTypes[selectedMarketIndex]}")
-            println("정렬 타입: $currentSortType")
-            
-            val response = if (selectedSortIndex in listOf(1, 2)) {
-                // 급상승/급하락의 경우
-                println("급상승/급하락 API 호출")
-                stockService.getFluctuationRateRanking(
-                    marketType = marketTypes[selectedMarketIndex],
-                    sortType = currentSortType
-                )
-            } else if (selectedSortIndex == 3) {
-                // 거래량의 경우
-                println("거래량 API 호출")
-                stockService.getVolumeRanking(
-                    marketType = marketTypes[selectedMarketIndex]
-                )
-            } else {
-                // 거래대금의 경우
-                println("거래대금 API 호출")
-                stockService.getTradeAmountRanking(
-                    marketType = marketTypes[selectedMarketIndex]
-                )
-            }
-
-            if (response.isSuccessful) {
-                println("API 응답 성공")
-                response.body()?.let { rankingResponse ->
-                    println("응답 데이터:")
-                    println("- 아이템 개수: ${rankingResponse.rankingItems.size}")
-                    println("- code: ${rankingResponse.code}")
-                    println("- message: ${rankingResponse.message}")
-                    
-                    if (rankingResponse.rankingItems.isEmpty()) {
-                        println("주의: 응답 데이터가 비어있습니다")
-                    } else {
-                        println("첫 번째 아이템 샘플:")
-                        val firstItem = rankingResponse.rankingItems.first()
-                        println("- stockCode: ${firstItem.stockCode}")
-                        println("- stockName: ${firstItem.stockName}")
-                        println("- currentPrice: ${firstItem.currentPrice}")
-                        println("- fluctuationRate: ${firstItem.fluctuationRate}")
-                        println("- contractStrength: ${firstItem.contractStrength}")
-                        println("- tradeVolume: ${firstItem.tradeVolume}")
-                        println("- tradeAmount: ${firstItem.tradeAmount}")
-                    }
-                    
-                    stockRankings = rankingResponse.rankingItems
-                } ?: run {
-                    println("응답 바디가 null입니다")
-                    error = "데이터가 없습니다."
+        coroutineScope.launch {
+            isLoading = true
+            stockRankings = emptyList() // 초기화
+            try {
+                println("API 호출 시작")
+                println("선택된 탭: ${sortOptions[selectedSortIndex]}")
+                println("마켓 타입: ${marketTypes[selectedMarketIndex]}")
+                println("정렬 타입: $currentSortType")
+                
+                val response = if (selectedSortIndex in listOf(1, 2)) {
+                    // 급상승/급하락의 경우
+                    println("급상승/급하락 API 호출")
+                    stockService.getFluctuationRateRanking(
+                        marketType = marketTypes[selectedMarketIndex],
+                        sortType = currentSortType
+                    )
+                } else if (selectedSortIndex == 3) {
+                    // 거래량의 경우
+                    println("거래량 API 호출")
+                    stockService.getVolumeRanking(
+                        marketType = marketTypes[selectedMarketIndex]
+                    )
+                } else {
+                    // 거래대금의 경우
+                    println("거래대금 API 호출")
+                    stockService.getTradeAmountRanking(
+                        marketType = marketTypes[selectedMarketIndex]
+                    )
                 }
-            } else {
-                println("API 호출 실패")
-                println("응답 코드: ${response.code()}")
-                println("에러 메시지: ${response.errorBody()?.string()}")
-                error = "데이터를 불러오는데 실패했습니다. (${response.code()})"
+
+                if (response.isSuccessful) {
+                    println("API 응답 성공")
+                    response.body()?.let { rankingResponse ->
+                        println("응답 데이터:")
+                        println("- 아이템 개수: ${rankingResponse.rankingItems.size}")
+                        println("- code: ${rankingResponse.code}")
+                        println("- message: ${rankingResponse.message}")
+                        
+                        if (rankingResponse.rankingItems.isEmpty()) {
+                            println("주의: 응답 데이터가 비어있습니다")
+                        } else {
+                            println("첫 번째 아이템 샘플:")
+                            val firstItem = rankingResponse.rankingItems.first()
+                            println("- stockCode: ${firstItem.stockCode}")
+                            println("- stockName: ${firstItem.stockName}")
+                            println("- currentPrice: ${firstItem.currentPrice}")
+                            println("- fluctuationRate: ${firstItem.fluctuationRate}")
+                            println("- contractStrength: ${firstItem.contractStrength}")
+                            println("- tradeVolume: ${firstItem.tradeVolume}")
+                            println("- tradeAmount: ${firstItem.tradeAmount}")
+                        }
+                        
+                        stockRankings = rankingResponse.rankingItems
+                    } ?: run {
+                        println("응답 바디가 null입니다")
+                        error = "데이터가 없습니다."
+                    }
+                } else {
+                    println("API 호출 실패")
+                    println("응답 코드: ${response.code()}")
+                    println("에러 메시지: ${response.errorBody()?.string()}")
+                    error = "데이터를 불러오는데 실패했습니다. (${response.code()})"
+                }
+            } catch (e: Exception) {
+                println("API 호출 중 예외 발생: ${e.message}")
+                error = e.message ?: "알 수 없는 오류가 발생했습니다."
+            } finally {
+                isLoading = false
             }
-        } catch (e: Exception) {
-            println("예외 발생: ${e.javaClass.simpleName}")
-            println("에러 메시지: ${e.message}")
-            e.printStackTrace()
-            error = e.message ?: "알 수 없는 오류가 발생했습니다."
-        } finally {
-            isLoading = false
         }
     }
 

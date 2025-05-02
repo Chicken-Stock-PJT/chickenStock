@@ -10,13 +10,16 @@ import retrofit2.http.POST
 import retrofit2.http.Body
 
 data class StockDetailResponse(
-    val shortCode: String,      // 종목 코드
-    val shortName: String,      // 종목 이름
-    val market: String,         // 상장된 시장
-    val stockType: String,      // 주식 유형
-    val faceValue: String,      // 액면가
-    val prevDayCompare: String, // 전일대비 변동 금액
-    val fluctuationRate: String // 등락률
+    val stockCode: String,          // 종목 코드
+    val shortName: String,          // 종목 이름
+    val currentPrice: String,       // 현재가
+    val changeRate: String,         // 등락률
+    val priceChange: String,        // 전일대비 변동 금액
+    val market: String,             // 상장된 시장
+    val stockType: String,          // 주식 유형
+    val faceValue: String,          // 액면가
+    val return_code: Int,           // 응답 코드
+    val return_msg: String          // 응답 메시지
 )
 
 data class ChartResponse(
@@ -104,7 +107,7 @@ interface StockService {
         @Path("code") code: String
     ): Response<StockDetailResponse>
 
-    @GET("/api/stock/chart/{chartType}/{stockCode}")
+    @GET("stock/chart/{chartType}/{stockCode}")
     suspend fun getStockChart(
         @Path("chartType") chartType: String,
         @Path("stockCode") stockCode: String,
@@ -119,4 +122,10 @@ interface StockService {
 
     @POST("stock/trading/sell")
     suspend fun sellStock(@Body request: SellOrderRequest): Response<SellOrderResponse>
+
+    @GET("/api/stocks/info/{stockCode}")
+    suspend fun getStockInfo(@Path("stockCode") stockCode: String): Response<StockDetailResponse>
+
+    @GET("/api/stocks/askbid/{code}")
+    suspend fun getStockBidAsk(@Path("code") stockCode: String): Response<StockBidAskResponse>
 } 

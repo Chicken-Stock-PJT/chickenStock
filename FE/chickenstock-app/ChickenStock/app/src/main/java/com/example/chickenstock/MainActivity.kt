@@ -29,6 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chickenstock.R
@@ -42,7 +43,6 @@ import com.example.chickenstock.viewmodel.MainViewModel
 import com.example.chickenstock.viewmodel.AuthViewModel
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.lifecycleScope
 import com.example.chickenstock.api.RetrofitClient
 import com.example.chickenstock.api.StockService
@@ -59,6 +59,7 @@ import android.content.Intent
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusState
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.navigation.NavGraph.Companion.findStartDestination
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -361,7 +362,7 @@ fun MainScreen(
     LaunchedEffect(currentRoute) {
         when {
             currentRoute.startsWith(Screen.Home.route) -> viewModel.updateSelectedIndex(0)
-            currentRoute.startsWith(Screen.Stock.route) -> viewModel.updateSelectedIndex(1)
+            currentRoute.startsWith(Screen.Stock.route) || currentRoute.startsWith("stock_detail") -> viewModel.updateSelectedIndex(1)
             currentRoute.startsWith(Screen.MyPage.route) -> viewModel.updateSelectedIndex(2)
         }
     }
@@ -384,7 +385,7 @@ fun MainScreen(
             // 로그인 시 홈으로 이동하고 하단 네비바도 홈으로 변경
             viewModel.updateSelectedIndex(0)
             navController.navigate(Screen.Home.route) {
-                popUpTo(navController.graph.startDestinationId) {
+                popUpTo(navController.graph.findStartDestination().id) {
                     inclusive = true
                 }
             }
@@ -441,26 +442,9 @@ fun MainScreen(
                     selectedIndex = selectedIndex,
                     onTabSelected = { index ->
                         viewModel.updateSelectedIndex(index)
-                        val target = tabList[index]
-                        if (currentRoute.startsWith("stock_detail")) {
-                            val previousRoute = navController.previousBackStackEntry?.destination?.route ?: Screen.Home.route
-                            if (previousRoute != target) {
-                                navController.navigate(target) {
-                                    launchSingleTop = true
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
-                                }
-                            }
-                        } else {
-                            navController.navigate(target) {
-                                launchSingleTop = true
-                                popUpTo(navController.graph.startDestinationId) {
-                                    saveState = true
-                                }
-                            }
-                        }
-                    }
+                    },
+                    navController = navController,
+                    currentRoute = currentRoute
                 )
             }
         }
@@ -477,7 +461,9 @@ fun MainScreen(
 @Composable
 fun AnimatedBottomBar(
     selectedIndex: Int,
-    onTabSelected: (Int) -> Unit
+    onTabSelected: (Int) -> Unit,
+    navController: NavHostController,
+    currentRoute: String
 ) {
     val indicatorWidth = 60.dp
     val indicatorHeight = 64.dp
@@ -534,7 +520,26 @@ fun AnimatedBottomBar(
                                     Modifier.clickable(
                                         indication = null,
                                         interactionSource = remember { MutableInteractionSource() }
-                                    ) { onTabSelected(index) }
+                                    ) {
+                                        onTabSelected(index)
+                                        // 탭 전환 시 해당 탭의 메인 화면으로 이동
+                                        val target = when (index) {
+                                            0 -> Screen.Home.route
+                                            1 -> Screen.Stock.route
+                                            2 -> Screen.MyPage.route
+                                            else -> Screen.Home.route
+                                        }
+                                        navController.navigate(target) {
+                                            // 시작 화면까지 모든 화면을 팝
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                inclusive = false
+                                            }
+                                            // 같은 화면으로의 중복 네비게이션 방지
+                                            launchSingleTop = true
+                                            // 상태 복원 방지
+                                            restoreState = false
+                                        }
+                                    }
                                 } else {
                                     Modifier
                                 }

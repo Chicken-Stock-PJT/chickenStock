@@ -277,11 +277,21 @@ fun LoginScreen(
                                 response.isSuccessful -> {
                                     response.body()?.let { loginResponse ->
                                         println("로그인 성공: 토큰 수신") // 디버그 로그
+                                        println("Access Token: ${loginResponse.accessToken}")
+                                        println("Refresh Token: ${loginResponse.refreshToken}")
+                                        println("Access Token 만료 시간: ${loginResponse.accessTokenExpiresIn}")
+                                        
                                         tokenManager.saveTokens(
                                             loginResponse.accessToken,
                                             loginResponse.refreshToken,
                                             loginResponse.accessTokenExpiresIn
                                         )
+                                        
+                                        // 토큰 저장 후 확인
+                                        println("저장된 Access Token: ${tokenManager.getAccessToken()}")
+                                        println("저장된 Refresh Token: ${tokenManager.getRefreshToken()}")
+                                        println("저장된 만료 시간: ${tokenManager.getAccessTokenExpiresIn()}")
+                                        
                                         showSuccessDialog = true
                                     } ?: run {
                                         errorMessage = "서버 응답이 올바르지 않습니다"
