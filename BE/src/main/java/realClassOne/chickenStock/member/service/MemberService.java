@@ -68,6 +68,7 @@ public class MemberService {
 
         return MemberResponseDto.from(member);
     }
+
     @Transactional
     public PasswordChangeResponseDTO changePassword(String authorizationHeader, PasswordChangeRequestDTO dto) {
 
@@ -522,7 +523,7 @@ public class MemberService {
      * 사용자의 기간별(일간, 주간, 월간, 연간) 수익률을 조회합니다.
      *
      * @param authorizationHeader 인증 헤더
-     * @param period 조회할 기간 (all, daily, weekly, monthly, yearly 중 하나)
+     * @param period              조회할 기간 (all, daily, weekly, monthly, yearly 중 하나)
      * @return 기간별 수익률 정보 DTO
      */
     @Transactional(readOnly = true)
@@ -603,9 +604,9 @@ public class MemberService {
     /**
      * 특정 기간의 수익률을 계산합니다.
      *
-     * @param memberId 회원 ID
-     * @param periodType 기간 타입 (daily, weekly, monthly, yearly)
-     * @param periodReturns 결과를 저장할 Map
+     * @param memberId         회원 ID
+     * @param periodType       기간 타입 (daily, weekly, monthly, yearly)
+     * @param periodReturns    결과를 저장할 Map
      * @param currentValuation 현재 평가액
      */
     private void calculatePeriodReturn(Long memberId, String periodType,
@@ -688,9 +689,9 @@ public class MemberService {
      * 특정 시점의 평가액을 추정합니다.
      * 정확한 과거 데이터가 없는 경우 거래 내역을 기반으로 추정합니다.
      *
-     * @param memberId 회원 ID
+     * @param memberId       회원 ID
      * @param targetDateTime 평가액을 계산할 시점
-     * @param histories 해당 시점 이전의 거래 내역
+     * @param histories      해당 시점 이전의 거래 내역
      * @return 추정된 평가액
      */
     private Long estimateHistoricalValuation(Long memberId, LocalDateTime targetDateTime, List<TradeHistory> histories) {
@@ -736,7 +737,7 @@ public class MemberService {
      * 사용자의 관심종목에서 특정 종목을 삭제합니다.
      *
      * @param authorizationHeader 인증 헤더
-     * @param stockCode 삭제할 종목 코드
+     * @param stockCode           삭제할 종목 코드
      * @return 갱신된 관심종목 목록 DTO
      */
     @Transactional
@@ -786,6 +787,7 @@ public class MemberService {
     }
 
 
+    @Transactional(readOnly = true)
     public SimpleMemberProfileResponseDTO getSimpleProfile(String authorizationHeader) {
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
@@ -793,23 +795,54 @@ public class MemberService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        List<HoldingPosition> holdingPositions = holdingPositionRepository.findAllByMember_MemberId(memberId);
+        List<HoldingPosition> positions = holdingPositionRepository.findByMember(member);
 
-        // 수익률 평균 계산
-        double averageReturnRate = 0.0;
-        if (holdingPositions != null && !holdingPositions.isEmpty()) {
-            averageReturnRate = holdingPositions.stream()
-                    .mapToDouble(HoldingPosition::getReturnRate)
-                    .average()
-                    .orElse(0.0);
+        // 종목별 수익률 계산용 변수
+        double totalReturnRate = 0.0;
+        int count = 0;
+
+        for (HoldingPosition position : positions) {
+            String stockCode = position.getStockData().getShortCode();
+
+            // 최신 시세 가져오기
+            JsonNode priceData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
+            Long currentPrice = 0L;
+
+            try {
+                if (priceData != null && priceData.has("10")) {
+                    String priceStr = priceData.get("10").asText().replace(",", "").replace("+", "").replace("-", "").trim();
+                    currentPrice = Long.parseLong(priceStr);
+                }
+            } catch (Exception e) {
+                log.error("현재가 파싱 실패: {}", stockCode, e);
+            }
+
+            Double returnRate;
+
+            if (currentPrice > 0) {
+                Long investmentAmount = position.getAveragePrice() * position.getQuantity();
+                Long valuationAmount = currentPrice * position.getQuantity();
+                Long profitLoss = valuationAmount - investmentAmount;
+
+                returnRate = investmentAmount > 0
+                        ? (profitLoss.doubleValue() / investmentAmount.doubleValue()) * 100
+                        : 0.0;
+            } else {
+                // 실시간 가격을 받지 못한 경우 DB에 저장된 수익률 사용
+                returnRate = position.getReturnRate() != null ? position.getReturnRate() : 0.0;
+            }
+
+            totalReturnRate += returnRate;
+            count++;
         }
+
+        double averageReturnRate = count > 0 ? totalReturnRate / count : 0.0;
 
         String nickname = member.getNickname();
         String memberMoney = member.getMemberMoney() != null ? member.getMemberMoney().toString() : "0";
-        String returnRate = String.valueOf(averageReturnRate);
+        String returnRateStr = String.format("%.2f", averageReturnRate);  // 소수점 둘째 자리
         String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
 
-        return SimpleMemberProfileResponseDTO.of(nickname, memberMoney, returnRate, isOauth);
+        return SimpleMemberProfileResponseDTO.of(nickname, memberMoney, returnRateStr, isOauth);
     }
-
 }
