@@ -22,6 +22,7 @@ const LoginRedirect = () => {
           );
           const accessToken = response.data.accessToken;
           useAuthStore.getState().setAccessToken(accessToken);
+          console.log(accessToken);
           await useAuthStore.getState().getSimpleProfile();
           void navigate("/");
         } catch (error) {
