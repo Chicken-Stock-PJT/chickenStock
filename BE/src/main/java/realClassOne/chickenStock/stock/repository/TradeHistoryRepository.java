@@ -50,4 +50,13 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
             @Param("memberId") Long memberId,
             @Param("startDateTime") LocalDateTime startDateTime,
             @Param("endDateTime") LocalDateTime endDateTime);
+
+
+    // 유저 별 거래 내역 조회
+    // 커서 기반 조회 - createdAt < 기준시간 조건 + 정렬 + 페이징
+    List<TradeHistory> findByMemberAndCreatedAtBefore(
+            Member member,
+            LocalDateTime createdAt,
+            Pageable pageable
+    );
 }
