@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { OrderBookData, RealTimeOrderBook } from "@/features/stocks/orderBook/model/types";
 import { StockPriceData, WebSocketResponse } from "@/features/stocks/chart/model/types";
+import apiClient from "@/shared/api/axios";
 
 interface WebSocketState {
   ws: WebSocket | null;
@@ -14,9 +15,15 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
   ws: null,
   orderBookData: null,
   stockPriceData: null,
+  subscribedList: [],
+  getSubscribedList: async () => {
+    const response = await apiClient.get(`${import.meta.env.VITE_BASE_URL}/stocks/subscribed`);
+    set({ subscribedList: response.data });
+    console.log(response);
+  },
 
   connect: (stockCode: string) => {
-    const ws = new WebSocket(`${import.meta.env.VITE_WS_BASE_URL}/stock`);
+    const ws = new WebSocket(`${import.meta.env.VITE_BASE_WS_URL}/stock`);
 
     ws.onopen = () => {
       console.log("WebSocket 연결 성공");
@@ -26,6 +33,7 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
           stockCode,
         }),
       );
+      get().getSubscribedList();
     };
 
     ws.onmessage = (event) => {
@@ -65,6 +73,7 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
     if (ws) {
       ws.close();
       set({ ws: null, orderBookData: null, stockPriceData: null });
+      get().getSubscribedList();
     }
   },
 }));

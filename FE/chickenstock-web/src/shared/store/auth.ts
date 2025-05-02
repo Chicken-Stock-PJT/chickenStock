@@ -1,3 +1,4 @@
+import useWatchlistStore from "@/features/watchlist/model/store";
 import apiClient from "@/shared/api/axios";
 import { AuthState, SimpleProfile } from "@/shared/store/types";
 import { create } from "zustand";
@@ -30,7 +31,7 @@ export const useAuthStore = create<AuthState>()(
               : (profile as SimpleProfile),
           })),
 
-        isLoggedIn: null,
+        isLoggedIn: false,
         login: async (email: string, password: string) => {
           const response = await apiClient.post<LoginResponse>(`${baseURL}/auth/login`, {
             email,
@@ -51,8 +52,11 @@ export const useAuthStore = create<AuthState>()(
           set({ accessToken: response.data.accessToken, isLoggedIn: true });
         },
         logout: async () => {
-          await apiClient.post(`${baseURL}/auth/logout`, {}, { withCredentials: true });
-          set({ accessToken: null, isLoggedIn: false });
+          useWatchlistStore.getState().setWatchlist([]);
+          const res = await apiClient.post(`${baseURL}/auth/logout`, {}, { withCredentials: true });
+          console.log("logout", res);
+          set({ accessToken: null, isLoggedIn: false, simpleProfile: null });
+          set({ simpleProfile: null });
         },
       }),
       {
