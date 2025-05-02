@@ -20,7 +20,8 @@ import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 
-import java.util.List;
+import java.util.*;
+
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
@@ -38,10 +39,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Service
@@ -812,4 +810,82 @@ public class MemberService {
         return SimpleMemberProfileResponseDTO.of(nickname, memberMoney, returnRate, isOauth);
     }
 
+    // 특정 종목에 대한 거래내역을 조회합니다.
+    @Transactional(readOnly = true)
+    public StockTradeHistoryResponseDTO getStockTradeHistory(
+            String authorizationHeader, String stockCode) {
+
+        try {
+            // 토큰에서 회원 ID 추출
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+            StockData stockData = stockDataRepository.findByShortCode(stockCode)
+                    .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
+
+            // 전체 거래내역 조회
+            List<TradeHistory> tradeHistories = tradeHistoryRepository.findByMemberAndStockData(member, stockData);
+
+            // 현재 보유 정보 조회
+            Optional<HoldingPosition> currentPosition = holdingPositionRepository.findByMemberAndStockData(member, stockData);
+
+            // 거래내역이 없는 경우 빈 응답 반환
+            if (tradeHistories.isEmpty() && currentPosition.isEmpty()) {
+                return StockTradeHistoryResponseDTO.builder()
+                        .stockCode(stockCode)
+                        .stockName(stockData.getShortName())
+                        .tradeHistories(new ArrayList<>())
+                        .message("해당 종목의 거래내역이 없습니다.")
+                        .build();
+            }
+
+            // 응답 DTO 생성
+            List<StockTradeHistoryResponseDTO.TradeHistoryDTO> historyDTOs = new ArrayList<>();
+
+            for (TradeHistory history : tradeHistories) {
+                StockTradeHistoryResponseDTO.TradeHistoryDTO dto = StockTradeHistoryResponseDTO.TradeHistoryDTO.builder()
+                        .tradeId(history.getTradeHistoryId())
+                        .tradeType(history.getTradeType().toString())
+                        .quantity(history.getQuantity())
+                        .unitPrice(history.getUnitPrice())
+                        .totalPrice(history.getTotalPrice())
+                        .tradedAt(history.getTradedAt())
+                        .build();
+
+                historyDTOs.add(dto);
+            }
+
+            // 현재 보유 정보 추가
+            Long currentQuantity = 0L;
+            Long averagePrice = 0L;
+            Double returnRate = 0.0;
+
+            if (currentPosition.isPresent()) {
+                HoldingPosition position = currentPosition.get();
+                currentQuantity = position.getQuantity().longValue();
+                averagePrice = position.getAveragePrice();
+                returnRate = position.getReturnRate();
+            }
+
+            return StockTradeHistoryResponseDTO.builder()
+                    .stockCode(stockCode)
+                    .stockName(stockData.getShortName())
+                    .tradeHistories(historyDTOs)
+                    .currentQuantity(currentQuantity)
+                    .averagePrice(averagePrice)
+                    .returnRate(returnRate)
+                    .message("조회 성공")
+                    .build();
+
+        } catch (CustomException ce) {
+            log.error("종목 거래내역 조회 실패: {}", ce.getMessage());
+            throw ce;
+        } catch (Exception e) {
+            log.error("종목 거래내역 조회 중 오류 발생", e);
+            throw new CustomException(StockErrorCode.OPERATION_FAILED, "종목 거래내역 조회 중 오류가 발생했습니다");
+        }
+    }
 }
