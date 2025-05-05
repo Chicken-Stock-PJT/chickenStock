@@ -1,7 +1,9 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth";
-import { getPortfolio, updateNickname } from "../api";
+import { getPortfolio, getTransactions, updateNickname } from "../api";
 import { AxiosError } from "axios";
+import { TransactionResponse } from "./types";
+
 interface ErrorResponse {
   status: number;
   code: string;
@@ -34,4 +36,28 @@ export const useGetPortfolio = () => {
     queryFn: getPortfolio,
   });
   return { data, isLoading, error };
+};
+
+export const useGetTransactions = () => {
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery<
+      TransactionResponse, // 쿼리 함수가 반환하는 데이터
+      Error, // 에러 타입
+      InfiniteData<TransactionResponse>, // 최종 데이터 형태
+      ["transactions"], // 쿼리 키 타입
+      string // 페이지 파라미터 타입
+    >({
+      queryKey: ["transactions"],
+      queryFn: async ({ pageParam = "" }) => {
+        const result = await getTransactions({ size: 10, cursor: pageParam });
+        if (result instanceof Error) {
+          throw result;
+        }
+        return result;
+      },
+      getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
+      initialPageParam: "",
+    });
+
+  return { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage };
 };
