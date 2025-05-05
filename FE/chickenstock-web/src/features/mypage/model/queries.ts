@@ -1,7 +1,9 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth";
 import { getPortfolio, getTransactions, updateNickname } from "../api";
 import { AxiosError } from "axios";
+import { TransactionResponse } from "./types";
+
 interface ErrorResponse {
   status: number;
   code: string;
@@ -37,9 +39,19 @@ export const useGetPortfolio = () => {
 };
 
 export const useGetTransactions = () => {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["transactions"],
-    queryFn: getTransactions,
-  });
-  return { data, isLoading, error };
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery<TransactionResponse>({
+      queryKey: ["transactions"],
+      queryFn: async ({ pageParam = "" }) => {
+        const result = await getTransactions({ size: 10, cursor: pageParam as string });
+        if (result instanceof Error) {
+          throw result;
+        }
+        return result;
+      },
+      getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
+      initialPageParam: "",
+    });
+
+  return { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage };
 };

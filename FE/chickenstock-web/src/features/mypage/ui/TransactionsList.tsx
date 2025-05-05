@@ -1,9 +1,37 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import { useGetTransactions } from "../model/queries";
 import { TradeHistory } from "@/features/mypage/model/types";
+import { useEffect, useRef } from "react";
 
 const TransactionsList = () => {
-  const { data, isLoading, error } = useGetTransactions();
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useGetTransactions();
+
+  // 무한 스크롤 state
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // 무한 스크롤 처리
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasNextPage) return;
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) {
+          void fetchNextPage();
+        }
+      },
+      { threshold: 0.5 },
+    );
+
+    observerRef.current.observe(loadMoreRef.current);
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   if (isLoading) {
     return <div>Loading...</div>;
@@ -12,6 +40,9 @@ const TransactionsList = () => {
   if (error) {
     return <div>Error: {error.message}</div>;
   }
+
+  const transactions = data?.pages.flatMap((page) => page.tradeHistories) ?? [];
+
   return (
     <Card>
       <CardHeader>
@@ -29,8 +60,8 @@ const TransactionsList = () => {
             <div className="text-right">총액</div>
           </div>
           <div className="divide-y">
-            {data.tradeHistories.map((transaction: TradeHistory) => (
-              <div key={transaction.id} className="grid grid-cols-6 items-center gap-4 p-4">
+            {transactions.map((transaction: TradeHistory) => (
+              <div key={transaction.createdAt} className="grid grid-cols-6 items-center gap-4 p-4">
                 <div>
                   {new Date(transaction.tradedAt).toLocaleDateString("ko-KR", {
                     year: "numeric",
@@ -40,17 +71,15 @@ const TransactionsList = () => {
                 </div>
                 <div>
                   <div
-                    className={`inline-block rounded-full border-transparent px-2 py-1 text-xs text-gray-50 shadow ${transaction.type === "BUY" ? "bg-chart-red" : "bg-chart-blue"}`}
+                    className={`inline-block rounded-full border-transparent px-2 py-1 text-xs text-gray-50 shadow ${
+                      transaction.tradeType === "BUY" ? "bg-chart-red" : "bg-chart-blue"
+                    }`}
                   >
                     {transaction.tradeType === "BUY" ? "매수" : "매도"}
                   </div>
-                  {/* <Badge variant={transaction.type === "buy" ? "default" : "destructive"}>
-                  {transaction.type === "buy" ? "매수" : "매도"}
-                </Badge> */}
                 </div>
                 <div>
                   <div className="font-medium">{transaction.stockName}</div>
-                  <div className="text-xs text-muted-foreground">{transaction.stockCode}</div>
                 </div>
                 <div className="text-right">{transaction.quantity.toLocaleString()}주</div>
                 <div className="text-right">{transaction.unitPrice.toLocaleString()}원</div>
@@ -60,6 +89,9 @@ const TransactionsList = () => {
               </div>
             ))}
           </div>
+        </div>
+        <div ref={loadMoreRef}>
+          {isFetchingNextPage && <div className="text-center">Loading more...</div>}
         </div>
       </CardContent>
     </Card>

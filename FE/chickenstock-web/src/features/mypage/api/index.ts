@@ -64,7 +64,7 @@ export const getTransactions = async ({
   cursor: string;
 }): Promise<TransactionResponse | AxiosError<ErrorResponse>> => {
   const response = await apiClient.get<TransactionResponse>(
-    `/trade-histories?size=${size}/transactions&cursor=${cursor}`,
+    `/trade-histories?size=${size}&cursor=${cursor}`,
   );
   return response.data;
 };

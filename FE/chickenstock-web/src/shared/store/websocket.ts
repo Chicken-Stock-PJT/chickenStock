@@ -9,6 +9,8 @@ interface WebSocketState {
   stockPriceData: StockPriceData | null;
   connect: (stockCode: string) => void;
   disconnect: () => void;
+  subscribedList: string[];
+  getSubscribedList: () => Promise<void>;
 }
 
 export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
@@ -18,7 +20,7 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
   subscribedList: [],
   getSubscribedList: async () => {
     const response = await apiClient.get(`${import.meta.env.VITE_BASE_URL}/stocks/subscribed`);
-    set({ subscribedList: response.data });
+    set({ subscribedList: response.data as string[] });
     console.log(response);
   },
 
@@ -33,7 +35,7 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
           stockCode,
         }),
       );
-      get().getSubscribedList();
+      void get().getSubscribedList();
     };
 
     ws.onmessage = (event) => {
@@ -73,7 +75,7 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
     if (ws) {
       ws.close();
       set({ ws: null, orderBookData: null, stockPriceData: null });
-      get().getSubscribedList();
+      void get().getSubscribedList();
     }
   },
 }));
