@@ -10,7 +10,7 @@ import {
 } from "../model/types";
 import { UpdateNicknameError } from "../model/types";
 import { ErrorResponse } from "react-router-dom";
-import { AxiosError } from "axios";
+import axios, { AxiosError } from "axios";
 
 export const getUserInfo = async () => {
   const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
@@ -63,8 +63,25 @@ export const getTransactions = async ({
   size: number;
   cursor: string;
 }): Promise<TransactionResponse | AxiosError<ErrorResponse>> => {
-  const response = await apiClient.get<TransactionResponse>(
-    `/trade-histories?size=${size}&cursor=${cursor}`,
-  );
-  return response.data;
+  try {
+    const response = await apiClient.get<TransactionResponse>(
+      `/trade-histories?size=${size}&cursor=${cursor}`,
+    );
+    return response.data;
+  } catch (error) {
+    // 에러 로깅, 변환 등의 처리
+    console.error("API error:", error);
+
+    // 에러를 더 의미 있는 형태로 변환 (선택사항)
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401) {
+        throw new Error("Authentication required");
+      } else if (error.response?.status === 404) {
+        throw new Error("Transactions not found");
+      }
+    }
+
+    // 기본 에러 throw
+    throw error;
+  }
 };
