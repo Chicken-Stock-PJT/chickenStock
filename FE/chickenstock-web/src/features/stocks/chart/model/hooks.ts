@@ -179,8 +179,9 @@ export function createVolumeSeries(chartData: FormattedChartData[]) {
     {
       name: "거래량",
       data: chartData.map((item, index) => ({
-        x: index, // 인덱스를 x값으로 사용
+        x: index,
         y: item.volume,
+        fillColor: item.y[3] > item.y[0] ? CHART_COLORS.UPWARD : CHART_COLORS.DOWNWARD,
       })),
     },
   ];
@@ -290,11 +291,7 @@ export function useCandlestickChartOptions(
       xaxis: {
         type: "category" as const,
         labels: {
-          formatter: function (val: string) {
-            const item = chartData[Math.floor(Number(val))];
-            if (!item) return "";
-            return formatDateByChartType(item.originalDate, chartType);
-          },
+          show: false,
         },
         axisBorder: {
           show: true,
@@ -315,8 +312,9 @@ export function useCandlestickChartOptions(
         max: visibleDataStats.maxPrice,
         labels: {
           formatter: (value: number) => {
-            return value.toLocaleString();
+            return parseInt(value.toString()).toLocaleString();
           },
+          offsetX: -10,
         },
       },
       tooltip: {
@@ -416,21 +414,8 @@ export function useVolumeChartOptions(
       },
       plotOptions: {
         bar: {
-          columnWidth: "80%",
-          colors: {
-            ranges: [
-              {
-                from: -1000,
-                to: 0,
-                color: "#4170FD",
-              },
-              {
-                from: 0,
-                to: 1000,
-                color: "#FD4141",
-              },
-            ],
-          },
+          columnWidth: "95%",
+          // colors: undefined, // 또는 아예 colors 속성 제거
         },
       },
       stroke: {
@@ -439,14 +424,12 @@ export function useVolumeChartOptions(
       xaxis: {
         type: "category" as const,
         labels: {
+          trim: true, // 긴 텍스트 자동 트림
           formatter: function (val: string) {
             const item = chartData[Math.floor(Number(val))];
             if (!item) return "";
             return formatDateByChartType(item.originalDate, chartType);
           },
-        },
-        axisBorder: {
-          offsetX: 13,
         },
         min: visibleRange.min,
         max: visibleRange.max,
@@ -459,12 +442,25 @@ export function useVolumeChartOptions(
         labels: {
           show: true,
           formatter: formatVolume,
+          offsetX: -10,
         },
       },
       tooltip: {
         enabled: true,
         custom: function ({ dataPointIndex }: { dataPointIndex: number }) {
           return renderVolumeTooltip({ dataPointIndex, chartData });
+        },
+      },
+      grid: {
+        borderColor: CHART_COLORS.GRID,
+        xaxis: {
+          lines: {
+            show: true,
+          },
+        },
+        padding: {
+          left: 20,
+          right: 10,
         },
       },
     }),

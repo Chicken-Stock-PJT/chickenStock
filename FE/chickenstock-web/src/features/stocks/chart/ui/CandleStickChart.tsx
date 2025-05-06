@@ -27,7 +27,7 @@ const CandleStickChart = ({
   const series = createCandlestickSeries(chartData);
 
   return (
-    <div className="mb-4 h-[200px]">
+    <div className="h-[200px]">
       <ReactApexChart options={options} series={series} type="candlestick" height="100%" />
     </div>
   );
