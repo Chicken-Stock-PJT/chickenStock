@@ -27,6 +27,33 @@ export interface StockBidAskData extends WebSocketMessage {
 
 export type WebSocketResponse = WebSocketMessage | StockPriceData | StockBidAskData;
 
+// 차트
+export type ChartType = "DAILY" | "YEARLY" | "MINUTE";
+
+export interface ChartRange {
+  min: number;
+  max: number;
+}
+
+export interface FormattedChartData {
+  y: number[]; // [open, high, low, close]
+  volume: number;
+  originalDate: string;
+  timeLabel: string;
+}
+
+export interface ChartDataStats {
+  minPrice: number;
+  maxPrice: number;
+  minVolume: number;
+  maxVolume: number;
+}
+
+export interface ChartVisibleRange {
+  min: number;
+  max: number;
+}
+
 // 차트 헤더
 export interface ChartHeaderProps {
   stockCode: string; // 종목 코드 (증권시장에서 주식을 식별하는 고유 번호)
@@ -37,7 +64,7 @@ export interface ChartHeaderProps {
   priceChange: string; // 전일대비 변동 금액 (오늘 가격 - 어제 가격, 단위: 원)
   changeRate: string; // 등락률 (전일대비 변동률, 단위: %)
   currentPrice: string;
-  onChartTypeChange: (type: string) => void;
+  onChartTypeChange: (type: ChartType) => void;
   selectedChartType: string;
 }
 
