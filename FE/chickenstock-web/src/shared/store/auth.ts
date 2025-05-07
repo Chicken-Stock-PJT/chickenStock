@@ -50,6 +50,7 @@ export const useAuthStore = create<AuthState>()(
             },
           );
           set({ accessToken: response.data.accessToken, isLoggedIn: true });
+          return response.data;
         },
         logout: async () => {
           useWatchlistStore.getState().setWatchlist([]);

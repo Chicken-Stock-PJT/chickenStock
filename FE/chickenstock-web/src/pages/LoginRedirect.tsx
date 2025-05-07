@@ -1,8 +1,6 @@
 import { useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import axios from "axios";
 import { useAuthStore } from "@/shared/store/auth";
-import { LoginResponse } from "@/shared/store/types";
 import { useGetWatchlist } from "@/features/watchlist/model/queries";
 
 const LoginRedirect = () => {

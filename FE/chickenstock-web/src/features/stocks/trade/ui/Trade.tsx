@@ -1,16 +1,43 @@
 import { useState, useRef } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
+import {
+  useBuyLimitOrder,
+  useBuyMarketOrder,
+  useSellLimitOrder,
+  useSellMarketOrder,
+} from "@/features/stocks/trade/model/mutations";
 
-const Trade = () => {
+const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: string }) => {
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
   const [quantity, setQuantity] = useState<number>(1); // 수량
-  const currentPrice = 150000; // 현재 가격 (예시로 100000으로 설정, 실제로는 API에서 받아와야 함)
   const lowPrice = 50000; // 최저 가격 (예시로 50000으로 설정, 실제로는 API에서 받아와야 함)
   const [price, setPrice] = useState<number>(currentPrice); // 가격 (지정가 주문 시 사용)
   const [tempPrice, setTempPrice] = useState<string>(""); // 임시 가격을 저장할 상태 추가
   const quantityInputRef = useRef<HTMLInputElement>(null); // 수량 input ref
   const priceInputRef = useRef<HTMLInputElement>(null); // 가격 input ref
+
+  const { mutate: buyLimitOrder } = useBuyLimitOrder({
+    stockCode,
+    quantity,
+    price,
+  });
+
+  const { mutate: buyMarketOrder } = useBuyMarketOrder({
+    stockCode,
+    quantity,
+  });
+
+  const { mutate: sellLimitOrder } = useSellLimitOrder({
+    stockCode,
+    quantity,
+    price,
+  });
+
+  const { mutate: sellMarketOrder } = useSellMarketOrder({
+    stockCode,
+    quantity,
+  });
 
   const handlePriceType = (toLimitOrder: boolean) => {
     if (toLimitOrder) {
@@ -89,6 +116,22 @@ const Trade = () => {
       const tickSize = getTickSize(price);
       setPrice(price + tickSize);
       priceInputRef.current?.focus();
+    }
+  };
+
+  const handleBuyOrder = () => {
+    if (isLimitOrder) {
+      buyLimitOrder();
+    } else {
+      buyMarketOrder();
+    }
+  };
+
+  const handleSellOrder = () => {
+    if (isLimitOrder) {
+      sellLimitOrder();
+    } else {
+      sellMarketOrder();
     }
   };
 
@@ -176,60 +219,56 @@ const Trade = () => {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2">
-          <label htmlFor="price" className="text-sm text-gray-500">
-            가격
-          </label>
-          <div className="relative flex items-center">
-            <button
-              onClick={handlePriceDecrease}
-              className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
-              disabled={!isLimitOrder}
-            >
-              <Minus size={16} />
-            </button>
-            <input
-              ref={priceInputRef}
-              type="number"
-              id="price"
-              value={tempPrice || price}
-              onChange={(e) => handlePriceInput(e.target.value)}
-              onBlur={handlePriceChange}
-              onClick={(e) => e.currentTarget.select()}
-              readOnly={!isLimitOrder}
-              min={lowPrice}
-              className={`w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
-              ${!isLimitOrder ? "cursor-not-allowed bg-gray-100" : ""}`}
-            />
-            <button
-              onClick={handlePriceIncrease}
-              className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
-              disabled={!isLimitOrder}
-            >
-              <Plus size={16} />
-            </button>
-          </div>
-        </div>
-
-        <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
-          <span>총 가격</span>
-          <span>{(price * quantity).toLocaleString()}원</span>
-        </div>
+        {isLimitOrder && (
+          <>
+            <div className="mt-4 flex flex-col gap-2">
+              <label htmlFor="price" className="text-sm text-gray-500">
+                가격
+              </label>
+              <div className="relative flex items-center">
+                <button
+                  onClick={handlePriceDecrease}
+                  className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                  disabled={!isLimitOrder}
+                >
+                  <Minus size={16} />
+                </button>
+                <input
+                  ref={priceInputRef}
+                  type="number"
+                  id="price"
+                  value={tempPrice || price}
+                  onChange={(e) => handlePriceInput(e.target.value)}
+                  onBlur={handlePriceChange}
+                  onClick={(e) => e.currentTarget.select()}
+                  readOnly={!isLimitOrder}
+                  min={lowPrice}
+                  className={`w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
+                ${!isLimitOrder ? "cursor-not-allowed bg-gray-100" : ""}`}
+                />
+                <button
+                  onClick={handlePriceIncrease}
+                  className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                  disabled={!isLimitOrder}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
+              <span>총 가격</span>
+              <span>{(price * quantity).toLocaleString()}원</span>
+            </div>
+          </>
+        )}
         <TabsContent value="buy">
           <button
             className="w-full rounded-lg bg-primary-300 py-3 
-        text-gray-900 drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
-        transition-all
-        duration-200 hover:bg-primary-400 active:scale-[0.98]
-        active:shadow-inner"
-            onClick={() => {
-              // 매수 신청 로직
-              console.log("매수 신청", {
-                quantity,
-                price,
-                isLimitOrder,
-              });
-            }}
+            text-gray-900 drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
+            transition-all
+            duration-200 hover:bg-primary-400 active:scale-[0.98]
+            active:shadow-inner"
+            onClick={handleBuyOrder}
           >
             매수 신청하기
           </button>
@@ -241,14 +280,7 @@ const Trade = () => {
         transition-all
         duration-200 hover:bg-primary-400 active:scale-[0.98]
         active:shadow-inner"
-            onClick={() => {
-              // 매도 신청 로직
-              console.log("매도 신청", {
-                quantity,
-                price,
-                isLimitOrder,
-              });
-            }}
+            onClick={handleSellOrder}
           >
             매도 신청하기
           </button>
