@@ -20,7 +20,8 @@ import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 
-import java.util.List;
+import java.util.*;
+
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
@@ -68,6 +69,7 @@ public class MemberService {
 
         return MemberResponseDto.from(member);
     }
+
     @Transactional
     public PasswordChangeResponseDTO changePassword(String authorizationHeader, PasswordChangeRequestDTO dto) {
 
@@ -603,9 +605,9 @@ public class MemberService {
     /**
      * 특정 기간의 수익률을 계산합니다.
      *
-     * @param memberId 회원 ID
-     * @param periodType 기간 타입 (daily, weekly, monthly, yearly)
-     * @param periodReturns 결과를 저장할 Map
+     * @param memberId         회원 ID
+     * @param periodType       기간 타입 (daily, weekly, monthly, yearly)
+     * @param periodReturns    결과를 저장할 Map
      * @param currentValuation 현재 평가액
      */
     private void calculatePeriodReturn(Long memberId, String periodType,
@@ -688,9 +690,9 @@ public class MemberService {
      * 특정 시점의 평가액을 추정합니다.
      * 정확한 과거 데이터가 없는 경우 거래 내역을 기반으로 추정합니다.
      *
-     * @param memberId 회원 ID
+     * @param memberId       회원 ID
      * @param targetDateTime 평가액을 계산할 시점
-     * @param histories 해당 시점 이전의 거래 내역
+     * @param histories      해당 시점 이전의 거래 내역
      * @return 추정된 평가액
      */
     private Long estimateHistoricalValuation(Long memberId, LocalDateTime targetDateTime, List<TradeHistory> histories) {
@@ -736,7 +738,7 @@ public class MemberService {
      * 사용자의 관심종목에서 특정 종목을 삭제합니다.
      *
      * @param authorizationHeader 인증 헤더
-     * @param stockCode 삭제할 종목 코드
+     * @param stockCode           삭제할 종목 코드
      * @return 갱신된 관심종목 목록 DTO
      */
     @Transactional
@@ -812,4 +814,82 @@ public class MemberService {
         return SimpleMemberProfileResponseDTO.of(nickname, memberMoney, returnRate, isOauth);
     }
 
+    // 특정 종목에 대한 거래내역을 조회합니다.
+    @Transactional(readOnly = true)
+    public StockTradeHistoryResponseDTO getStockTradeHistory(
+            String authorizationHeader, String stockCode) {
+
+        try {
+            // 토큰에서 회원 ID 추출
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+            StockData stockData = stockDataRepository.findByShortCode(stockCode)
+                    .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
+
+            // 전체 거래내역 조회
+            List<TradeHistory> tradeHistories = tradeHistoryRepository.findByMemberAndStockData(member, stockData);
+
+            // 현재 보유 정보 조회
+            Optional<HoldingPosition> currentPosition = holdingPositionRepository.findByMemberAndStockData(member, stockData);
+
+            // 거래내역이 없는 경우 빈 응답 반환
+            if (tradeHistories.isEmpty() && currentPosition.isEmpty()) {
+                return StockTradeHistoryResponseDTO.builder()
+                        .stockCode(stockCode)
+                        .stockName(stockData.getShortName())
+                        .tradeHistories(new ArrayList<>())
+                        .message("해당 종목의 거래내역이 없습니다.")
+                        .build();
+            }
+
+            // 응답 DTO 생성
+            List<StockTradeHistoryResponseDTO.TradeHistoryDTO> historyDTOs = new ArrayList<>();
+
+            for (TradeHistory history : tradeHistories) {
+                StockTradeHistoryResponseDTO.TradeHistoryDTO dto = StockTradeHistoryResponseDTO.TradeHistoryDTO.builder()
+                        .tradeId(history.getTradeHistoryId())
+                        .tradeType(history.getTradeType().toString())
+                        .quantity(history.getQuantity())
+                        .unitPrice(history.getUnitPrice())
+                        .totalPrice(history.getTotalPrice())
+                        .tradedAt(history.getTradedAt())
+                        .build();
+
+                historyDTOs.add(dto);
+            }
+
+            // 현재 보유 정보 추가
+            Long currentQuantity = 0L;
+            Long averagePrice = 0L;
+            Double returnRate = 0.0;
+
+            if (currentPosition.isPresent()) {
+                HoldingPosition position = currentPosition.get();
+                currentQuantity = position.getQuantity().longValue();
+                averagePrice = position.getAveragePrice();
+                returnRate = position.getReturnRate();
+            }
+
+            return StockTradeHistoryResponseDTO.builder()
+                    .stockCode(stockCode)
+                    .stockName(stockData.getShortName())
+                    .tradeHistories(historyDTOs)
+                    .currentQuantity(currentQuantity)
+                    .averagePrice(averagePrice)
+                    .returnRate(returnRate)
+                    .message("조회 성공")
+                    .build();
+
+        } catch (CustomException ce) {
+            log.error("종목 거래내역 조회 실패: {}", ce.getMessage());
+            throw ce;
+        } catch (Exception e) {
+            log.error("종목 거래내역 조회 중 오류 발생", e);
+            throw new CustomException(StockErrorCode.OPERATION_FAILED, "종목 거래내역 조회 중 오류가 발생했습니다");
+        }
+    }
 }
