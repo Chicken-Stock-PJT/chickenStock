@@ -4,13 +4,14 @@ import { RankingType, StockChartResponse, StockListResponse } from "../model/typ
 export const getStockRanking = async (
   rankingType: RankingType,
   marketType: string,
-  //   includeManagement: string,
+  sortType?: string,
 ): Promise<StockListResponse> => {
   try {
-    const response = await apiClient.get<StockListResponse>(
-      `stock/ranking/${rankingType}?marketType=${marketType}&includeManagement=1`,
-      //   `stock/ranking/${rankingType}?marketType=${marketType}&includeManagement=${includeManagement}`,
-    );
+    let url = `stock/ranking/${rankingType}?marketType=${marketType}&includeManagement=1`;
+    if (rankingType === "fluctuationRate" && sortType) {
+      url += `&sortType=${sortType}`;
+    }
+    const response = await apiClient.get<StockListResponse>(url);
     return response.data;
   } catch (error) {
     console.error(error);

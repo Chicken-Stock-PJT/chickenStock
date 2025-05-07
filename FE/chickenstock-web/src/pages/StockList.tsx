@@ -10,13 +10,19 @@ const StockList = () => {
   const [stocks, setStocks] = useState<StockProps[]>([]);
   const [marketType, setMarketType] = useState<MarketType>("000");
   const [rankingType, setRankingType] = useState<RankingType>("tradeAmount");
+  const [sortType, setSortType] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+
+  const handleRankingTypeChange = (type: RankingType, newSortType?: string) => {
+    setRankingType(type);
+    setSortType(newSortType);
+  };
 
   useEffect(() => {
     const fetchStocks = async () => {
       setLoading(true);
       try {
-        const response = await getStockRanking(rankingType, marketType);
+        const response = await getStockRanking(rankingType, marketType, sortType);
         const formattedStocks = response.rankingItems.map((item, index: number) => ({
           ...item,
           rankingType: rankingType.toLowerCase() as RankingType,
@@ -32,15 +38,16 @@ const StockList = () => {
     };
 
     void fetchStocks();
-  }, [marketType, rankingType]);
+  }, [marketType, rankingType, sortType]);
 
   return (
     <div>
       <StockListHeader
         marketType={marketType}
         rankingType={rankingType}
+        sortType={sortType}
         onMarketTypeChange={setMarketType}
-        onRankingTypeChange={setRankingType}
+        onRankingTypeChange={handleRankingTypeChange}
       />
       <StockListIndex rankingType={rankingType} />
       {loading ? (

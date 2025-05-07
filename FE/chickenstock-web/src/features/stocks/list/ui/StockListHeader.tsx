@@ -1,9 +1,10 @@
-import { TrendingUp, DollarSign, BarChart3 } from "lucide-react";
+import { TrendingUp, DollarSign, BarChart3, TrendingDown } from "lucide-react";
 import { MarketType, RankingType, StockListHeaderProps } from "../model/types";
 
 const StockListHeader = ({
   marketType,
   rankingType,
+  sortType,
   onMarketTypeChange,
   onRankingTypeChange,
 }: StockListHeaderProps) => {
@@ -26,8 +27,15 @@ const StockListHeader = ({
     },
     {
       id: "fluctuationRate",
-      name: "등락률",
+      name: "상승률",
       icon: <TrendingUp className="size-4" />,
+      sortType: "1",
+    },
+    {
+      id: "fluctuationRate",
+      name: "하락률",
+      icon: <TrendingDown className="size-4" />,
+      sortType: "3",
     },
   ];
 
@@ -62,18 +70,18 @@ const StockListHeader = ({
           <div className="flex gap-2">
             {rankingTypes.map((type) => (
               <button
-                key={type.id}
+                key={`${type.id}-${type.sortType ?? ""}`}
                 className={`
                     inline-flex flex-1 items-center justify-center gap-2 rounded-full px-4
                     py-2 text-sm font-medium
                     transition-all duration-200 ease-in-out sm:flex-none
                     ${
-                      rankingType === type.id
+                      rankingType === type.id && (!type.sortType || sortType === type.sortType)
                         ? "bg-primary-300 text-gray-800 shadow-md"
                         : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                     }
                   `}
-                onClick={() => onRankingTypeChange(type.id as RankingType)}
+                onClick={() => onRankingTypeChange(type.id as RankingType, type.sortType)}
               >
                 {type.icon}
                 {type.name}

@@ -15,8 +15,8 @@ const StockListIndex = ({ rankingType }: StockListIndexProps) => {
 
     const specificColumns = {
       tradeAmount: [
-        { id: "volume", label: "거래량", width: "w-1/6" },
         { id: "amount", label: "거래대금", width: "w-1/6" },
+        { id: "volume", label: "거래량", width: "w-1/6" },
       ],
       volume: [
         { id: "volume", label: "거래량", width: "w-1/6" },
