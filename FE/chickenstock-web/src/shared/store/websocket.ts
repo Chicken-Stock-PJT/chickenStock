@@ -28,13 +28,13 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
     const ws = new WebSocket(`${import.meta.env.VITE_BASE_WS_URL}/stock`);
 
     ws.onopen = () => {
-      console.log("WebSocket 연결 성공");
-      ws.send(
+      const response = ws.send(
         JSON.stringify({
           action: "subscribe",
           stockCode,
         }),
       );
+      console.log(response);
       void get().getSubscribedList();
     };
 
@@ -64,6 +64,14 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
     };
 
     ws.onclose = () => {
+      const response = ws.send(
+        JSON.stringify({
+          action: "unsubscribe",
+          stockCode,
+        }),
+      );
+      console.log(response);
+      console.log(get().subscribedList);
       console.log("WebSocket 연결 종료");
     };
 

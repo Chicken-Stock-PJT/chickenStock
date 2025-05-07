@@ -15,16 +15,7 @@ const LoginRedirect = () => {
     if (code) {
       const fetchData = async (code: string) => {
         try {
-          const response = await axios.post<LoginResponse>(
-            `${import.meta.env.VITE_BASE_URL}/auth/exchange`,
-            {
-              oneTimeCode: code,
-              platform: "web",
-            },
-          );
-          const accessToken = response.data.accessToken;
-          useAuthStore.getState().setAccessToken(accessToken);
-          console.log(accessToken);
+          await useAuthStore.getState().socialLogin(code);
           await useAuthStore.getState().getSimpleProfile();
           await refetchWatchlist();
           void navigate("/");
