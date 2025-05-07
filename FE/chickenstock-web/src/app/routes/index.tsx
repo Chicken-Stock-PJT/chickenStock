@@ -13,6 +13,7 @@ import Transactions from "@/features/mypage/Transactions";
 import SignupPage from "@/pages/SignupPage";
 import LoginPage from "@/pages/LoginPage";
 import LoginRedirect from "@/pages/LoginRedirect";
+import FindPasswordPage from "@/pages/FindPasswordPage";
 
 const router = createBrowserRouter([
   {
@@ -31,6 +32,16 @@ const router = createBrowserRouter([
       {
         path: "signup",
         element: <SignupPage />,
+      },
+      // 비밀번호찾기
+      {
+        path: "find",
+        children: [
+          {
+            path: "password",
+            element: <FindPasswordPage />,
+          },
+        ],
       },
       {
         path: "mypage",

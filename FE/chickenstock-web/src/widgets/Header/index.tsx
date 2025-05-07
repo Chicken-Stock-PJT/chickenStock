@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
 import SearchModal from "@/features/stocks/search/ui/SearchModal";
@@ -8,7 +8,6 @@ import HeaderDropdown from "@/widgets/Header/HeaderDropdown";
 
 const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const navigate = useNavigate();
   const { simpleProfile } = useAuthStore();
   const isLogin = useAuthStore((state) => state.isLoggedIn);
 
@@ -64,23 +63,22 @@ const Header = () => {
       </div>
       {isLogin ? (
         <div className="mr-10 flex w-1/3 items-center justify-end gap-8 text-lg font-semibold">
-          <div className="flex items-start rounded-md bg-primary-100 p-2 px-4 text-xs">
-            <div className="">잔고: \{Number(simpleProfile?.memberMoney).toLocaleString()}</div>
+          <div className="flex items-center gap-2">
+            <div className="rounded-md bg-primary-100 p-2 text-xs">잔고</div>
+            <div className="text-sm">\{Number(simpleProfile?.memberMoney).toLocaleString()}</div>
           </div>
-          <div className="flex items-start rounded-md bg-primary-100 p-2 px-4 text-xs">
+          <div className="flex items-center gap-2">
+            <div className="rounded-md bg-primary-100 p-2 text-xs">수익률</div>
             <div
-              className={`${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
+              className={`text-sm ${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
             >
-              수익률: {simpleProfile?.returnRate}%
+              {simpleProfile?.returnRate}%
             </div>
           </div>
           <HeaderDropdown nickname={simpleProfile?.nickname ?? ""} />
         </div>
       ) : (
-        <div
-          className="mr-10 flex w-1/3 cursor-pointer justify-end gap-10"
-          onClick={() => void navigate("login")}
-        >
+        <div className="mr-10 flex w-1/3 justify-end gap-10">
           <Link to="/login" className="font-semibold">
             로그인
           </Link>
