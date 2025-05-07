@@ -4,8 +4,9 @@ export type RankingType = "tradeAmount" | "volume" | "fluctuationRate";
 export interface StockListHeaderProps {
   marketType: MarketType;
   rankingType: RankingType;
+  sortType?: string;
   onMarketTypeChange: (type: MarketType) => void;
-  onRankingTypeChange: (type: RankingType) => void;
+  onRankingTypeChange: (type: RankingType, sortType?: string) => void;
 }
 
 export interface Stock {
