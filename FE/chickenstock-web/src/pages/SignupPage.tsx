@@ -1,4 +1,4 @@
-import SignupCard from "@/features/signup/ui/SignupCard";
+import SignupCard from "@/features/auth/signup/ui/SignupCard";
 
 const SignupPage = () => {
   return <SignupCard />;

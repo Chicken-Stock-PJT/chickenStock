@@ -7,7 +7,7 @@ import naverLogin from "@/assets/naver.svg";
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuthStore } from "@/shared/store/auth";
-import { useGetWatchlist } from "../watchlist/model/queries";
+import { useGetWatchlist } from "@/features/watchlist/model/queries";
 
 const LoginCard = () => {
   const navigate = useNavigate();
@@ -65,7 +65,12 @@ const LoginCard = () => {
               onChange={handleInputChange}
             />
           </div>
-          <div className="my-6">
+          <div className="mt-4 flex justify-end underline">
+            <Link to={"/find/password"} className="text-sm text-gray-500">
+              비밀번호 찾기
+            </Link>
+          </div>
+          <div className="mb-6 mt-8">
             <Button className="w-full" type="submit">
               이메일로 로그인
             </Button>

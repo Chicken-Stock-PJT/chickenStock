@@ -3,7 +3,7 @@ import {
   SignupData,
   SignupResponse,
   SuccessResponse,
-} from "@/features/signup/model/types";
+} from "@/features/auth/signup/model/types";
 import axios, { AxiosResponse } from "axios";
 
 const baseURL = import.meta.env.VITE_BASE_URL;
