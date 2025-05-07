@@ -473,34 +473,13 @@ public class KiwoomWebSocketClient {
                 return false;
             }
 
-            // 모든 목적이 제거되면 실제 구독 해제
+            // 모든 목적이 제거되면 실제 구독 해제 (내부 구현 유지)
             if (purposes.isEmpty()) {
                 stockSubscriptionPurposes.remove(stockCode);
                 log.info("종목 {} 모든 구독 목적 제거됨, 구독 해제", stockCode);
 
-                // 이 종목에 대한 실제 구독 취소 처리
-                if (isConnected()) {
-                    try {
-                        // 실시간 데이터 구독 해제
-                        unregisterRealTimeData("0B", List.of(stockCode)); // 주식체결 해제
-                        unregisterRealTimeData("0D", List.of(stockCode)); // 주식호가잔량 해제
-
-                        // 구독자 수 카운터와 구독 목록에서 제거
-                        stockCodeSubscriberCount.remove(stockCode);
-                        subscribedStockCodes.remove(stockCode);
-
-                        log.info("종목 {} 실시간 데이터 구독 완전히 해제됨", stockCode);
-                        return true;
-                    } catch (Exception e) {
-                        log.error("종목 {} 구독 해제 중 오류 발생", stockCode, e);
-                        return false;
-                    }
-                }
-
-                // 연결이 끊어진 상태에서도 성공으로 처리
-                stockCodeSubscriberCount.remove(stockCode);
-                subscribedStockCodes.remove(stockCode);
-                return true;
+                // 이 종목에 대한 실제 구독 취소 처리는 별도의 메서드로 추출
+                return unsubscribeStockInternal(stockCode);
             }
 
             // 다른 목적이 남아있으면 구독 유지, 성공 반환
@@ -508,6 +487,32 @@ public class KiwoomWebSocketClient {
         } finally {
             subscriptionLock.writeLock().unlock();
         }
+    }
+
+    // 실제 구독 취소 로직을 별도 메서드로 분리
+    private boolean unsubscribeStockInternal(String stockCode) {
+        if (isConnected()) {
+            try {
+                // 실시간 데이터 구독 해제
+                unregisterRealTimeData("0B", List.of(stockCode)); // 주식체결 해제
+                unregisterRealTimeData("0D", List.of(stockCode)); // 주식호가잔량 해제
+
+                // 구독자 수 카운터와 구독 목록에서 제거
+                stockCodeSubscriberCount.remove(stockCode);
+                subscribedStockCodes.remove(stockCode);
+
+                log.info("종목 {} 실시간 데이터 구독 완전히 해제됨", stockCode);
+                return true;
+            } catch (Exception e) {
+                log.error("종목 {} 구독 해제 중 오류 발생", stockCode, e);
+                return false;
+            }
+        }
+
+        // 연결이 끊어진 상태에서도 내부 상태 정리
+        stockCodeSubscriberCount.remove(stockCode);
+        subscribedStockCodes.remove(stockCode);
+        return true;
     }
 
     // 특정 목적의 구독 여부 확인

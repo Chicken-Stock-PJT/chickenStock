@@ -3,6 +3,7 @@ package realClassOne.chickenStock.stock.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
@@ -24,6 +25,7 @@ public class StockSubscriptionService {
      *
      * @param stockCode 종목 코드 (예: 005930)
      */
+    @Transactional
     public void registerStockForSubscription(String stockCode, String purpose) {
         validateStockCode(stockCode);
 
@@ -41,6 +43,7 @@ public class StockSubscriptionService {
         registerStockForSubscription(stockCode, "DEFAULT");
     }
 
+    @Transactional
     public void unregisterStockForSubscription(String stockCode, String purpose) {
         validateStockCode(stockCode);
 
