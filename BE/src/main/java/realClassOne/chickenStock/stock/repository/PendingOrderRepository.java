@@ -8,6 +8,7 @@ import realClassOne.chickenStock.stock.entity.PendingOrder;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long> {
 
@@ -27,4 +28,15 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
     List<PendingOrder> findPendingOrdersWithStockData();
 
     boolean existsByStockDataShortCodeAndStatus(String stockCode, PendingOrder.OrderStatus status);
+
+    @Query("SELECT po FROM PendingOrder po JOIN FETCH po.stockData JOIN FETCH po.member WHERE po.id = :orderId")
+    Optional<PendingOrder> findByIdWithRelations(@Param("orderId") Long orderId);
+
+    @Query("SELECT po FROM PendingOrder po JOIN FETCH po.stockData JOIN FETCH po.member WHERE po.stockData.shortCode = :stockCode AND po.orderType = :orderType " +
+            "AND po.status = realClassOne.chickenStock.stock.entity.PendingOrder$OrderStatus.PENDING " +
+            "AND ((po.orderType = realClassOne.chickenStock.stock.entity.TradeHistory$TradeType.BUY AND po.targetPrice >= :price) " +
+            "OR (po.orderType = realClassOne.chickenStock.stock.entity.TradeHistory$TradeType.SELL AND po.targetPrice <= :price))")
+    List<PendingOrder> findExecutableOrdersWithRelations(@Param("stockCode") String stockCode,
+                                                         @Param("orderType") TradeHistory.TradeType orderType,
+                                                         @Param("price") Long price);
 }

@@ -29,4 +29,7 @@ public interface HoldingPositionRepository extends JpaRepository<HoldingPosition
 
     boolean existsByStockDataShortCode(String stockCode);
 
+    @Query("SELECT hp FROM HoldingPosition hp JOIN FETCH hp.stockData WHERE hp.member = :member")
+    List<HoldingPosition> findByMemberWithStockData(@Param("member") Member member);
+
 }
