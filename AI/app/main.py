@@ -1,7 +1,7 @@
 import asyncio
-import aiohttp
 import logging
-from typing import Dict, List
+import aiohttp
+from typing import Dict
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -78,6 +78,11 @@ async def shutdown_event():
     # 인증 클라이언트 종료
     if auth_client:
         await auth_client.close()
+    
+    # TokenManager 종료
+    from app.token_manager import TokenManager
+    token_manager = TokenManager()
+    await token_manager.close()
 
 @app.post("/auth/login")
 async def login(login_request: LoginRequest):
@@ -91,7 +96,6 @@ async def login(login_request: LoginRequest):
     try:
         # 백엔드 서버 로그인
         success = await auth_client.login(login_request.email, login_request.password)
-        logger.info(success)
         if success:
             return {
                 "success": True,
@@ -266,14 +270,18 @@ async def start_trading_service(background_tasks: BackgroundTasks):
         )
 
     try:
-        # 키움 API 인스턴스 생성 (백엔드 서버 인증 클라이언트 전달)
+        # 키움 API 인스턴스 생성
         kiwoom_api = KiwoomAPI(auth_client)
         
         # 트레이딩 모델 생성
         trading_model = TradingModel(kiwoom_api)
         
-        # 백엔드 클라이언트 생성 (매매 결과 전송용 - 백엔드 서버 인증 클라이언트 사용)
-        backend_client = BackendClient(trading_model, auth_client)
+        # 백엔드 클라이언트 생성
+        backend_client = BackendClient(auth_client)
+        
+        # 순환 참조 설정
+        trading_model.set_backend_client(backend_client)
+        backend_client.set_trading_model(trading_model)
         
         # 백그라운드 태스크로 서비스 초기화
         background_tasks.add_task(initialize_service)
@@ -326,7 +334,7 @@ async def initialize_service():
         # 필터링된 종목 리스트 가져오기 (키움 API 토큰 사용)
         logger.info("시가총액 기준 종목 필터링 시작")
 
-        # 초기 필터링 - 더 많은 종목을 가져옴 (최종 600개를 위해 여유있게 800개)
+        # 초기 필터링 - 더 많은 종목을 가져옴 (최종 30개 대상)
         initial_filtered_symbols = await kiwoom_api.get_filtered_symbols(500, 300)
         logger.info(f"시가총액 기준 초기 필터링 완료: 총 {len(initial_filtered_symbols)}개 종목")
         
@@ -335,16 +343,10 @@ async def initialize_service():
             symbol for symbol in initial_filtered_symbols
             if any(stock.get('shortCode') == symbol for stock in stock_list)
         ]
-        logger.info(f"종목 목록에 존재하는 종목: 총 {len(available_symbols)}개")
         
-        # 정확히 600개 종목을 선택 (또는 최대한 가깝게)
-        target_count = 30
+        # 정확히 30개 종목을 선택
+        target_count = 600
         final_symbols = available_symbols[:target_count]
-        
-        if len(final_symbols) < target_count:
-            logger.warning(f"목표 종목 수({target_count})에 미달: {len(final_symbols)}개만 선택됨")
-        else:
-            logger.info(f"시가총액 기준 최종 {len(final_symbols)}개 종목 선택 완료")
         
         # 필터링된 종목 정보로 stock_cache 업데이트
         filtered_stock_list = [
@@ -360,42 +362,22 @@ async def initialize_service():
         # StockCache에 필터링된 종목 리스트 설정
         kiwoom_api.stock_cache.set_filtered_stocks(filtered_stockcode_list)
         
-        # 트레이딩 모델에 차트 데이터 초기화 - Envelope 지표 계산용
-        # 서버 시작 시 한 번에 모든 차트 데이터 로드 및 캐싱
+        # 차트 데이터 초기화 - Envelope 지표 계산용
         logger.info("차트 데이터 초기화 시작")
-        # 여기서 filtered_stockcode_list를 사용하여 600개 종목에 대해서만 처리
         await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
-        logger.info("차트 데이터 초기화 완료")
         
         # Envelope 지표 계산 (차트 데이터 초기화 후)
-        logger.info("Envelope 지표 계산 시작")
-        # StockCache를 사용하여 Envelope 지표 계산
+        logger.info("Envelope 지표 계산")
         processed_count = kiwoom_api.stock_cache.calculate_envelope_indicators()
-        logger.info(f"Envelope 지표 계산 완료: {processed_count}/{len(filtered_stockcode_list)} 종목 처리됨")
-
-        # 캐시 상태 확인
-        cached_symbols = list(kiwoom_api.stock_cache.envelope_cache.keys())
-        logger.info(f"캐시된 지표 수: {len(cached_symbols)}")
-        if cached_symbols:
-            logger.info(f"캐시된 지표 샘플: {cached_symbols[:5]}")
         
         # 실시간 데이터 구독 준비
-        logger.info("실시간 데이터 구독 그룹 준비")
         await kiwoom_api.prepare_subscription_groups(filtered_stock_list, 30)
         
         # 실시간 데이터 구독 로테이션 시작
-        logger.info("실시간 데이터 구독 로테이션 시작")
         await kiwoom_api.start_rotating_subscriptions(trading_model.handle_realtime_price)
-
-        # 웹소켓 메시지 처리 루프를 await로 호출하거나 태스크 변수에 저장
-        websocket_task = asyncio.create_task(kiwoom_api.handle_websocket_message())
-        logger.info(websocket_task)
         
         # 백엔드 클라이언트 시작
         await backend_client.start()
-        
-        # 트레이딩 모델에 백엔드 클라이언트 참조 설정
-        trading_model.set_backend_client(backend_client)
         
         # 거래 처리 루프 시작
         asyncio.create_task(trading_loop())
@@ -433,36 +415,44 @@ async def trading_loop():
             # 현재 시간
             current_time = datetime.now()
             
-            # 1분마다 계좌 정보 업데이트 및 매매 결정 처리
-            if (current_time - last_processing_time).total_seconds() >= 60:
-                # 계좌 정보 업데이트 (백엔드 클라이언트 사용)
+            # 10초마다 계좌 정보 업데이트 및 매매 결정 처리
+            if (current_time - last_processing_time).total_seconds() >= 10:
+                # 계좌 정보 업데이트 (백엔드에서 가져옴)
                 account_info = await backend_client.request_account_info()
                 if account_info:
-                    # 키움 API의 계좌 정보 업데이트
                     kiwoom_api.update_account_info(account_info)
                 
-                # 매매 결정 처리
+                # 매매 결정 생성 (트레이딩 모델 사용)
                 decisions = await trading_model.get_trade_decisions()
                 
-                # 매매 결정이 있으면 실행
+                # 매매 결정이 있으면 백엔드로 요청 전송
                 for decision in decisions:
                     try:
-                        # 거래 실행
-                        result = await kiwoom_api.execute_trade_decision(decision)
+                        symbol = decision.get("symbol")
+                        action = decision.get("action")
+                        quantity = decision.get("quantity", 0)
+                        price = decision.get("price", 0)
                         
-                        if result and result["success"]:
-                            # 백엔드로 결과 전송
-                            if backend_client:
-                                await backend_client.send_trade_result(decision, result)
-                        else:
-                            logger.warning(f"거래 실패: {decision['symbol']} {decision['action']} - {result.get('message', '')}")
-                    
+                        # 백엔드 클라이언트를 통해 거래 요청 전송
+                        if action.lower() == "buy":
+                            result = await backend_client.request_buy(symbol, quantity, price)
+                            if result:
+                                logger.info(f"매수 요청 성공: {symbol} {quantity}주")
+                            else:
+                                logger.error(f"매수 요청 실패: {symbol} {quantity}주")
+                        
+                        elif action.lower() == "sell":
+                            result = await backend_client.request_sell(symbol, quantity, price)
+                            if result:
+                                logger.info(f"매도 요청 성공: {symbol} {quantity}주")
+                            else:
+                                logger.error(f"매도 요청 실패: {symbol} {quantity}주")
+                        
                     except Exception as e:
-                        logger.error(f"거래 실행 중 오류: {str(e)}")
+                        logger.error(f"거래 요청 전송 중 오류: {str(e)}")
                 
                 # 마지막 처리 시간 업데이트
                 last_processing_time = current_time
-                logger.info(f"거래 처리 완료: {len(decisions)}개 결정 처리됨")
             
             # 1초 대기
             await asyncio.sleep(1)
@@ -521,37 +511,24 @@ async def get_indicators(symbols: str = None):
         symbol_list = symbols.split(',')
         result = {}
         for symbol in symbol_list:
-            # 필터링된 종목 리스트에 있는지 확인
             if symbol in kiwoom_api.stock_cache.filtered_stockcode_list:
-                # 현재가 조회
                 current_price = kiwoom_api.stock_cache.get_price(symbol)
-                
-                # Envelope 지표 조회 (StockCache 사용)
                 indicator = kiwoom_api.stock_cache.get_envelope_indicators(symbol, current_price)
                 if indicator:
-                    # 종목 정보 가져오기
                     stock_info = kiwoom_api.stock_cache.stock_info_cache.get(symbol, {})
                     stock_name = stock_info.get("name", "")
-                    
-                    # 지표에 종목명 추가
                     indicator["stockName"] = stock_name
                     result[symbol] = indicator
         return result
     
-    # 필터링된 600개 종목만 반환
+    # 필터링된 종목만 반환
     result = {}
     for symbol in kiwoom_api.stock_cache.filtered_stockcode_list:
-        # 현재가 조회
         current_price = kiwoom_api.stock_cache.get_price(symbol)
-        
-        # Envelope 지표 조회 (StockCache 사용)
         indicator = kiwoom_api.stock_cache.get_envelope_indicators(symbol, current_price)
         if indicator:
-            # 종목 정보 가져오기
             stock_info = kiwoom_api.stock_cache.stock_info_cache.get(symbol, {})
             stock_name = stock_info.get("name", "")
-            
-            # 지표에 종목명 추가
             indicator["stockName"] = stock_name
             result[symbol] = indicator
     
@@ -569,10 +546,9 @@ async def get_account_info():
             detail="서비스가 실행 중이지 않습니다."
         )
     
-    # 최신 계좌 정보 요청 (백엔드 클라이언트 사용)
+    # 최신 계좌 정보 요청
     account_info = await backend_client.request_account_info()
     if account_info:
-        # 키움 API의 계좌 정보 업데이트
         kiwoom_api.update_account_info(account_info)
     
     return kiwoom_api.account_info
@@ -621,34 +597,7 @@ async def get_realtime_prices():
             detail="서비스가 실행 중이지 않습니다."
         )
     
-    # 현재 캐시된 가격 데이터 확인
-    price_cache = kiwoom_api.stock_cache.price_cache
-    
-    # 로그 추가
-    logger.info(f"가격 정보 요청 - 캐시된 종목 수: {len(price_cache)}")
-    
-    return price_cache
-
-# 주기적인 캐시 상태 로깅을 위한 태스크 추가
-async def log_price_cache_status():
-    """주기적으로 가격 캐시 상태를 로깅"""
-    while True:
-        try:
-            if service_status["is_running"] and kiwoom_api:
-                price_cache = kiwoom_api.stock_cache.price_cache
-                logger.info(f"가격 캐시 상태 - 종목 수: {len(price_cache)}")
-                
-                # 가격이 업데이트되고 있는지 확인하기 위한 샘플 로깅
-                if price_cache:
-                    sample_items = list(price_cache.items())[:3]
-                    sample_log = ", ".join([f"{code}: {price}" for code, price in sample_items])
-                    logger.info(f"가격 샘플: {sample_log}")
-        
-        except Exception as e:
-            logger.error(f"가격 캐시 상태 로깅 중 오류: {str(e)}")
-        
-        # 30초마다 로깅
-        await asyncio.sleep(30)
+    return kiwoom_api.stock_cache.price_cache
 
 if __name__ == "__main__":
     import uvicorn

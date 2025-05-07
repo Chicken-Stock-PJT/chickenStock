@@ -196,18 +196,11 @@ const EnvelopeIndicators = ({ apiBaseUrl }) => {
     const currentPrice = item.currentPrice || 0;
     const upperBand = item.upperBand || 0;
     const lowerBand = item.lowerBand || 0;
-    const ma20 = item.MA20 || 0;
     
     if (currentPrice <= lowerBand) return 0;
     if (currentPrice >= upperBand) return 100;
     
-    if (currentPrice <= ma20) {
-      // 하한선에서 중앙선 사이
-      return 50 * (currentPrice - lowerBand) / (ma20 - lowerBand);
-    } else {
-      // 중앙선에서 상한선 사이
-      return 50 + 50 * (currentPrice - ma20) / (upperBand - ma20);
-    }
+    return ((currentPrice - lowerBand) / (upperBand - lowerBand)) * 100 || 0;
   };
 
   // 페이지 변경 핸들러

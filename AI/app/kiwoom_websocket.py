@@ -42,9 +42,9 @@ class KiwoomWebSocket:
 
         # 키움 API 토큰 클라이언트 추가
         self.kiwoom_auth_client = KiwoomAuthClient()
-        
-        # 키움 API 토큰 캐싱
-        self.current_kiwoom_token = None
+
+        # 키움 토큰 저장
+        self.kiwoom_token = ''
 
         # PING 메시지 관련 설정
         self._ping_interval = 3  # 3초마다 PING 메시지 전송
@@ -55,19 +55,15 @@ class KiwoomWebSocket:
         try:
             # 키움 API 토큰 가져오기 또는 전달받은 토큰 사용
             if kiwoom_token:
-                self.current_kiwoom_token = kiwoom_token
+                self.kiwoom_token = kiwoom_token
             else:
-                self.current_kiwoom_token = await self.kiwoom_auth_client.get_access_token()
-
-            if not self.current_kiwoom_token:
-                logger.error("키움 API 토큰을 가져올 수 없습니다.")
-                return False
+                self.kiwoom_token = await self.kiwoom_auth_client.get_access_token()
 
             # 웹소켓 연결 시도
             await self._start_websocket()
             
             # 웹소켓 로그인 시도
-            login_success = await self._websocket_login(self.current_kiwoom_token)
+            login_success = await self._websocket_login(self.kiwoom_token)
             
             if not login_success:
                 logger.warning("웹소켓 로그인 실패")
@@ -201,7 +197,7 @@ class KiwoomWebSocket:
         
         # 키움 API 토큰 설정
         if kiwoom_token:
-            self.current_kiwoom_token = kiwoom_token
+            self.kiwoom_token = kiwoom_token
         
         # 구독 태스크 시작
         if not self._subscription_task or self._subscription_task.done():
@@ -214,13 +210,17 @@ class KiwoomWebSocket:
         try:
             # 웹소켓 연결 및 로그인
             if not self.connected:
-                ws_connected = await self.connect(self.current_kiwoom_token)
+                ws_connected = await self.connect(self.kiwoom_token)
                 if not ws_connected:
                     logger.error("웹소켓 연결 실패: 실시간 데이터 구독을 할 수 없습니다.")
                     return
             
             while self.connected:
                 try:
+                    # 현재 시간 확인 - 16시 이후인지 체크
+                    current_time = datetime.now()
+                    after_market_hours = current_time.hour >= 16
+                    
                     # 현재 구독 중인 그룹 해제
                     if self._subscription_groups and self._current_group_index < len(self._subscription_groups):
                         # 구독된 심볼이 있는 경우에만 해지 요청
@@ -235,13 +235,41 @@ class KiwoomWebSocket:
                         self._current_group_index = (self._current_group_index + 1) % len(self._subscription_groups)
                         next_group = self._subscription_groups[self._current_group_index]
                         
-                        # 새 그룹 구독
-                        await self._register_realtime_data(next_group)
-                        for code in next_group:
-                            self.stock_cache.add_subscribed_symbol(code)
+                        # 16시 이후인 경우 더 큰 구독 그룹 사용
+                        if after_market_hours:
+                            # 현재 그룹과 다음 2개 그룹을 합쳐서 구독 (최대 100개 종목)
+                            extended_group = list(next_group)
+                            max_additional_groups = 3  # 현재 그룹 포함 최대 4개 그룹(약 120개 종목)
+                            
+                            for i in range(1, max_additional_groups):
+                                next_index = (self._current_group_index + i) % len(self._subscription_groups)
+                                extended_group.extend(self._subscription_groups[next_index])
+                                
+                                # 100개 제한에 도달하면 중단
+                                if len(extended_group) >= 100:
+                                    break
+                            
+                            # 100개로 제한
+                            if len(extended_group) > 100:
+                                extended_group = extended_group[:100]
+                            
+                            logger.info(f"16시 이후 확장 구독 모드: {len(extended_group)}개 종목 구독")
+                            
+                            # 확장 그룹 구독
+                            await self._register_realtime_data(extended_group)
+                            for code in extended_group:
+                                self.stock_cache.add_subscribed_symbol(code)
+                        else:
+                            # 일반 시간대 - 기존 방식으로 다음 그룹만 구독
+                            await self._register_realtime_data(next_group)
+                            for code in next_group:
+                                self.stock_cache.add_subscribed_symbol(code)
                         
-                        # 대기
-                        await asyncio.sleep(10)
+                        # 대기 시간도 시간대별로 다르게 설정
+                        if after_market_hours:
+                            await asyncio.sleep(30)  # 16시 이후는 30초 대기
+                        else:
+                            await asyncio.sleep(10)  # 일반 시간대는 10초 대기
                     else:
                         logger.warning("구독할 그룹이 없습니다.")
                         await asyncio.sleep(3)
@@ -270,21 +298,13 @@ class KiwoomWebSocket:
             return False
         
         try:
-            # 키움 API 토큰이 없으면 재발급
-            if not self.current_kiwoom_token:
-                self.current_kiwoom_token = await self.kiwoom_auth_client.get_access_token()
-                if not self.current_kiwoom_token:
-                    logger.error("키움 API 토큰을 발급할 수 없습니다.")
-                    return False
-            
             # 실시간 데이터 구독 요청 메시지 생성
-            logger.info(codes)
             subscribe_data = {
                 "trnm": "REG",
                 "grp_no": "1",
                 "refresh": "1",
                 "data": [{
-                    "item": codes,
+                    "item": [code + "_AL" for code in codes],
                     "type": ['0B']
                 }]
             }
@@ -311,19 +331,12 @@ class KiwoomWebSocket:
             if not items:
                 return True
             
-            # 키움 API 토큰이 없으면 재발급
-            if not self.current_kiwoom_token:
-                self.current_kiwoom_token = await self.kiwoom_auth_client.get_access_token()
-                if not self.current_kiwoom_token:
-                    logger.error("키움 API 토큰을 발급할 수 없습니다.")
-                    return False
-            
             # 실시간 데이터 구독 해지 요청 메시지 생성
             unsubscribe_data = {
                 "trnm": "REMOVE",
                 "grp_no": "1",
                 "data": {
-                    "item": items,
+                    "item": [item + "_AL" for item in items],
                     "type": ['0B']
                 }
             }
@@ -353,11 +366,9 @@ class KiwoomWebSocket:
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     try:
                         data = json.loads(msg.data)
-                        logger.debug(f"웹소켓 메시지 수신: {data}")
                         
                         # 원본 메시지 구조 로깅
                         trnm = data.get('trnm')
-                        logger.debug(f"메시지 타입: {trnm}, 키: {list(data.keys())}")
                         
                         # PING 응답 처리
                         if trnm == "PING":
@@ -367,7 +378,6 @@ class KiwoomWebSocket:
                         # 실시간 시세 데이터 처리
                         if trnm == "REAL":
                             data_list = data.get("data", [])
-                            logger.debug(f"REAL 데이터 개수: {len(data_list)}")
                             
                             for item in data_list:
                                 item_type = item.get("type")
@@ -382,19 +392,13 @@ class KiwoomWebSocket:
                                     try:
                                         # 부호가 포함된 문자열 처리
                                         price = int(price_str.replace('+', '').replace('-', '').replace(',', ''))
-                                        logger.debug(f"실시간 가격 수신: 종목={item_code}, 가격={price}")
                                         
                                         if item_code and price > 0:
                                             # 캐시 업데이트
-                                            prev_price = self.stock_cache.get_price(item_code)
                                             self.stock_cache.update_price(item_code, price)
                                             
                                             # 업데이트 카운터 증가
                                             update_counter += 1
-                                            
-                                            # 가격 변경 로깅
-                                            if prev_price != price:
-                                                logger.debug(f"가격 변경: {item_code} - {prev_price} → {price}")
                                             
                                             # 콜백 함수 호출
                                             if self.real_data_callback:
@@ -417,12 +421,6 @@ class KiwoomWebSocket:
                         if (current_time - last_log_time).total_seconds() >= 10:
                             cache_size = len(self.stock_cache.price_cache)
                             logger.info(f"실시간 가격 업데이트: 지난 10초간 {update_counter}건 수신, 현재 캐시 크기: {cache_size}건")
-                            
-                            # 몇 개 샘플 데이터 로깅 (최대 5개)
-                            sample_items = list(self.stock_cache.price_cache.items())[:5]
-                            if sample_items:
-                                samples = ", ".join([f"{code}: {price}" for code, price in sample_items])
-                                logger.info(f"가격 샘플: {samples}")
                             
                             # 카운터 및 시간 초기화
                             update_counter = 0
@@ -457,7 +455,7 @@ class KiwoomWebSocket:
                 logger.info("웹소켓 메시지 처리 루프 종료, 5초 후 재연결 시도")
                 await asyncio.sleep(5)
                 if self.session:
-                    asyncio.create_task(self.connect(self.current_kiwoom_token))
+                    asyncio.create_task(self.connect(self.kiwoom_token))
 
     async def close(self):
         """웹소켓 연결 종료"""

@@ -10,10 +10,22 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 class TokenManager:
-    """키움증권 API 토큰 관리 클래스"""
+    """키움증권 API 토큰 관리 클래스 (싱글톤)"""
+    
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(TokenManager, cls).__new__(cls)
+        return cls._instance
     
     def __init__(self):
-        """토큰 관리자 초기화"""
+        """토큰 관리자 초기화 (한 번만 실행)"""
+        if self._initialized:
+            return
+            
+        self._initialized = True
         self.base_url = settings.API_BASE_URL
         self.appkey = settings.KIWOOM_API_KEY
         self.secretkey = settings.KIWOOM_API_SECRET
@@ -26,14 +38,23 @@ class TokenManager:
         
         # 토큰 갱신 태스크
         self.refresh_task = None
+        
+        # 토큰 관련 락
+        self.token_lock = asyncio.Lock()
 
     async def initialize(self):
         """토큰 관리자 초기화 및 첫 토큰 발급"""
-        self.session = aiohttp.ClientSession()
-        await self.get_token()
+        if not self.session:
+            self.session = aiohttp.ClientSession()
         
-        # 토큰 갱신 태스크 시작
-        self.refresh_task = asyncio.create_task(self._token_refresh_loop())
+        # 토큰 발급 (락 사용)
+        async with self.token_lock:
+            await self.get_token()
+        
+        # 토큰 갱신 태스크 시작 (아직 실행 중이 아닐 경우)
+        if not self.refresh_task or self.refresh_task.done():
+            self.refresh_task = asyncio.create_task(self._token_refresh_loop())
+            logger.info("토큰 자동 갱신 태스크 시작")
         
         return self.is_valid()
 
@@ -64,7 +85,16 @@ class TokenManager:
                 "secretkey": self.secretkey
             }
             
-            async with self.session.post(f"{self.base_url}/oauth2/tokenP", data=data) as response:
+            # 요청 헤더 설정
+            headers = {
+                "Content-Type": "application/json;charset=UTF-8"
+            }
+            
+            async with self.session.post(
+                f"{self.base_url}/oauth2/token", 
+                json=data,
+                headers=headers
+            ) as response:
                 if response.status == 200:
                     result = await response.json()
                     
@@ -110,14 +140,16 @@ class TokenManager:
     async def get_valid_token(self) -> Optional[str]:
         """유효한 토큰 반환 (필요시 갱신)"""
         if not self.is_valid():
-            await self.get_token()
+            async with self.token_lock:
+                if not self.is_valid():  # 락 획득 후 다시 체크
+                    await self.get_token()
         
         return self.token
 
     async def _token_refresh_loop(self):
         """토큰 자동 갱신 태스크"""
-        while True:
-            try:
+        try:
+            while True:
                 if self.expires_dt:
                     now = datetime.now()
                     
@@ -126,7 +158,8 @@ class TokenManager:
                     
                     if time_to_expiry <= 300:  # 5분(300초) 이하로 남은 경우 즉시 갱신
                         logger.info("토큰 만료 시간이 5분 이내로 남아 갱신 시작")
-                        await self.get_token()
+                        async with self.token_lock:
+                            await self.get_token()
                     else:
                         # 다음 갱신 시간까지 대기 (토큰 만료 5분 전)
                         wait_time = time_to_expiry - 300
@@ -134,12 +167,13 @@ class TokenManager:
                 else:
                     # 만료 시간이 없으면 1시간마다 갱신
                     await asyncio.sleep(3600)
-            except asyncio.CancelledError:
-                # 태스크가 취소됨
-                break
-            except Exception as e:
-                logger.error(f"토큰 갱신 태스크 오류: {str(e)}")
-                await asyncio.sleep(60)  # 오류 발생 시 1분 후 재시도
+        except asyncio.CancelledError:
+            # 태스크가 취소됨
+            logger.info("토큰 갱신 태스크 취소됨")
+        except Exception as e:
+            logger.error(f"토큰 갱신 태스크 오류: {str(e)}")
+            # 오류 발생 시 태스크를 재시작하지 않고 종료
+            # 다음 토큰 요청 시 get_valid_token에서 갱신
 
     def get_auth_header(self) -> Dict[str, str]:
         """인증 헤더 반환"""
