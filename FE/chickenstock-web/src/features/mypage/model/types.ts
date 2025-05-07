@@ -63,3 +63,26 @@ export interface TradeHistory {
   createdAt: string;
   tradedAt: string;
 }
+
+export interface DailyProfitRateResponse {
+  initialInvestment: number; // 초기 투자금액
+  currentValuation: number; // 현재 평가금액
+  totalProfitLoss: number; // 총 손익금액
+  overallReturnRate: number; // 전체 수익률(%)
+  periodReturns: DailyReturn;
+  updatedAt: "2025-04-28T11:30:00"; // 정보 업데이트 시간
+}
+
+// type Period = "overall" | "daily" | "weekly" | "monthly" | "yearly";
+
+interface DailyReturn {
+  daily?: DailyProfitLoss;
+}
+
+interface DailyProfitLoss {
+  period: "daily";
+  returnRate: number;
+  profitLoss: number;
+  startDate: string;
+  endDate: string;
+}
