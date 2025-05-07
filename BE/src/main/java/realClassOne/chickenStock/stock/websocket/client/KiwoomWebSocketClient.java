@@ -48,9 +48,22 @@ public class KiwoomWebSocketClient {
     private final Map<String, Set<String>> stockSubscriptionPurposes = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock subscriptionLock = new ReentrantReadWriteLock();
 
-    // 최신 가격 데이터 반환 메서드
+    // 최신 가격 데이터 반환 메서드 수정
     public JsonNode getLatestStockPriceData(String stockCode) {
-        return latestPriceDataCache.get(stockCode);
+        // 원본 코드로도 조회 시도
+        JsonNode data = latestPriceDataCache.get(stockCode);
+
+        // 원본 코드로 없으면 _AL 붙은 코드로 조회
+        if (data == null && !stockCode.endsWith("_AL")) {
+            data = latestPriceDataCache.get(stockCode + "_AL");
+        }
+
+        // _AL 붙은 코드로도 없으면 원본 코드에서 _AL 빼고 조회
+        if (data == null && stockCode.endsWith("_AL")) {
+            data = latestPriceDataCache.get(stockCode.replace("_AL", ""));
+        }
+
+        return data;
     }
 
     public interface StockDataListener {
@@ -89,6 +102,7 @@ public class KiwoomWebSocketClient {
 
     @PostConstruct
     public void init() {
+
         connect();
     }
 
@@ -184,6 +198,8 @@ public class KiwoomWebSocketClient {
         }
 
         stockCode = stockCode.trim();
+        // 내부적으로 항상 _AL 접미사 사용
+        String formattedCode = convertStockCode(stockCode);
 
         // 구독자 수 증가
         int count = stockCodeSubscriberCount.getOrDefault(stockCode, 0) + 1;
@@ -191,12 +207,13 @@ public class KiwoomWebSocketClient {
 
         // 새로운 종목 구독인 경우 실시간 데이터 등록
         if (count == 1) {
-            subscribedStockCodes.add(stockCode);
+            subscribedStockCodes.add(stockCode);  // 원본 코드는 subscribedStockCodes에 저장
 
             if (isConnected()) {
+                // 실제 API 호출에는 _AL 접미사가 붙은 코드 사용
                 registerRealTimeData("0B", List.of(stockCode)); // 주식체결
                 registerRealTimeData("0D", List.of(stockCode)); // 주식호가잔량
-                log.info("종목 구독 성공: {}", stockCode);
+                log.info("종목 구독 성공: {} (변환: {})", stockCode, formattedCode);
             } else {
                 log.warn("WebSocket 연결이 없어 나중에 등록됩니다: {}", stockCode);
             }
@@ -220,6 +237,7 @@ public class KiwoomWebSocketClient {
             subscribedStockCodes.remove(stockCode);
 
             if (isConnected()) {
+                // 실제 API 호출에는 _AL 접미사가 붙은 코드 사용
                 unregisterRealTimeData("0B", List.of(stockCode)); // 주식체결 해제
                 unregisterRealTimeData("0D", List.of(stockCode)); // 주식호가잔량 해제
                 log.info("종목 구독 해제: {}", stockCode);
@@ -330,6 +348,7 @@ public class KiwoomWebSocketClient {
         }
     }
 
+    // 데이터 처리 메서드 수정
     private void processRealTimeData(JsonNode response) {
         try {
             JsonNode dataArray = response.get("data");
@@ -339,12 +358,19 @@ public class KiwoomWebSocketClient {
                     String stockCode = dataItem.get("item").asText();
                     JsonNode values = dataItem.get("values");
 
-                    if ("0B".equals(type)) {
-                        // 캐시에 최신 데이터 저장
-                        latestPriceDataCache.put(stockCode, values);
+                    // 키움에서 오는 데이터는 _AL 접미사가 붙어있음
+                    // 접미사 없는 원본 코드
+                    String originalCode = stockCode;
+                    if (stockCode.endsWith("_AL")) {
+                        originalCode = stockCode.replace("_AL", "");
+                    }
 
-                        // 주식체결 데이터 처리
-                        // 여기서 별도의 스레드에서 실행하여 웹소켓 스레드 블로킹 방지
+                    if ("0B".equals(type)) {
+                        // 두 가지 형태 모두 캐시에 저장 (원본 코드와 _AL 붙은 코드)
+                        latestPriceDataCache.put(stockCode, values);
+                        latestPriceDataCache.put(originalCode, values);
+
+                        // 주식체결 데이터 처리 (원래 코드 그대로 전달)
                         new Thread(() -> {
                             try {
                                 notifyStockPriceUpdate(stockCode, values);
@@ -353,7 +379,7 @@ public class KiwoomWebSocketClient {
                             }
                         }).start();
                     } else if ("0D".equals(type)) {
-                        // 주식호가잔량 데이터 처리
+                        // 주식호가잔량 데이터 처리 (원래 코드 그대로 전달)
                         notifyStockBidAskUpdate(stockCode, values);
                     }
                 }
@@ -433,19 +459,51 @@ public class KiwoomWebSocketClient {
         try {
             // 목적 제거
             Set<String> purposes = stockSubscriptionPurposes.get(stockCode);
-            if (purposes != null) {
-                purposes.remove(purpose);
-                log.info("종목 {} 구독 목적 제거: {}, 남은 목적 수: {}", stockCode, purpose, purposes.size());
-
-                // 모든 목적이 제거되면 실제 구독 해제
-                if (purposes.isEmpty()) {
-                    stockSubscriptionPurposes.remove(stockCode);
-                    log.info("종목 {} 모든 구독 목적 제거됨, 구독 해제", stockCode);
-                    return unsubscribeStock(stockCode);
-                }
+            if (purposes == null) {
+                log.warn("종목 {} 구독 목적 목록이 없음", stockCode);
+                return false;
             }
 
-            // 다른 목적이 남아있으면 구독 유지
+            boolean removed = purposes.remove(purpose);
+            log.info("종목 {} 구독 목적 제거: {}, 성공: {}, 남은 목적 수: {}",
+                    stockCode, purpose, removed, purposes.size());
+
+            if (!removed) {
+                log.warn("종목 {} 구독 목적 {} 제거 실패: 해당 목적이 존재하지 않음", stockCode, purpose);
+                return false;
+            }
+
+            // 모든 목적이 제거되면 실제 구독 해제
+            if (purposes.isEmpty()) {
+                stockSubscriptionPurposes.remove(stockCode);
+                log.info("종목 {} 모든 구독 목적 제거됨, 구독 해제", stockCode);
+
+                // 이 종목에 대한 실제 구독 취소 처리
+                if (isConnected()) {
+                    try {
+                        // 실시간 데이터 구독 해제
+                        unregisterRealTimeData("0B", List.of(stockCode)); // 주식체결 해제
+                        unregisterRealTimeData("0D", List.of(stockCode)); // 주식호가잔량 해제
+
+                        // 구독자 수 카운터와 구독 목록에서 제거
+                        stockCodeSubscriberCount.remove(stockCode);
+                        subscribedStockCodes.remove(stockCode);
+
+                        log.info("종목 {} 실시간 데이터 구독 완전히 해제됨", stockCode);
+                        return true;
+                    } catch (Exception e) {
+                        log.error("종목 {} 구독 해제 중 오류 발생", stockCode, e);
+                        return false;
+                    }
+                }
+
+                // 연결이 끊어진 상태에서도 성공으로 처리
+                stockCodeSubscriberCount.remove(stockCode);
+                subscribedStockCodes.remove(stockCode);
+                return true;
+            }
+
+            // 다른 목적이 남아있으면 구독 유지, 성공 반환
             return true;
         } finally {
             subscriptionLock.writeLock().unlock();

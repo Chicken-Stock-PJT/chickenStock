@@ -79,14 +79,16 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
                 Set<Long> subscribers = entry.getValue();
 
                 // 해당 종목 구독자 목록에서 회원 제거
-                subscribers.remove(memberId);
+                boolean removed = subscribers.remove(memberId);
+
+                if (removed) {
+                    log.info("회원 ID {} 종목 {} 구독 해제", memberId, stockCode);
+                }
 
                 // 구독자가 없으면 종목 구독 취소 및 맵에서 제거
                 if (subscribers.isEmpty()) {
-                    if (kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                        kiwoomWebSocketClient.unsubscribeStock(stockCode);
-                        log.info("종목 구독 취소: {}", stockCode);
-                    }
+                    boolean unsubscribed = kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, "PORTFOLIO");
+                    log.info("종목 {} 구독 취소 (결과: {}): 구독자 없음", stockCode, unsubscribed);
                     stockSubscribers.remove(stockCode);
                 }
             }
@@ -151,8 +153,21 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
 
         // 이전 세션이 있으면 제거
         if (memberSessionMap.containsKey(memberId)) {
-            String oldSessionId = memberSessionMap.get(memberId).getId();
+            WebSocketSession oldSession = memberSessionMap.get(memberId);
+            String oldSessionId = oldSession.getId();
+
+            // 이전 세션에서 구독 정보 제거
             sessionMemberMap.remove(oldSessionId);
+
+            // 웹소켓 연결이 아직 살아있다면 연결 종료
+            if (oldSession.isOpen()) {
+                try {
+                    oldSession.close();
+                    log.info("이전 세션 {} 강제 종료 (새 세션: {})", oldSessionId, session.getId());
+                } catch (Exception e) {
+                    log.warn("이전 세션 종료 중 오류 발생", e);
+                }
+            }
         }
 
         // 새 세션 등록
@@ -169,8 +184,12 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
 
             // 새로운 구독이면 키움 클라이언트에 등록
             if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                kiwoomWebSocketClient.subscribeStock(stockCode);
+                kiwoomWebSocketClient.subscribeStockWithPurpose(stockCode, "PORTFOLIO");
                 log.info("회원 {} 보유 종목 {} 구독 등록", memberId, stockCode);
+            } else {
+                // 이미 구독 중이더라도 목적은 추가
+                kiwoomWebSocketClient.subscribeStockWithPurpose(stockCode, "PORTFOLIO");
+                log.info("회원 {} 보유 종목 {} 목적 추가 (이미 구독 중)", memberId, stockCode);
             }
         }
 

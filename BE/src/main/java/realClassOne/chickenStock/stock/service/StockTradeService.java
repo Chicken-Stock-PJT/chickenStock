@@ -430,9 +430,9 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
     // 현재가 조회 메서드 (임시 구독 처리 추가)
     private Long getCurrentStockPriceWithRetry(String stockCode) {
-        int maxRetries = 3;
+        int maxRetries = 5; // 3에서 5로 증가
         int retryCount = 0;
-        long retryDelayMs = 300;
+        long retryDelayMs = 500; // 300에서 500으로 증가
         boolean temporarySubscription = false;
         String purpose = "TEMPORARY_PRICE_CHECK_" + UUID.randomUUID();
 
@@ -448,9 +448,9 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     return null;
                 }
 
-                // 데이터 수신 대기
+                // 데이터 수신 대기 시간 증가
                 try {
-                    Thread.sleep(500);
+                    Thread.sleep(1500); // 1000ms에서 1500ms로 증가
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     log.warn("데이터 수신 대기 중 인터럽트 발생", e);
@@ -470,7 +470,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     try {
                         log.warn("{}번째 가격 조회 실패, {}ms 후 재시도", retryCount, retryDelayMs);
                         Thread.sleep(retryDelayMs);
-                        retryDelayMs *= 2;
+                        retryDelayMs *= 1.5; // 지수 백오프 조정
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
@@ -491,7 +491,15 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             if (temporarySubscription) {
                 try {
                     log.info("임시 구독한 종목 {} 특정 목적({}) 구독 해제", stockCode, purpose);
-                    kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, purpose);
+                    // 즉시 해제하지 말고 약간의 지연 추가
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(500);
+                            kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, purpose);
+                        } catch (Exception e) {
+                            log.warn("지연된 구독 해제 중 오류 발생", e);
+                        }
+                    }).start();
                 } catch (Exception e) {
                     log.warn("종목 {} 구독 해제 중 오류 발생", stockCode, e);
                 }
@@ -823,7 +831,6 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         return true; // 이미 구독 중인 경우 true 반환
     }
 
-    // 주식 가격 조회 메서드
     private Long getCurrentStockPrice(String stockCode) {
         if (stockCode == null || stockCode.trim().isEmpty()) {
             log.error("유효하지 않은 종목 코드: {}", stockCode);
@@ -833,6 +840,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         stockCode = stockCode.trim();
 
         try {
+            // latestPriceDataCache에서 조회 - 내부적으로 두 형태 모두 시도함
             JsonNode priceData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
 
             if (priceData != null && priceData.has("10")) {
