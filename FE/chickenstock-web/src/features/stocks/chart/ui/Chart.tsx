@@ -46,11 +46,11 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   // 웹소켓으로 받은 실시간 데이터로 차트 업데이트
   useEffect(() => {
     if (stockPriceData && chartData.length > 0) {
-      const lastData = chartData[chartData.length - 1];
+      const lastData = chartData[0];
       const updatedData = [...chartData];
 
       // 마지막 데이터 업데이트
-      updatedData[updatedData.length - 1] = {
+      updatedData[0] = {
         ...lastData,
         currentPrice: stockPriceData.currentPrice,
         highPrice: Math.max(
