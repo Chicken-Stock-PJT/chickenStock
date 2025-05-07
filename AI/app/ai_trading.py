@@ -4,7 +4,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import random
 
-from app.envelope import ChartDataProcessor
+# 이 import 제거
+# from app.envelope import ChartDataProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +17,8 @@ class TradingModel:
         self.kiwoom_api = kiwoom_api
         self.backend_client = None
         
-        # 차트 데이터 처리기 초기화
-        self.chart_processor = ChartDataProcessor()
+        # 차트 데이터 처리기 초기화 - 더 이상 필요 없음
+        # self.chart_processor = ChartDataProcessor()
         
         # 매매 의사결정 캐시
         self.decision_cache = {}
@@ -51,13 +52,14 @@ class TradingModel:
         self.is_running = True
         logger.info("트레이딩 모델 시작")
         
-        # 차트 데이터 및 Envelope 지표 초기화
+        # 필터링된 종목 리스트를 StockCache에 설정하고 Envelope 지표 계산
         filtered_symbols = list(self.kiwoom_api.stock_cache.stock_info_cache.keys())
         if filtered_symbols:
             logger.info(f"Envelope 지표 계산 시작: {len(filtered_symbols)}개 종목")
             
-            # Envelope 지표 계산 (시간이 오래 걸릴 수 있음)
-            success_count = await self.chart_processor.preload_envelope_indicators(filtered_symbols, self.kiwoom_api)
+            # StockCache를 사용하여 Envelope 지표 계산
+            self.kiwoom_api.stock_cache.set_filtered_stocks(filtered_symbols)
+            success_count = self.kiwoom_api.stock_cache.calculate_envelope_indicators()
             
             logger.info(f"Envelope 지표 계산 완료: {success_count}/{len(filtered_symbols)}개")
         else:
@@ -65,6 +67,36 @@ class TradingModel:
         
         # 매매 신호 모니터링 시작
         asyncio.create_task(self.monitor_signals())
+
+    async def handle_realtime_price(self, symbol, price):
+        """실시간 가격 데이터 처리"""
+        if not self.is_running:
+            return
+        
+        # Envelope 지표 가져오기 (현재가 업데이트) - StockCache 사용
+        envelope = self.kiwoom_api.stock_cache.get_envelope_indicators(symbol, price)
+        
+        if not envelope:
+            return
+        
+        # 매수/매도 신호 확인
+        current_price = envelope.get("currentPrice", 0)
+        upper_band = envelope.get("upperBand", 0)
+        lower_band = envelope.get("lowerBand", 0)
+        ma20 = envelope.get("MA20", 0)
+        
+        # 신호 저장
+        if current_price >= upper_band:
+            # 상단 밴드 터치 - 매도 신호
+            if symbol not in self.sell_candidates:
+                self.sell_candidates.append(symbol)
+                logger.info(f"매도 신호 발생: {symbol}, 현재가: {current_price:.2f}, 상한선: {upper_band:.2f}")
+        
+        elif current_price <= lower_band:
+            # 하단 밴드 터치 - 매수 신호
+            if symbol not in self.buy_candidates:
+                self.buy_candidates.append(symbol)
+                logger.info(f"매수 신호 발생: {symbol}, 현재가: {current_price:.2f}, 하한선: {lower_band:.2f}")
     
     async def stop(self):
         """트레이딩 모델 중지"""
@@ -77,7 +109,8 @@ class TradingModel:
             return
         
         # Envelope 지표 가져오기 (현재가 업데이트)
-        envelope = self.chart_processor.get_envelope_indicators(symbol, price)
+        # StockCache의 get_envelope_indicators 메서드 사용
+        envelope = self.kiwoom_api.stock_cache.get_envelope_indicators(symbol, price)
         
         if not envelope:
             return

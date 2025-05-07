@@ -21,7 +21,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("app")
-logger.setLevel(logging.DEBUG)  # 모든 로그 레벨 출력
 
 # FastAPI 애플리케이션 초기화
 app = FastAPI(
@@ -339,7 +338,7 @@ async def initialize_service():
         logger.info(f"종목 목록에 존재하는 종목: 총 {len(available_symbols)}개")
         
         # 정확히 600개 종목을 선택 (또는 최대한 가깝게)
-        target_count = 600
+        target_count = 30
         final_symbols = available_symbols[:target_count]
         
         if len(final_symbols) < target_count:
@@ -357,7 +356,9 @@ async def initialize_service():
         filtered_stockcode_list = [
             stock.get("shortCode") for stock in filtered_stock_list
         ]
-        kiwoom_api.filtered_stockcode_list = filtered_stockcode_list
+        
+        # StockCache에 필터링된 종목 리스트 설정
+        kiwoom_api.stock_cache.set_filtered_stocks(filtered_stockcode_list)
         
         # 트레이딩 모델에 차트 데이터 초기화 - Envelope 지표 계산용
         # 서버 시작 시 한 번에 모든 차트 데이터 로드 및 캐싱
@@ -365,6 +366,18 @@ async def initialize_service():
         # 여기서 filtered_stockcode_list를 사용하여 600개 종목에 대해서만 처리
         await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
         logger.info("차트 데이터 초기화 완료")
+        
+        # Envelope 지표 계산 (차트 데이터 초기화 후)
+        logger.info("Envelope 지표 계산 시작")
+        # StockCache를 사용하여 Envelope 지표 계산
+        processed_count = kiwoom_api.stock_cache.calculate_envelope_indicators()
+        logger.info(f"Envelope 지표 계산 완료: {processed_count}/{len(filtered_stockcode_list)} 종목 처리됨")
+
+        # 캐시 상태 확인
+        cached_symbols = list(kiwoom_api.stock_cache.envelope_cache.keys())
+        logger.info(f"캐시된 지표 수: {len(cached_symbols)}")
+        if cached_symbols:
+            logger.info(f"캐시된 지표 샘플: {cached_symbols[:5]}")
         
         # 실시간 데이터 구독 준비
         logger.info("실시간 데이터 구독 그룹 준비")
@@ -497,7 +510,7 @@ async def stop_trading_service():
 @app.get("/indicators")
 async def get_indicators(symbols: str = None):
     """종목별 Envelope 지표 조회"""
-    if not service_status["is_running"] or not trading_model:
+    if not service_status["is_running"] or not kiwoom_api:
         raise HTTPException(
             status_code=400,
             detail="서비스가 실행 중이지 않습니다."
@@ -509,11 +522,15 @@ async def get_indicators(symbols: str = None):
         result = {}
         for symbol in symbol_list:
             # 필터링된 종목 리스트에 있는지 확인
-            if hasattr(kiwoom_api, 'filtered_stockcode_list') and symbol in kiwoom_api.filtered_stockcode_list:
-                indicator = trading_model.chart_processor.get_envelope_indicators(symbol)
+            if symbol in kiwoom_api.stock_cache.filtered_stockcode_list:
+                # 현재가 조회
+                current_price = kiwoom_api.stock_cache.get_price(symbol)
+                
+                # Envelope 지표 조회 (StockCache 사용)
+                indicator = kiwoom_api.stock_cache.get_envelope_indicators(symbol, current_price)
                 if indicator:
                     # 종목 정보 가져오기
-                    stock_info = trading_model.kiwoom_api.stock_cache.stock_info_cache.get(symbol, {})
+                    stock_info = kiwoom_api.stock_cache.stock_info_cache.get(symbol, {})
                     stock_name = stock_info.get("name", "")
                     
                     # 지표에 종목명 추가
@@ -523,19 +540,20 @@ async def get_indicators(symbols: str = None):
     
     # 필터링된 600개 종목만 반환
     result = {}
-    if hasattr(kiwoom_api, 'filtered_stockcode_list'):
-        for symbol in kiwoom_api.filtered_stockcode_list:
-            if symbol in trading_model.chart_processor.indicators_cache:
-                indicator = trading_model.chart_processor.indicators_cache[symbol]
-                
-                # 종목 정보 가져오기
-                stock_info = trading_model.kiwoom_api.stock_cache.stock_info_cache.get(symbol, {})
-                stock_name = stock_info.get("shortName", "")
-                
-                # 지표에 종목명 추가
-                indicator_copy = indicator.copy()
-                indicator_copy["stockName"] = stock_name
-                result[symbol] = indicator_copy
+    for symbol in kiwoom_api.stock_cache.filtered_stockcode_list:
+        # 현재가 조회
+        current_price = kiwoom_api.stock_cache.get_price(symbol)
+        
+        # Envelope 지표 조회 (StockCache 사용)
+        indicator = kiwoom_api.stock_cache.get_envelope_indicators(symbol, current_price)
+        if indicator:
+            # 종목 정보 가져오기
+            stock_info = kiwoom_api.stock_cache.stock_info_cache.get(symbol, {})
+            stock_name = stock_info.get("name", "")
+            
+            # 지표에 종목명 추가
+            indicator["stockName"] = stock_name
+            result[symbol] = indicator
     
     return {
         "total_count": len(result),

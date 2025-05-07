@@ -38,7 +38,7 @@ class KiwoomAPI:
         self.account_number = ""
         
         # 종목 캐시
-        self.stock_cache = StockCache()
+        self.stock_cache = StockCache(self)
         
         # 차트 데이터 캐시
         self.chart_cache = {}
@@ -267,8 +267,8 @@ class KiwoomAPI:
     async def get_daily_chart_data(self, code, from_date=None, to_date=None, period=None, force_reload=None, kiwoom_token=None):
         """일별 차트 데이터 조회 - Envelope 지표 계산용"""
         try:
-            # 캐시 키 생성 (코드 + 기간 정보로)
-            cache_key = f"daily_{code}_{from_date or ''}_{to_date or ''}_{period or ''}"
+            # 캐시 키 생성 (간단하게 종목 코드만 사용)
+            cache_key = code  # 단순화된 캐시 키
             
             # 새로운 데이터 요청
             logger.info(f"일봉 데이터 요청: {code}")
@@ -412,7 +412,7 @@ class KiwoomAPI:
             
         return await self.websocket_client.start_rotating_subscriptions(
             callback=callback,
-            kiwoom_token=kiwoom_token  # 변경: access_token에서 kiwoom_token으로 변경
+            kiwoom_token=kiwoom_token
         )
         
     async def handle_websocket_message(self):
