@@ -232,7 +232,16 @@ public class KiwoomWebSocketClient {
         return true;
     }
 
-    // 키움 API에 실시간 데이터 등록 요청
+    // KiwoomWebSocketClient 클래스에 다음 메서드 추가
+    private String convertStockCode(String stockCode) {
+        if (stockCode == null || stockCode.trim().isEmpty()) {
+            return stockCode;
+        }
+
+        return stockCode.trim() + "_AL";
+    }
+
+    // 그리고 registerRealTimeData 메서드에서 종목 코드를 변환
     public void registerRealTimeData(String type, List<String> stockCodes) {
         if (stockCodes == null || stockCodes.isEmpty()) {
             return;
@@ -248,7 +257,8 @@ public class KiwoomWebSocketClient {
             ObjectNode dataObject = objectMapper.createObjectNode();
 
             ArrayNode itemArray = objectMapper.createArrayNode();
-            stockCodes.forEach(itemArray::add);
+            // 여기서 종목코드 변환 적용
+            stockCodes.forEach(code -> itemArray.add(convertStockCode(code)));
 
             ArrayNode typeArray = objectMapper.createArrayNode();
             typeArray.add(type);
@@ -267,7 +277,7 @@ public class KiwoomWebSocketClient {
         }
     }
 
-    // 키움 API에 실시간 데이터 해제 요청
+    // 마찬가지로 unregisterRealTimeData 메서드도 수정
     public void unregisterRealTimeData(String type, List<String> stockCodes) {
         if (stockCodes == null || stockCodes.isEmpty()) {
             return;
@@ -282,7 +292,8 @@ public class KiwoomWebSocketClient {
             ObjectNode dataObject = objectMapper.createObjectNode();
 
             ArrayNode itemArray = objectMapper.createArrayNode();
-            stockCodes.forEach(itemArray::add);
+            // 여기서 종목코드 변환 적용
+            stockCodes.forEach(code -> itemArray.add(convertStockCode(code)));
 
             ArrayNode typeArray = objectMapper.createArrayNode();
             typeArray.add(type);

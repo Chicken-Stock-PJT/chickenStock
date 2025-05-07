@@ -32,6 +32,14 @@ public class KiwoomStockApiService {
     private final ObjectMapper objectMapper;
     private final StockDataRepository stockDataRepository;
 
+    private String convertStockCode(String stockCode) {
+        if (stockCode == null || stockCode.trim().isEmpty()) {
+            return stockCode;
+        }
+
+        return stockCode.trim() + "_AL";
+    }
+
     /**
      * 키움증권 API를 통해 주식 기본 정보 조회
      */
@@ -49,7 +57,7 @@ public class KiwoomStockApiService {
                     .build();
 
             // 요청 본문 생성
-            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCode);
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", convertStockCode(stockCode));
 
             // API 호출
             String response = webClient.post()
