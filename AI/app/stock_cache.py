@@ -14,7 +14,7 @@ class StockCache:
         self.kiwoom_api = kiwoom_api
 
         # 종목 정보 캐시
-        self.stock_info_cache = {}  # {code: {shortCode, name, market}}
+        self.stock_info_cache = {}  # {code: {shortCode, shortName, market, stockType, faceValue}}
         
         # 필터링된 종목 리스트 (시가총액 상위 - 코스피 450, 코스닥 150)
         self.filtered_stockcode_list = []
@@ -380,7 +380,6 @@ class StockCache:
     
     def get_envelope_indicators(self, symbol: str, current_price: float = None):
         """종목의 Envelope 지표 조회"""
-        logger.info(self.envelope_cache)
         if symbol in self.envelope_cache:
             indicators = self.envelope_cache[symbol].copy()
             

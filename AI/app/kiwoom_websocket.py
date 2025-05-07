@@ -45,6 +45,10 @@ class KiwoomWebSocket:
         
         # 키움 API 토큰 캐싱
         self.current_kiwoom_token = None
+
+        # PING 메시지 관련 설정
+        self._ping_interval = 3  # 3초마다 PING 메시지 전송
+        self._ping_task = None
     
     async def connect(self, kiwoom_token: str = None) -> bool:
         """웹소켓 연결 및 로그인"""
@@ -72,11 +76,46 @@ class KiwoomWebSocket:
             # 연결 상태 업데이트
             self.connected = True
             logger.info("웹소켓 연결 및 로그인 성공")
+
+            # PING 태스크 시작
+            self._start_ping_task()
+
+            # 메시지 핸들링 태스크 시작 - 이 부분 추가
+            self._message_task = asyncio.create_task(self.handle_websocket_message())
+            logger.info("웹소켓 메시지 처리 태스크 시작됨")
             
             return True
         except Exception as e:
             logger.error(f"웹소켓 연결 설정 중 오류: {str(e)}")
             return False
+        
+    def _start_ping_task(self):
+        """주기적으로 PING 메시지를 보내는 태스크 시작"""
+        if not self._ping_task or self._ping_task.done():
+            self._ping_task = asyncio.create_task(self._ping_loop())
+            logger.info(f"PING 메시지 전송 태스크 시작 (간격: {self._ping_interval}초)")
+
+    async def _ping_loop(self):
+        """주기적으로 PING 메시지를 보내는 루프"""
+        try:
+            logger.info("PING 메시지 전송 루프 시작")
+            while self.connected and self.websocket and not self.websocket.closed:
+                try:
+                    # PING 메시지 전송
+                    ping_data = {"trnm": "PING"}
+                    ping_message = json.dumps(ping_data)
+                    await self.websocket.send_str(ping_message)
+                    logger.debug("PING 메시지 전송 완료")
+                    
+                    # 다음 PING까지 대기
+                    await asyncio.sleep(self._ping_interval)
+                except Exception as e:
+                    logger.error(f"PING 메시지 전송 중 오류: {str(e)}")
+                    await asyncio.sleep(5)  # 오류 발생 시 5초 후 재시도
+        except asyncio.CancelledError:
+            logger.info("PING 메시지 전송 루프가 취소되었습니다.")
+        except Exception as e:
+            logger.error(f"PING 메시지 전송 루프 오류: {str(e)}")
 
     async def _start_websocket(self):
         """웹소켓 연결 시작"""
@@ -184,8 +223,12 @@ class KiwoomWebSocket:
                 try:
                     # 현재 구독 중인 그룹 해제
                     if self._subscription_groups and self._current_group_index < len(self._subscription_groups):
-                        current_group = self._subscription_groups[self._current_group_index]
-                        await self._unregister_realtime_data(list(self.stock_cache.subscribed_symbols))
+                        # 구독된 심볼이 있는 경우에만 해지 요청
+                        subscribed_symbols = list(self.stock_cache.subscribed_symbols)
+                        if subscribed_symbols:
+                            await self._unregister_realtime_data(subscribed_symbols)
+                        
+                        # 구독 캐시 초기화
                         self.stock_cache.clear_subscribed_symbols()
                         
                         # 다음 그룹으로 이동
@@ -197,7 +240,7 @@ class KiwoomWebSocket:
                         for code in next_group:
                             self.stock_cache.add_subscribed_symbol(code)
                         
-                        # 3초 대기
+                        # 대기
                         await asyncio.sleep(10)
                     else:
                         logger.warning("구독할 그룹이 없습니다.")
@@ -214,9 +257,10 @@ class KiwoomWebSocket:
             logger.error(f"구독 로테이션 루프 오류: {str(e)}")
         
         finally:
-            # 모든 구독 해제
-            if self.websocket and not self.websocket.closed:
-                await self._unregister_realtime_data(list(self.stock_cache.subscribed_symbols))
+            # 모든 구독 해제 - 구독된 심볼이 있는 경우에만
+            subscribed_symbols = list(self.stock_cache.subscribed_symbols)
+            if self.websocket and not self.websocket.closed and subscribed_symbols:
+                await self._unregister_realtime_data(subscribed_symbols)
             self.stock_cache.clear_subscribed_symbols()
             
     async def _register_realtime_data(self, codes: List[str]):
@@ -233,20 +277,16 @@ class KiwoomWebSocket:
                     logger.error("키움 API 토큰을 발급할 수 없습니다.")
                     return False
             
-            # 각 종목별로 딕셔너리 생성
-            data_items = []
-            for code in codes:
-                data_items.append({
-                    "item": code,  # 각 종목 코드를 개별 문자열로
-                    "type": ["0B"]  # 현재가
-                })
-            
             # 실시간 데이터 구독 요청 메시지 생성
+            logger.info(codes)
             subscribe_data = {
                 "trnm": "REG",
                 "grp_no": "1",
                 "refresh": "1",
-                "data": data_items  # 각 종목별 딕셔너리가 담긴 리스트
+                "data": [{
+                    "item": codes,
+                    "type": ['0B']
+                }]
             }
 
             # 요청 전송
@@ -278,19 +318,14 @@ class KiwoomWebSocket:
                     logger.error("키움 API 토큰을 발급할 수 없습니다.")
                     return False
             
-            # 각 종목별로 딕셔너리 생성
-            data_items = []
-            for code in items:
-                data_items.append({
-                    "item": code,  # 각 종목 코드를 개별 문자열로
-                    "type": ["0B"]  # 현재가
-                })
-            
             # 실시간 데이터 구독 해지 요청 메시지 생성
             unsubscribe_data = {
                 "trnm": "REMOVE",
                 "grp_no": "1",
-                "data": data_items  # 각 종목별 딕셔너리가 담긴 리스트
+                "data": {
+                    "item": items,
+                    "type": ['0B']
+                }
             }
             
             # 요청 전송
@@ -314,7 +349,6 @@ class KiwoomWebSocket:
             
             while self.connected and self.websocket and not self.websocket.closed:
                 msg = await self.websocket.receive()
-                logger.info(f"메시지 수신됨: {msg}")
                 
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     try:
@@ -322,36 +356,38 @@ class KiwoomWebSocket:
                         logger.debug(f"웹소켓 메시지 수신: {data}")
                         
                         # 원본 메시지 구조 로깅
-                        logger.info(f"메시지 타입: {data.get('trnm')}, 키: {list(data.keys())}")
+                        trnm = data.get('trnm')
+                        logger.debug(f"메시지 타입: {trnm}, 키: {list(data.keys())}")
                         
-                        # 실시간 시세 데이터 처리 - 응답 메시지 형식에 맞게 수정
-                        if data.get("trnm") == "REAL":
+                        # PING 응답 처리
+                        if trnm == "PING":
+                            logger.debug("PING 응답 수신")
+                            continue
+                        
+                        # 실시간 시세 데이터 처리
+                        if trnm == "REAL":
                             data_list = data.get("data", [])
-                            logger.info(f"REAL 데이터 개수: {len(data_list)}")
+                            logger.debug(f"REAL 데이터 개수: {len(data_list)}")
                             
                             for item in data_list:
                                 item_type = item.get("type")
                                 item_code = item.get("item")
-                                logger.info(f"아이템: type={item_type}, item={item_code}")
                                 
                                 if item_type == "0B":  # 주식체결 타입
                                     values = item.get("values", {})
-                                    logger.info(f"values 키: {list(values.keys())}")
                                     
                                     price_str = values.get("10", "0")  # 현재가
-                                    logger.info(f"현재가 문자열: {price_str}")
                                     
                                     # 현재가가 문자열로 오므로 정수로 변환 (부호 처리)
                                     try:
                                         # 부호가 포함된 문자열 처리
                                         price = int(price_str.replace('+', '').replace('-', '').replace(',', ''))
-                                        logger.info(f"실시간 가격 수신: 종목={item_code}, 가격={price}")
+                                        logger.debug(f"실시간 가격 수신: 종목={item_code}, 가격={price}")
                                         
                                         if item_code and price > 0:
                                             # 캐시 업데이트
                                             prev_price = self.stock_cache.get_price(item_code)
                                             self.stock_cache.update_price(item_code, price)
-                                            logger.info(f"가격 캐시 업데이트: {item_code} - {price}")
                                             
                                             # 업데이트 카운터 증가
                                             update_counter += 1
@@ -362,13 +398,12 @@ class KiwoomWebSocket:
                                             
                                             # 콜백 함수 호출
                                             if self.real_data_callback:
-                                                stock_name = self.stock_cache.get_stock_name(item_code)
-                                                self.real_data_callback(item_code, price, stock_name)
+                                                asyncio.create_task(self.real_data_callback(item_code, price))
                                     except ValueError as ve:
                                         logger.error(f"현재가 변환 오류: {price_str} - {str(ve)}")
                         
                         # 등록 응답 처리
-                        elif data.get("trnm") == "REG":
+                        elif trnm == "REG":
                             return_code = data.get("return_code")
                             return_msg = data.get("return_msg", "")
                             
@@ -427,6 +462,16 @@ class KiwoomWebSocket:
     async def close(self):
         """웹소켓 연결 종료"""
         try:
+            # PING 태스크 취소
+            if self._ping_task and not self._ping_task.done():
+                self._ping_task.cancel()
+                logger.info("PING 메시지 전송 태스크 취소됨")
+
+            # 메시지 처리 태스크 취소 - 이 부분 추가
+            if self._message_task and not self._message_task.done():
+                self._message_task.cancel()
+                logger.info("웹소켓 메시지 처리 태스크 취소됨")
+
             # 구독 관리 태스크 취소
             if self._subscription_task and not self._subscription_task.done():
                 self._subscription_task.cancel()
