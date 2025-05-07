@@ -4,6 +4,7 @@ import ChartHeader from "./ChartHeader";
 import { ChartData, ChartType } from "../model/types";
 import { getStockChartData } from "../api";
 import StockChart from "./ChartBody";
+import { useWebSocketStore } from "@/shared/store/websocket";
 
 interface ChartProps {
   stockName?: string;
@@ -20,8 +21,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [chartType, setChartType] = useState<"MINUTE" | "DAILY" | "YEARLY">("DAILY");
-  // const [hasNext, setHasNext] = useState(false);
-  // const [nextKey, setNextKey] = useState("");
+  const { stockPriceData } = useWebSocketStore();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -33,8 +33,6 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
           nextKey: "",
         });
         setChartData(data.chartData);
-        // setHasNext(data.hasNext);
-        // setNextKey(data.nextKey);
         console.log(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
@@ -45,29 +43,33 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     void fetchData();
   }, [stockCode, chartType]);
 
-  // const handleLoadMore = async () => {
-  //   try {
-  //     // API 호출로 추가 데이터 가져오기
-  //     const response = await getStockChartData({
-  //       stockCode,
-  //       chartType,
-  //       hasNext,
-  //       nextKey: nextKey,
-  //     });
-  //     // 새로운 데이터를 기존 데이터 앞에 추가 (과거 데이터이므로)
-  //     setChartData((prevData) => [...response.chartData, ...prevData]);
-  //     setHasNext(response.hasNext);
-  //     setNextKey(response.nextKey);
-  //   } catch (error) {
-  //     console.error("Failed to load more data:", error);
-  //   }
-  // };
+  // 웹소켓으로 받은 실시간 데이터로 차트 업데이트
+  useEffect(() => {
+    if (stockPriceData && chartData.length > 0) {
+      const lastData = chartData[0];
+      const updatedData = [...chartData];
+
+      // 마지막 데이터 업데이트
+      updatedData[0] = {
+        ...lastData,
+        currentPrice: stockPriceData.currentPrice,
+        highPrice: Math.max(
+          Number(lastData.highPrice),
+          Number(stockPriceData.currentPrice),
+        ).toString(),
+        lowPrice: Math.min(
+          Number(lastData.lowPrice),
+          Number(stockPriceData.currentPrice),
+        ).toString(),
+      };
+
+      setChartData(updatedData);
+    }
+  }, [stockPriceData]);
 
   const handleChartTypeChange = (type: ChartType) => {
     setChartType(type);
     setChartData([]);
-    // setHasNext(false);
-    // setNextKey("");
   };
 
   if (loading) return <div>Loading...</div>;
