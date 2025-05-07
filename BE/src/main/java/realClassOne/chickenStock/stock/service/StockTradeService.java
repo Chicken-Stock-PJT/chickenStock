@@ -4,9 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.member.entity.InvestmentSummary;
 import realClassOne.chickenStock.member.entity.Member;
@@ -16,6 +19,7 @@ import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.dto.common.PendingOrderDTO;
 import realClassOne.chickenStock.stock.dto.request.TradeRequestDTO;
 import realClassOne.chickenStock.stock.dto.response.InitializeMoneyResponseDTO;
+import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.TradeResponseDTO;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.PendingOrder;
@@ -59,6 +63,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     // 트레이드 성공 여부를 추적하기 위한 메트릭
     private final AtomicInteger successfulTrades = new AtomicInteger(0);
     private final AtomicInteger failedTrades = new AtomicInteger(0);
+
+    private final KiwoomStockApiService kiwoomStockApiService;
 
     @PostConstruct
     public void init() {
@@ -268,11 +274,14 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             try {
                 // 매번 최신 상태의 포지션 정보를 조회
                 HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, stock)
-                        .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "해당 종목을 보유하고 있지 않습니다"));
+                        .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK,
+                                "해당 종목을 보유하고 있지 않습니다: " + request.getStockCode()));
 
+                // 수량 검증 강화 - 명확한 에러 메시지 포함
                 if (position.getQuantity() < request.getQuantity()) {
                     failedTrades.incrementAndGet();
-                    throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "보유 수량이 부족합니다");
+                    throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK,
+                            "보유 수량이 부족합니다. 요청: " + request.getQuantity() + "주, 보유: " + position.getQuantity() + "주");
                 }
 
                 // 시장가 주문인 경우 실시간 가격 조회
@@ -499,7 +508,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
                 if (!success) {
                     log.error("종목 {} 임시 구독 실패", stockCode);
-                    return null;
+                    // REST API로 전환하여 현재가 조회
+                    return getCurrentPriceUsingRestApi(stockCode);
                 }
 
                 // 데이터 수신 대기 시간 증가
@@ -532,14 +542,17 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 }
             }
 
-            if (price == null) {
-                log.error("종목 {} 가격 조회 최대 재시도 횟수 초과", stockCode);
+            if (price != null) {
+                return price;
             }
 
-            return price;
+            log.error("종목 {} 가격 조회 최대 재시도 횟수 초과, REST API로 시도", stockCode);
+            // 웹소켓 조회 실패 시 REST API로 시도
+            return getCurrentPriceUsingRestApi(stockCode);
         } catch (Exception e) {
             log.error("종목 {} 가격 조회 중 예외 발생", stockCode, e);
-            return null;
+            // 예외 발생 시 REST API로 시도
+            return getCurrentPriceUsingRestApi(stockCode);
         } finally {
             // 임시 구독이었다면 해당 목적의 구독만 해제
             if (temporarySubscription) {
@@ -558,6 +571,49 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     log.warn("종목 {} 구독 해제 중 오류 발생", stockCode, e);
                 }
             }
+        }
+    }
+
+    // REST API를 이용한 현재가 조회 메서드
+    private Long getCurrentPriceUsingRestApi(String stockCode) {
+        try {
+            log.info("종목 {} REST API를 통한 현재가 조회 시도", stockCode);
+
+            // 1. 먼저 getStockInfo 메서드 시도
+            try {
+                StockInfoResponseDTO stockInfo = kiwoomStockApiService.getStockInfo(stockCode);
+                if (stockInfo != null) {
+                    String currentPriceStr = stockInfo.getCurrentPrice()
+                            .replace(",", "")
+                            .replace("+", "")
+                            .replace("-", "")
+                            .trim();
+                    Long currentPrice = Long.parseLong(currentPriceStr);
+                    log.info("종목 {} REST API (getStockInfo) 현재가 조회 성공: {}원", stockCode, currentPrice);
+                    return currentPrice;
+                }
+            } catch (Exception e) {
+                log.warn("getStockInfo로 현재가 조회 실패, getStockBasicInfo 시도: {}", e.getMessage());
+            }
+
+            // 2. getStockBasicInfo 메서드 시도
+            JsonNode stockBasicInfo = kiwoomStockApiService.getStockBasicInfo(stockCode);
+            if (stockBasicInfo != null && stockBasicInfo.has("cur_prc")) {
+                String currentPriceStr = stockBasicInfo.get("cur_prc").asText()
+                        .replace(",", "")
+                        .replace("+", "")
+                        .replace("-", "")
+                        .trim();
+                Long currentPrice = Long.parseLong(currentPriceStr);
+                log.info("종목 {} REST API (getStockBasicInfo) 현재가 조회 성공: {}원", stockCode, currentPrice);
+                return currentPrice;
+            }
+
+            log.error("종목 {} REST API 응답에서 현재가를 찾을 수 없음", stockCode);
+            return null;
+        } catch (Exception e) {
+            log.error("종목 {} REST API를 통한 현재가 조회 중 오류 발생", stockCode, e);
+            return null;
         }
     }
 
