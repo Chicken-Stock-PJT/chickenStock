@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
 import { useAuthStore } from "@/shared/store/auth";
-import { getPortfolio, getTransactions, updateNickname } from "../api";
-import { AxiosError } from "axios";
-import { TransactionResponse } from "./types";
+import { getDailyProfitRate, getPortfolio, getTransactions, updateNickname } from "../api";
+import { AxiosError, AxiosResponse } from "axios";
+import { DailyProfitRateResponse, TransactionResponse } from "./types";
 
 interface ErrorResponse {
   status: number;
@@ -60,4 +60,11 @@ export const useGetTransactions = () => {
     });
 
   return { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage };
+};
+
+export const useGetDailyProfitRate = () => {
+  return useQuery<DailyProfitRateResponse, AxiosResponse<ErrorResponse>>({
+    queryKey: ["dailyProfitRate"],
+    queryFn: getDailyProfitRate,
+  });
 };

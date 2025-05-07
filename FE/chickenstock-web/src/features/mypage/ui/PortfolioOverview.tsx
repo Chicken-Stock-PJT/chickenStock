@@ -1,3 +1,4 @@
+import { useGetDailyProfitRate } from "@/features/mypage/model/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import { ArrowUpIcon, ArrowDownIcon } from "lucide-react";
 
@@ -13,19 +14,7 @@ const PortfolioOverview = ({
   totalReturnRate,
   sectors,
 }: PortfolioOverviewProps) => {
-  const user = {
-    email: "user@example.com",
-    nickname: "치킨러버",
-    joinDate: "2023-01-15",
-    accountBalance: 12500000,
-    totalProfit: 1850000,
-    profitRate: 17.3,
-    todayProfit: 125000,
-    todayProfitRate: 1.2,
-    ranking: 342,
-    totalUsers: 10542,
-    rankingPercentile: 3.2,
-  };
+  const { data: dailyProfitRate } = useGetDailyProfitRate();
 
   const sectorMention = () => {
     if (sectors === 0) {
@@ -61,33 +50,45 @@ const PortfolioOverview = ({
         </CardContent>
       </Card>
 
-      {/* 여긴 아직 구현 X */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle>금일 수익</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className={`text-2xl font-bold ${user.todayProfit >= 0 ? "text-green-500" : "text-red-500"}`}
-          >
-            {user.todayProfit >= 0 ? "+" : ""}
-            {user.todayProfit.toLocaleString()}원
-          </div>
-          <div className="mt-2 flex items-center">
-            <div
-              className={`flex items-center ${user.todayProfit >= 0 ? "text-green-500" : "text-red-500"}`}
-            >
-              {user.todayProfit >= 0 ? (
-                <ArrowUpIcon className="mr-1 size-4" />
-              ) : (
-                <ArrowDownIcon className="mr-1 size-4" />
-              )}
-              <span>
-                {user.todayProfit >= 0 ? "+" : ""}
-                {user.todayProfitRate.toFixed(2)}%
-              </span>
-            </div>
-          </div>
+          {dailyProfitRate?.periodReturns.daily ? (
+            <>
+              <div
+                className={`text-2xl font-bold ${dailyProfitRate.periodReturns.daily.profitLoss >= 0 ? "text-green-500" : "text-red-500"}`}
+              >
+                {dailyProfitRate.periodReturns.daily.profitLoss >= 0 ? "+" : ""}
+                {dailyProfitRate.periodReturns.daily.profitLoss.toLocaleString()}원
+              </div>
+              <div className="mt-2 flex items-center">
+                <div
+                  className={`flex items-center ${dailyProfitRate.periodReturns.daily.returnRate >= 0 ? "text-green-500" : "text-red-500"}`}
+                >
+                  {dailyProfitRate.periodReturns.daily.returnRate >= 0 ? (
+                    <ArrowUpIcon className="mr-1 size-4" />
+                  ) : (
+                    <ArrowDownIcon className="mr-1 size-4" />
+                  )}
+                  <span>
+                    {dailyProfitRate.periodReturns.daily.returnRate >= 0 ? "+" : ""}
+                    {dailyProfitRate.periodReturns.daily.returnRate.toFixed(2)}%
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className={`text-2xl font-bold text-green-500`}>0원</div>
+              <div className="mt-2 flex items-center">
+                <div className={`flex items-center text-green-500`}>
+                  <span>0.0%</span>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

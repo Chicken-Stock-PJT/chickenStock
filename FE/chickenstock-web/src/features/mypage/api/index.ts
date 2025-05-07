@@ -1,6 +1,7 @@
 import apiClient from "@/shared/api/axios";
 import { SimpleProfile } from "@/shared/store/types";
 import {
+  DailyProfitRateResponse,
   PortfolioResponse,
   TransactionResponse,
   UpdateNicknameSuccess,
@@ -84,4 +85,13 @@ export const getTransactions = async ({
     // 기본 에러 throw
     throw error;
   }
+};
+
+// 일간 수익률 조회
+export const getDailyProfitRate = async (): Promise<DailyProfitRateResponse> => {
+  const response = await apiClient.get<DailyProfitRateResponse>(
+    "/members/return-rate/period?period=daily",
+  );
+  console.log(response.data);
+  return response.data;
 };
