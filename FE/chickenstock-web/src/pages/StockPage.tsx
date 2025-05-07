@@ -4,14 +4,29 @@ import OrderBook from "@/features/stocks/orderBook/ui";
 import Trade from "@/features/stocks/trade/ui/Trade";
 import Status from "@/features/stocks/status/ui/Status";
 import { useEffect, useState } from "react";
-import { getStockInfo } from "@/features/stocks/api";
+import { getStockInfo, getStockPrice } from "@/features/stocks/api";
 import { useWebSocketStore } from "@/shared/store/websocket";
 
 const StockPage = () => {
   const stockCode = useParams().stockCode?.slice(0, 6);
   const [stockName, setStockName] = useState<string>("");
+  const [currentPrice, setCurrentPrice] = useState<string>("");
+  const [priceChange, setPriceChange] = useState<string>("");
+  const [changeRate, setChangeRate] = useState<string>("");
 
   const { connect, disconnect, stockPriceData } = useWebSocketStore();
+
+  useEffect(() => {
+    const initialStockPrice = async () => {
+      if (!stockCode) return;
+      const res = await getStockPrice(stockCode);
+      setCurrentPrice(res.currentPrice);
+      setPriceChange(res.priceChange);
+      setChangeRate(res.changeRate);
+    };
+
+    void initialStockPrice();
+  }, [stockCode]);
 
   // 종목 정보 조회
   useEffect(() => {
@@ -41,9 +56,9 @@ const StockPage = () => {
               stockName={stockName}
               stockCode={stockCode}
               priceData={{
-                currentPrice: stockPriceData?.currentPrice ?? "0",
-                priceChange: stockPriceData?.priceChange ?? "0",
-                changeRate: stockPriceData?.changeRate ?? "0",
+                currentPrice: stockPriceData?.currentPrice ?? currentPrice,
+                priceChange: stockPriceData?.priceChange ?? priceChange,
+                changeRate: stockPriceData?.changeRate ?? changeRate,
               }}
             />
           </div>
