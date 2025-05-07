@@ -474,7 +474,7 @@ public class StockRankingService {
                             rankingItems.add(itemDTO);
                         }
                     } else {
-                        log.debug("StockData에 존재하지 않는 종목 코드 무시: {}", fullStockCode);
+//                        log.debug("StockData에 존재하지 않는 종목 코드 무시: {}", fullStockCode);
                     }
                 }
             }
