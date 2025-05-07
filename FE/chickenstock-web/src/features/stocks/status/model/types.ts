@@ -37,3 +37,21 @@ export interface ErrorResponse {
   message: string;
   errorCode: string;
 }
+
+export interface CancelOrderResponse {
+  status: "success" | "error";
+  message: string;
+}
+
+export type PendingOrdersResponse = PendingOrder[];
+
+export interface PendingOrder {
+  orderId: number; // 보류 주문 ID
+  stockCode: string; // 단축코드
+  stockName: string; // 종목명
+  orderType: "BUY" | "SELL"; // 주문 유형 (매수)  BUY,SELL
+  quantity: number; // 주문 수량
+  targetPrice: number; // 목표가
+  createdAt: string; // 생성 시간
+  status: "PENDING"; // 주문 상태 (대기중)
+}
