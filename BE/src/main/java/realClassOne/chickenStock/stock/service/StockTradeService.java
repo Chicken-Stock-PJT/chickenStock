@@ -448,9 +448,9 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     return null;
                 }
 
-                // 데이터 수신 대기
+                // 데이터 수신 대기 시간 증가 (500ms -> 1000ms)
                 try {
-                    Thread.sleep(500);
+                    Thread.sleep(1000); // 1000ms로 증가
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     log.warn("데이터 수신 대기 중 인터럽트 발생", e);
@@ -823,7 +823,6 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         return true; // 이미 구독 중인 경우 true 반환
     }
 
-    // 주식 가격 조회 메서드
     private Long getCurrentStockPrice(String stockCode) {
         if (stockCode == null || stockCode.trim().isEmpty()) {
             log.error("유효하지 않은 종목 코드: {}", stockCode);
@@ -833,6 +832,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         stockCode = stockCode.trim();
 
         try {
+            // latestPriceDataCache에서 조회 - 내부적으로 두 형태 모두 시도함
             JsonNode priceData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
 
             if (priceData != null && priceData.has("10")) {
