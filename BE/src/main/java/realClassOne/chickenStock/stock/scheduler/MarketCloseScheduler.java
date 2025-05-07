@@ -52,7 +52,7 @@ public class MarketCloseScheduler {
      * 매일 저녁 8시에 실행되는 스케줄러
      * 모든 지정가 주문을 배치 단위로 취소하고 로그를 남깁니다.
      */
-    @Scheduled(initialDelay = 120000, fixedRate = Long.MAX_VALUE)
+    @Scheduled(cron = "0 0 20 * * *", zone = "Asia/Seoul")
     public void cancelAllPendingOrders() {
         log.info("시장 마감 프로세스 실행: 모든 지정가 주문 취소 시작");
 
@@ -184,7 +184,7 @@ public class MarketCloseScheduler {
      * 모든 종목 구독을 배치 단위로 해제하고 로그를 남깁니다.
      * 구독 취소 상태에 따라 이메일 발송
      */
-    @Scheduled(initialDelay = 130000, fixedRate = Long.MAX_VALUE)
+    @Scheduled(cron = "0 1 20 * * *", zone = "Asia/Seoul")
     public void unsubscribeAllStocks() {
         log.info("시장 마감 프로세스 실행: 모든 종목 구독 해제 시작");
         boolean isSuccessful = true; // 전체 과정 성공 여부
