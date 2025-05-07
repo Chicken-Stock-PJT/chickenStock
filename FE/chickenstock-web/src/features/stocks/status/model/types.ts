@@ -37,3 +37,8 @@ export interface ErrorResponse {
   message: string;
   errorCode: string;
 }
+
+export interface CancelOrderResponse {
+  status: "success" | "error";
+  message: string;
+}

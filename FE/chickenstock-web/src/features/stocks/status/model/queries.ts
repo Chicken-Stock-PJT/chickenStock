@@ -1,4 +1,4 @@
-import getStatus from "@/features/stocks/status/api";
+import { getStatus } from "@/features/stocks/status/api";
 import { useQuery } from "@tanstack/react-query";
 
 export const useGetStatus = (stockCode: string) => {
