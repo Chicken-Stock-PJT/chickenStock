@@ -14,6 +14,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -143,14 +144,23 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
         // 해당 세션의 모든 구독 종목 해제
         Set<String> subscribedStocks = sessionSubscriptions.remove(session.getId());
-        if (subscribedStocks != null) {
-            for (String stockCode : subscribedStocks) {
-                // 구독자 수 차감 (반드시 구독 해제 전에 수행)
-                stockCodeSubscriberCount.computeIfPresent(stockCode, (k, v) -> v > 1 ? v - 1 : null);
-                // 키움 API에서 구독 해제
-                kiwoomWebSocketClient.unsubscribeStock(stockCode);
-                log.info("세션 종료로 인한 종목 {} 구독 해제, 남은 구독자 수: {}",
-                        stockCode, stockCodeSubscriberCount.getOrDefault(stockCode, 0));
+        if (subscribedStocks != null && !subscribedStocks.isEmpty()) {
+            // 복사본 생성하여 ConcurrentModificationException 방지
+            Set<String> stocksToUnsubscribe = new HashSet<>(subscribedStocks);
+
+            for (String stockCode : stocksToUnsubscribe) {
+                try {
+                    // 구독자 수 감소
+                    stockCodeSubscriberCount.computeIfPresent(stockCode, (k, v) -> v > 1 ? v - 1 : null);
+
+                    // 웹소켓 목적으로 종목 구독 해제
+                    boolean success = kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, "WEBSOCKET_CLIENT");
+
+                    log.info("세션 종료로 인한 종목 {} 구독 해제, 성공: {}, 남은 구독자 수: {}",
+                            stockCode, success, stockCodeSubscriberCount.getOrDefault(stockCode, 0));
+                } catch (Exception e) {
+                    log.error("종목 {} 구독 해제 중 오류 발생", stockCode, e);
+                }
             }
         }
 
