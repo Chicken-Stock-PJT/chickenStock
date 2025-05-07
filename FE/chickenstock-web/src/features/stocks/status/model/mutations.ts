@@ -6,7 +6,7 @@ export const useCancelOrder = (orderId: string, stockCode: string) => {
   return useMutation({
     mutationFn: () => cancelOrder(orderId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["status", stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["pendingOrders", stockCode] });
     },
     onError: (error) => {
       alert(error.message);

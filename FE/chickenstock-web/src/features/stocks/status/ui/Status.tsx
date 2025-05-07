@@ -1,12 +1,11 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 import OpenOrderItem from "./OpenOrderItem";
-import { OpenOrder } from "../model/types";
 import FilledOrderItem from "./FilledOrderItem";
-import { useGetStatus } from "@/features/stocks/status/model/queries";
+import { useGetPendingOrders, useGetStatus } from "@/features/stocks/status/model/queries";
 
 const Status = ({ stockCode }: { stockCode: string }) => {
   const { data: filledTrades } = useGetStatus(stockCode);
-  const openOrders: OpenOrder[] = [];
+  const { data: pendingOrders } = useGetPendingOrders(stockCode);
 
   return (
     <div className="flex h-full flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
@@ -35,8 +34,10 @@ const Status = ({ stockCode }: { stockCode: string }) => {
 
         {/* 미체결내역 컨텐츠 */}
         <TabsContent value="unfilled" className="flex-1 overflow-auto">
-          {openOrders.length ? (
-            openOrders.map((order, idx) => <OpenOrderItem key={idx} order={order} idx={idx} />)
+          {pendingOrders?.length ? (
+            pendingOrders.map((order, idx) => (
+              <OpenOrderItem key={order.orderId} order={order} idx={idx} />
+            ))
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-gray-500">
               체결 내역이 없습니다.
