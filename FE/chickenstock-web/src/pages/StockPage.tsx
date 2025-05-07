@@ -56,10 +56,13 @@ const StockPage = () => {
         </div>
         <div className="col-span-4 flex flex-col gap-2 overflow-hidden">
           <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
-            <Trade />
+            <Trade
+              currentPrice={Number(stockPriceData?.currentPrice ?? "0")}
+              stockCode={stockCode ?? ""}
+            />
           </div>
           <div className="flex-1 overflow-auto">
-            <Status />
+            <Status stockCode={stockCode ?? ""} />
           </div>
         </div>
       </div>
