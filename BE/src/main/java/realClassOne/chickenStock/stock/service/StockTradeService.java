@@ -758,6 +758,13 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
             PendingOrder pendingOrder = null;
             try {
+                // [추가] 지정가 매도를 위한 주식 수량 "예약" 처리
+                // 포지션에서 매도 예정 수량을 차감 또는 표시
+                int newQuantity = position.getQuantity() - request.getQuantity();
+                position.updatePosition(newQuantity, position.getAveragePrice(),
+                        position.getCurrentProfit(), position.getReturnRate());
+                holdingPositionRepository.save(position);
+
                 // 지정가 주문 생성
                 pendingOrder = PendingOrder.of(
                         member,
@@ -787,8 +794,14 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             } catch (Exception e) {
                 log.error("지정가 매도 주문 처리 중 오류 발생", e);
 
-                // 주문이 생성되었다면 실패 상태로 변경
+                // [추가] 주문 실패 시 차감했던 수량 복구
                 if (pendingOrder != null) {
+                    // 예약했던 주식 수량 되돌리기
+                    int restoredQuantity = position.getQuantity() + request.getQuantity();
+                    position.updatePosition(restoredQuantity, position.getAveragePrice(),
+                            position.getCurrentProfit(), position.getReturnRate());
+                    holdingPositionRepository.save(position);
+
                     pendingOrder.fail();
                     pendingOrderRepository.save(pendingOrder);
                 }
@@ -1287,6 +1300,39 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 memberRepository.save(member);
                 log.info("취소된 매수 주문에 대한 금액 환불: 주문ID={}, 금액={}원", orderId, refundAmount);
             }
+            // 매도 주문인 경우 예약된 주식 수량 복구
+            else if (order.getOrderType() == TradeHistory.TradeType.SELL) {
+                // 해당 포지션 찾기
+                HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, order.getStockData())
+                        .orElse(null);
+
+                if (position != null) {
+                    // 예약했던 주식 수량 되돌리기
+                    int restoredQuantity = position.getQuantity() + order.getQuantity();
+                    position.updatePosition(restoredQuantity, position.getAveragePrice(),
+                            position.getCurrentProfit(), position.getReturnRate());
+                    holdingPositionRepository.save(position);
+                    log.info("취소된 매도 주문에 대한 주식 수량 복구: 주문ID={}, 종목={}, 수량={}주",
+                            orderId, order.getStockData().getShortCode(), order.getQuantity());
+                } else {
+                    // 만약 포지션이 삭제되었다면 새로 생성
+                    HoldingPosition newPosition = HoldingPosition.of(
+                            member,
+                            order.getStockData(),
+                            order.getQuantity(),
+                            order.getTargetPrice(),
+                            0L,  // 초기 수익
+                            0.0  // 초기 수익률
+                    );
+                    holdingPositionRepository.save(newPosition);
+                    member.addHoldingPosition(newPosition);
+                    log.info("취소된 매도 주문에 대한 새 포지션 생성: 주문ID={}, 종목={}, 수량={}주",
+                            orderId, order.getStockData().getShortCode(), order.getQuantity());
+                }
+
+                // 투자 요약 업데이트
+                updateInvestmentSummary(member);
+            }
 
             // 주문 취소 처리
             order.cancel();
@@ -1298,6 +1344,13 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             String stockCode = order.getStockData().getShortCode();
             if (!isStockNeededElsewhere(stockCode)) {
                 unsubscribeStockAfterTrade(stockCode);
+            }
+
+            // 포트폴리오 웹소켓 업데이트 알림
+            try {
+                portfolioWebSocketHandler.sendFullPortfolioUpdate(member.getMemberId());
+            } catch (Exception e) {
+                log.warn("포트폴리오 업데이트 알림 전송 중 오류 발생: {}", e.getMessage());
             }
 
             return true;
