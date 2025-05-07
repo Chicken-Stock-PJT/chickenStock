@@ -7,3 +7,11 @@ export interface StockInfo {
   prevDayCompare: string; // 전일대비 변동 금액 (오늘 가격 - 어제 가격, 단위: 원)
   fluctuationRate: string; // 등락률 (전일대비 변동률, 단위: %)
 }
+
+export interface StockPrice {
+  stockCode: string;
+  stockName: string;
+  currentPrice: string;
+  priceChange: string;
+  changeRate: string;
+}
