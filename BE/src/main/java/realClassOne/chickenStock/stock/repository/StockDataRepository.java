@@ -8,6 +8,5 @@ import java.util.Optional;
 
 @Repository
 public interface StockDataRepository extends JpaRepository<StockData, String> {
-    Optional<StockData> findByShortName(String shortName);
     Optional<StockData> findByShortCode(String shortCode);
 }
