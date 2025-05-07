@@ -32,10 +32,10 @@ public class StockData {
     @Column(name = "face_value")
     private String faceValue;  // 액면가
 
-    @OneToMany(mappedBy = "stockData", cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "stockData", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<TradeHistory> tradeHistories = new ArrayList<>();
 
-    @OneToMany(mappedBy = "stockData", cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "stockData", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<HoldingPosition> holdingPositions = new ArrayList<>();
 
     private StockData(String shortCode, String shortName, String market, String stockType, String faceValue) {
