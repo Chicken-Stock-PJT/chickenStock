@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -52,7 +51,7 @@ public class StockRankingService {
     /**
      * 거래대금 상위 종목 목록을 조회합니다.
      *
-     * @param marketType 시장구분 (000:전체, 001:코스피, 101:코스닥)
+     * @param marketType        시장구분 (000:전체, 001:코스피, 101:코스닥)
      * @param includeManagement 관리종목포함 여부 (0:미포함, 1:포함)
      * @return 거래대금 상위 종목 목록
      */
@@ -78,7 +77,7 @@ public class StockRankingService {
      * 전일대비등락률 상위 종목 목록을 조회합니다.
      *
      * @param marketType 시장구분 (000:전체, 001:코스피, 101:코스닥)
-     * @param sortType 정렬구분 (1:상승률, 2:상승폭, 3:하락률, 4:하락폭)
+     * @param sortType   정렬구분 (1:상승률, 2:상승폭, 3:하락률, 4:하락폭)
      * @return 전일대비등락률 상위 종목 목록
      */
     public StockRankingResponseDTO getFluctuationRateTopList(String marketType, String sortType) {
@@ -103,7 +102,7 @@ public class StockRankingService {
      * 당일거래량 상위 종목 목록을 조회합니다.
      *
      * @param marketType 시장구분 (000:전체, 001:코스피, 101:코스닥)
-     * @param sortType 정렬구분 (1:거래량, 2:거래회전율, 3:거래대금)
+     * @param sortType   정렬구분 (1:거래량, 2:거래회전율, 3:거래대금)
      * @return 당일거래량 상위 종목 목록
      */
     public StockRankingResponseDTO getTradeVolumeTopList(String marketType, String sortType) {
@@ -139,28 +138,9 @@ public class StockRankingService {
     }
 
     /**
-     * 10초마다 거래대금 상위 종목 데이터를 업데이트합니다.
-     */
-    @Scheduled(fixedRate = 10000) // 10초마다 실행
-    public void updateTradeAmountRanking() {
-        try {
-            // log.info("거래대금 상위 데이터 업데이트 시작");
-            // 전체 시장, 관리종목 포함
-            updateTradeAmountRankingForParams(DEFAULT_MARKET_TYPE, DEFAULT_INCLUDE_MANAGEMENT);
-            // 코스피, 관리종목 포함
-            updateTradeAmountRankingForParams("001", DEFAULT_INCLUDE_MANAGEMENT);
-            // 코스닥, 관리종목 포함
-            updateTradeAmountRankingForParams("101", DEFAULT_INCLUDE_MANAGEMENT);
-            // log.info("거래대금 상위 데이터 업데이트 완료");
-        } catch (Exception e) {
-            log.error("거래대금 상위 데이터 업데이트 실패", e);
-        }
-    }
-
-    /**
      * 특정 매개변수에 대한 거래대금 상위 종목 데이터를 업데이트합니다.
      */
-    private void updateTradeAmountRankingForParams(String marketType, String includeManagement) {
+    public void updateTradeAmountRankingForParams(String marketType, String includeManagement) {
         try {
             StockRankingRequestDTO request = StockRankingRequestDTO.builder()
                     .rankingType("TRADE_AMOUNT")
@@ -173,7 +153,7 @@ public class StockRankingService {
             if (response.getCode() == 0) {
                 String cacheKey = buildTradeAmountCacheKey(marketType, includeManagement);
                 cacheResponse(cacheKey, response);
-                // log.debug("거래대금 상위 데이터 캐시 업데이트: {}", cacheKey);
+                log.debug("거래대금 상위 데이터 캐시 업데이트: {}, 항목 수: {}", cacheKey, response.getRankingItems().size());
             }
         } catch (Exception e) {
             log.error("거래대금 상위 데이터 업데이트 실패: market={}, include={}", marketType, includeManagement, e);
@@ -181,31 +161,9 @@ public class StockRankingService {
     }
 
     /**
-     * 12초마다 전일대비등락률 상위 종목 데이터를 업데이트합니다.
-     * 거래대금과 간격을 두어 API 호출 부하 분산
-     */
-    @Scheduled(fixedRate = 10000, initialDelay = 3000) // 10초마다 실행, 초기 지연 3초
-    public void updateFluctuationRateRanking() {
-        try {
-            // "전일대비등락률 상위 데이터 업데이트 시작"
-            // 전체 시장, 상승률
-            updateFluctuationRateRankingForParams(DEFAULT_MARKET_TYPE, "1");
-            // 전체 시장, 하락률
-            updateFluctuationRateRankingForParams(DEFAULT_MARKET_TYPE, "3");
-            // 코스피, 상승률
-            updateFluctuationRateRankingForParams("001", "1");
-            // 코스닥, 상승률
-            updateFluctuationRateRankingForParams("101", "1");
-            // "전일대비등락률 상위 데이터 업데이트 완료"
-        } catch (Exception e) {
-            log.error("전일대비등락률 상위 데이터 업데이트 실패", e);
-        }
-    }
-
-    /**
      * 특정 매개변수에 대한 전일대비등락률 상위 종목 데이터를 업데이트합니다.
      */
-    private void updateFluctuationRateRankingForParams(String marketType, String sortType) {
+    public void updateFluctuationRateRankingForParams(String marketType, String sortType) {
         try {
             StockRankingRequestDTO request = StockRankingRequestDTO.builder()
                     .rankingType("FLUCTUATION_RATE")
@@ -224,7 +182,7 @@ public class StockRankingService {
             if (response.getCode() == 0) {
                 String cacheKey = buildFluctuationRateCacheKey(marketType, sortType);
                 cacheResponse(cacheKey, response);
-                // log.debug("전일대비등락률 상위 데이터 캐시 업데이트: {}", cacheKey);
+                log.debug("전일대비등락률 상위 데이터 캐시 업데이트: {}, 항목 수: {}", cacheKey, response.getRankingItems().size());
             }
         } catch (Exception e) {
             log.error("전일대비등락률 상위 데이터 업데이트 실패: market={}, sort={}", marketType, sortType, e);
@@ -232,29 +190,9 @@ public class StockRankingService {
     }
 
     /**
-     * 14초마다 당일거래량 상위 종목 데이터를 업데이트합니다.
-     * 다른 API 호출과 간격을 두어 부하 분산
-     */
-    @Scheduled(fixedRate = 10000, initialDelay = 6000) // 10초마다 실행, 초기 지연 6초
-    public void updateTradeVolumeRanking() {
-        try {
-            // log.info("당일거래량 상위 데이터 업데이트 시작");
-            // 전체 시장, 거래량
-            updateTradeVolumeRankingForParams(DEFAULT_MARKET_TYPE, "1");
-            // 코스피, 거래량
-            updateTradeVolumeRankingForParams("001", "1");
-            // 코스닥, 거래량
-            updateTradeVolumeRankingForParams("101", "1");
-            // log.info("당일거래량 상위 데이터 업데이트 완료");
-        } catch (Exception e) {
-            log.error("당일거래량 상위 데이터 업데이트 실패", e);
-        }
-    }
-
-    /**
      * 특정 매개변수에 대한 당일거래량 상위 종목 데이터를 업데이트합니다.
      */
-    private void updateTradeVolumeRankingForParams(String marketType, String sortType) {
+    public void updateTradeVolumeRankingForParams(String marketType, String sortType) {
         try {
             StockRankingRequestDTO request = StockRankingRequestDTO.builder()
                     .rankingType("TRADE_VOLUME")
@@ -273,7 +211,7 @@ public class StockRankingService {
             if (response.getCode() == 0) {
                 String cacheKey = buildTradeVolumeCacheKey(marketType, sortType);
                 cacheResponse(cacheKey, response);
-                // log.debug("당일거래량 상위 데이터 캐시 업데이트: {}", cacheKey);
+                log.debug("당일거래량 상위 데이터 캐시 업데이트: {}, 항목 수: {}", cacheKey, response.getRankingItems().size());
             }
         } catch (Exception e) {
             log.error("당일거래량 상위 데이터 업데이트 실패: market={}, sort={}", marketType, sortType, e);
@@ -282,21 +220,89 @@ public class StockRankingService {
 
     /**
      * 주식 순위 데이터를 키움 API에서 조회합니다. (백그라운드 업데이트용)
+     * 최대 100개의 종목이 반환되도록 연속 조회를 수행합니다.
      */
     private StockRankingResponseDTO fetchStockRanking(StockRankingRequestDTO request) {
         try {
             String apiId = getApiIdByRankingType(request.getRankingType());
-            String requestBody = buildRequestBody(request);
+            List<StockRankingItemDTO> allRankingItems = new ArrayList<>();
+            String nextKey = "";
+            String contYn = "N";
+            boolean hasMore = true;
+            int maxAttempts = 10; // 무한 루프 방지
+            int attempts = 0;
 
-            // API 요청을 위한 헤더와 바디 설정
-            String accessToken = kiwoomAuthService.getAccessToken();
+            // 최대 100개 종목을 얻을 때까지 또는 더 이상 조회할 데이터가 없을 때까지 반복
+            while (hasMore && allRankingItems.size() < 100 && attempts < maxAttempts) {
+                attempts++;
 
-            // 응답 받기
-            Map<String, Object> apiResponse = makeApiRequest(
-                    apiId, accessToken, requestBody, request.getContYn(), request.getNextKey());
+                log.debug("연속 조회 시도 #{}: contYn={}, nextKey={}", attempts, contYn, nextKey);
 
-            // 응답 처리
-            return processResponse(apiResponse, request.getRankingType());
+                // 연속 조회 파라미터 설정
+                request.setContYn(contYn);
+                request.setNextKey(nextKey);
+
+                // 요청 바디 생성
+                String requestBody = buildRequestBody(request);
+
+                // API 요청을 위한 헤더와 바디 설정
+                String accessToken = kiwoomAuthService.getAccessToken();
+
+                // 응답 받기
+                Map<String, Object> apiResponse = makeApiRequest(
+                        apiId, accessToken, requestBody, contYn, nextKey);
+
+                // 응답 코드 확인
+                int returnCode = (int) apiResponse.get("return_code");
+                log.debug("API 응답 코드: {}, 메시지: {}", returnCode, apiResponse.get("return_msg"));
+
+                if (returnCode != 0) {
+                    log.error("키움 API 오류: {} - {}", returnCode, apiResponse.get("return_msg"));
+                    break;
+                }
+
+                // 응답 데이터 처리
+                StockRankingResponseDTO responseDTO = processResponse(apiResponse, request.getRankingType());
+
+                // 종목 목록 누적
+                if (responseDTO.getRankingItems() != null && !responseDTO.getRankingItems().isEmpty()) {
+                    allRankingItems.addAll(responseDTO.getRankingItems());
+                    log.debug("이번 응답에서 얻은 종목 수: {}, 누적 종목 수: {}",
+                            responseDTO.getRankingItems().size(), allRankingItems.size());
+                } else {
+                    log.debug("추가 종목 데이터 없음");
+                    break;
+                }
+
+                // 연속 조회 정보 업데이트
+                hasMore = responseDTO.isHasNext();
+                nextKey = responseDTO.getNextKey();
+                contYn = hasMore ? "Y" : "N";
+
+                if (!hasMore) {
+                    log.debug("더 이상 조회할 데이터 없음");
+                    break;
+                }
+            }
+
+            // 최대 100개로 제한
+            if (allRankingItems.size() > 100) {
+                // subList를 사용하지 않고 새 ArrayList로 복사
+                List<StockRankingItemDTO> limitedList = new ArrayList<>(allRankingItems.subList(0, 100));
+                allRankingItems = limitedList;
+                log.debug("목록을 100개로 제한했습니다.");
+            }
+
+            // 결과 응답 생성
+            return StockRankingResponseDTO.builder()
+                    .rankingType(request.getRankingType())
+                    .rankingItems(allRankingItems)
+                    .hasNext(false) // 명시적으로 false로 설정
+                    .nextKey("") // 명시적으로 빈 문자열로 설정
+                    .code(0)
+                    .message("성공")
+                    .build();
+
         } catch (CustomException e) {
             // 이미 CustomException으로 처리된 예외는 그대로 전파
             throw e;
@@ -473,6 +479,10 @@ public class StockRankingService {
                 }
             }
 
+            log.debug("API 응답 처리 완료: 종목 수={}, hasNext={}, nextKey={}",
+                    rankingItems.size(), hasNext, nextKey);
+
+            // 중간 처리 결과 반환 - 실제 최종 응답은 fetchStockRanking에서 처리
             return StockRankingResponseDTO.builder()
                     .rankingType(rankingType)
                     .rankingItems(rankingItems)
@@ -511,8 +521,6 @@ public class StockRankingService {
     /**
      * API 응답 데이터를 StockRankingItemDTO로 변환합니다.
      */
-
-    // API 응답 데이터를 StockRankingItemDTO로 변환합니다.
     private StockRankingItemDTO mapToRankingItemDTO(Map<String, Object> item, String rankingType) {
         try {
             StockRankingItemDTO.StockRankingItemDTOBuilder builder = StockRankingItemDTO.builder();
@@ -591,7 +599,11 @@ public class StockRankingService {
     @SuppressWarnings("unchecked")
     private StockRankingResponseDTO getCachedResponse(String cacheKey) {
         try {
-            return (StockRankingResponseDTO) redisTemplate.opsForValue().get(cacheKey);
+            StockRankingResponseDTO response = (StockRankingResponseDTO) redisTemplate.opsForValue().get(cacheKey);
+            if (response != null && response.getRankingItems() != null) {
+                log.debug("Redis 캐시 조회 성공: {}, 항목 수: {}", cacheKey, response.getRankingItems().size());
+            }
+            return response;
         } catch (Exception e) {
             log.warn("Redis 캐시 조회 실패: {}", e.getMessage());
             return null;
@@ -603,15 +615,25 @@ public class StockRankingService {
      */
     private void cacheResponse(String cacheKey, StockRankingResponseDTO response) {
         try {
+            // 캐시에 저장하기 전에 List 타입이 직렬화 가능한지 확인
+            if (response.getRankingItems() != null && !(response.getRankingItems() instanceof ArrayList)) {
+                response.setRankingItems(new ArrayList<>(response.getRankingItems()));
+            }
+
+            // hasNext와 nextKey 초기화 (불필요한 필드)
+            response.setHasNext(false);
+            response.setNextKey("");
+
             redisTemplate.opsForValue().set(
                     cacheKey,
                     response,
                     CACHE_TTL_SECONDS,
                     TimeUnit.SECONDS
             );
-            log.debug("Redis 캐시 저장 성공: {}", cacheKey);
+            log.debug("Redis 캐시 저장 성공: {}, 항목 수: {}", cacheKey,
+                    response.getRankingItems() != null ? response.getRankingItems().size() : 0);
         } catch (Exception e) {
-            log.warn("Redis 캐시 저장 실패: {}", e.getMessage());
+            log.warn("Redis 캐시 저장 실패: {}", e.getMessage(), e);
         }
     }
 }
