@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml poetry.lock* README.md /app/
 
 # 의존성 설치
-RUN poetry install --no-interaction --no-ansi --only main
+RUN poetry install --no-interaction --no-ansi --only main --no-root
 
 # 프로젝트 파일 복사
 COPY . /app/
