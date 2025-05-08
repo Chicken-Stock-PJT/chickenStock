@@ -32,8 +32,8 @@ public class DataInitializerConfig {
                 roles.add(MemberRole.ROLE_AI);
 
                 Member aiMember = Member.of(
-                        "cuteai@gmail.com",
-                        passwordEncoder.encode("ssafy123!@#"),
+                        "a@a",
+                        passwordEncoder.encode("a"),
                         "귀요미AI",
                         "귀요미AI",
                         null, // 기본 프로필 이미지 사용
