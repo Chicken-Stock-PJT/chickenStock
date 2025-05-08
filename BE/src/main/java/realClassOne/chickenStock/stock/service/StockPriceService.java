@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.dto.request.StockPriceRequestDTO;
 import realClassOne.chickenStock.stock.dto.response.StockPriceResponseDTO;
@@ -95,6 +96,7 @@ public class StockPriceService {
         // 데이터 수신을 위한 리스너 정의
         KiwoomWebSocketClient.StockDataListener listener = new KiwoomWebSocketClient.StockDataListener() {
             @Override
+            @Transactional
             public void onStockPriceUpdate(String stockCode, JsonNode data) {
                 // 요청한 종목 코드에 포함된 경우에만 처리
                 if (stockCodes.contains(stockCode)) {

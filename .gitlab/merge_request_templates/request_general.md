@@ -15,3 +15,5 @@
 
 ## 📚 Reference
 - 참고한 문서나 링크 (필요시)
+
+Closes S12P31A106-{issue-number}

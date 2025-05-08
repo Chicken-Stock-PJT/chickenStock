@@ -1,6 +1,7 @@
 package realClassOne.chickenStock.member.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +13,8 @@ import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 import realClassOne.chickenStock.stock.dto.response.PortfolioResponseDTO;
 import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.service.StockTradeService;
+
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/members")
@@ -137,4 +140,16 @@ public class MemberController {
         ReturnRateResponseDTO response = memberService.getPeriodReturnRate(authorizationHeader, period);
         return ResponseEntity.ok(response);
     }
+
+    // 특정 종목 거래내역 조회 API
+    @GetMapping("/trade-history/{stockCode}")
+    public ResponseEntity<StockTradeHistoryResponseDTO> getStockTradeHistory(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @PathVariable String stockCode) {
+
+        StockTradeHistoryResponseDTO response = memberService.getStockTradeHistory(
+                authorizationHeader, stockCode);
+        return ResponseEntity.ok(response);
+    }
+
 }

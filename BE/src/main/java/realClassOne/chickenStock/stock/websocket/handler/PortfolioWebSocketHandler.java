@@ -21,6 +21,7 @@ import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -66,35 +67,72 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        log.info("포트폴리오 WebSocket 클라이언트 연결 종료: {}", session.getId());
+        String sessionId = session.getId();
+        log.info("포트폴리오 WebSocket 클라이언트 연결 종료: {}", sessionId);
 
-        // 세션-회원 매핑 정보 가져오기
-        Long memberId = sessionMemberMap.remove(session.getId());
-        if (memberId != null) {
-            memberSessionMap.remove(memberId);
+        // 연결 종료 지연 처리를 위한 스케줄러 사용
+        new Thread(() -> {
+            try {
+                // 5초 대기
+                Thread.sleep(5000);
 
-            // 해당 회원의 구독 정보 제거 및 필요시 구독 취소
-            for (Map.Entry<String, Set<Long>> entry : stockSubscribers.entrySet()) {
-                String stockCode = entry.getKey();
-                Set<Long> subscribers = entry.getValue();
+                synchronized (this) {
+                    // 5초 후에도 같은 세션 ID로 재연결되지 않았는지 확인
+                    if (!sessionMemberMap.containsKey(sessionId)) {
+                        return; // 이미 다른 스레드에서 처리했거나 재연결됨
+                    }
 
-                // 해당 종목 구독자 목록에서 회원 제거
-                subscribers.remove(memberId);
+                    // 세션-회원 매핑 정보 가져오기
+                    Long memberId = sessionMemberMap.remove(sessionId);
+                    if (memberId != null) {
+                        memberSessionMap.remove(memberId);
+
+                        // 해당 회원의 구독 정보 제거 및 필요시 구독 취소
+                        handleMemberUnsubscribe(memberId);
+                    }
+
+                    // 등록된 클라이언트가 없으면 리스너 제거
+                    if (sessionMemberMap.isEmpty()) {
+                        kiwoomWebSocketClient.removeListener(this);
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("연결 종료 지연 처리 중 인터럽트 발생", e);
+            } catch (Exception e) {
+                log.error("연결 종료 지연 처리 중 오류 발생", e);
+            }
+        }).start();
+    }
+
+    // 회원 구독 해제 로직을 별도 메서드로 분리
+    private synchronized void handleMemberUnsubscribe(Long memberId) {
+        List<String> unsubscribedStocks = new ArrayList<>();
+
+        // 해당 회원의 구독 정보 제거 및 필요시 구독 취소
+        for (Map.Entry<String, Set<Long>> entry : stockSubscribers.entrySet()) {
+            String stockCode = entry.getKey();
+            Set<Long> subscribers = entry.getValue();
+
+            // 해당 종목 구독자 목록에서 회원 제거
+            boolean removed = subscribers.remove(memberId);
+
+            if (removed) {
+                log.info("회원 ID {} 종목 {} 구독 해제", memberId, stockCode);
 
                 // 구독자가 없으면 종목 구독 취소 및 맵에서 제거
                 if (subscribers.isEmpty()) {
-                    if (kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                        kiwoomWebSocketClient.unsubscribeStock(stockCode);
-                        log.info("종목 구독 취소: {}", stockCode);
-                    }
+                    boolean unsubscribed = kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, "PORTFOLIO");
+                    log.info("종목 {} 구독 취소 (결과: {}): 구독자 없음", stockCode, unsubscribed);
                     stockSubscribers.remove(stockCode);
+                    unsubscribedStocks.add(stockCode);
                 }
             }
         }
 
-        // 등록된 클라이언트가 없으면 리스너 제거
-        if (sessionMemberMap.isEmpty()) {
-            kiwoomWebSocketClient.removeListener(this);
+        // 해제된 종목 목록 로깅
+        if (!unsubscribedStocks.isEmpty()) {
+            log.info("회원 ID {} 로그아웃으로 인해 구독 취소된 종목: {}", memberId, unsubscribedStocks);
         }
     }
 
@@ -151,8 +189,21 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
 
         // 이전 세션이 있으면 제거
         if (memberSessionMap.containsKey(memberId)) {
-            String oldSessionId = memberSessionMap.get(memberId).getId();
+            WebSocketSession oldSession = memberSessionMap.get(memberId);
+            String oldSessionId = oldSession.getId();
+
+            // 이전 세션에서 구독 정보 제거
             sessionMemberMap.remove(oldSessionId);
+
+            // 웹소켓 연결이 아직 살아있다면 연결 종료
+            if (oldSession.isOpen()) {
+                try {
+                    oldSession.close();
+                    log.info("이전 세션 {} 강제 종료 (새 세션: {})", oldSessionId, session.getId());
+                } catch (Exception e) {
+                    log.warn("이전 세션 종료 중 오류 발생", e);
+                }
+            }
         }
 
         // 새 세션 등록
@@ -169,8 +220,12 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
 
             // 새로운 구독이면 키움 클라이언트에 등록
             if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                kiwoomWebSocketClient.subscribeStock(stockCode);
+                kiwoomWebSocketClient.subscribeStockWithPurpose(stockCode, "PORTFOLIO");
                 log.info("회원 {} 보유 종목 {} 구독 등록", memberId, stockCode);
+            } else {
+                // 이미 구독 중이더라도 목적은 추가
+                kiwoomWebSocketClient.subscribeStockWithPurpose(stockCode, "PORTFOLIO");
+                log.info("회원 {} 보유 종목 {} 목적 추가 (이미 구독 중)", memberId, stockCode);
             }
         }
 

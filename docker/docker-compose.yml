@@ -44,6 +44,13 @@ services:
   #   networks:
   #     - chickenStock-network
 
+  frontend:
+    image: kjeongwoo/frontend:${BUILD_NUMBER}
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    networks:
+      - chickenStock-network
+
 networks:
   chickenStock-network:
     name: chickenStock-network

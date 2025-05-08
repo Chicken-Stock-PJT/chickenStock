@@ -14,6 +14,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,25 +58,6 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        log.info("클라이언트 연결 종료: {}", session.getId());
-
-        // 해당 세션의 모든 구독 종목 해제
-        Set<String> subscribedStocks = sessionSubscriptions.remove(session.getId());
-        if (subscribedStocks != null) {
-            subscribedStocks.forEach(stockCode ->
-                    kiwoomWebSocketClient.unsubscribeStock(stockCode));
-        }
-
-        sessions.remove(session.getId());
-
-        // 연결된 클라이언트가 없으면 리스너 제거
-        if (sessions.isEmpty()) {
-            kiwoomWebSocketClient.removeListener(this);
-        }
-    }
-
-    @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         try {
             // 클라이언트로부터 메시지 수신 처리
@@ -84,21 +66,8 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
             // list 작업은 stockCode가 필요하지 않으므로 별도 처리
             if ("list".equals(action)) {
-                // 구독 중인 종목 목록 요청
-                Set<String> subscribedStocks = sessionSubscriptions.get(session.getId());
-                if (subscribedStocks != null) {
-                    ObjectNode listMessage = objectMapper.createObjectNode();
-                    listMessage.put("type", "subscriptionList");
-
-                    ArrayNode stockList = objectMapper.createArrayNode();
-                    for (String code : subscribedStocks) {
-                        stockList.add(code);
-                    }
-
-                    listMessage.set("stocks", stockList);
-                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(listMessage)));
-                }
-                return; // list 작업은 여기서 처리 완료
+                // (기존 코드 유지)
+                return;
             }
 
             // 나머지 작업은 stockCode 필요
@@ -117,12 +86,13 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
                 Set<String> subscribedStocks = sessionSubscriptions.get(session.getId());
                 if (subscribedStocks != null && !subscribedStocks.contains(stockCode)) {
-                    // 키움 API에 종목 등록
+                    // 세션 맵에는 원본 코드로 관리 (클라이언트에게 보여줄 용도)
+                    // 실제 키움 API 호출에는 _AL 붙은 코드 사용
                     boolean success = kiwoomWebSocketClient.subscribeStock(stockCode);
 
                     if (success) {
                         subscribedStocks.add(stockCode);
-                        // 구독자 수 증가
+                        // 구독자 수 증가 (로컬 맵에도 기록)
                         stockCodeSubscriberCount.merge(stockCode, 1, Integer::sum);
                         sendSuccessMessage(session, "구독", stockCode);
                         log.info("종목 {} 구독 성공, 현재 구독자 수: {}", stockCode, stockCodeSubscriberCount.get(stockCode));
@@ -143,7 +113,7 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
                     if (success) {
                         subscribedStocks.remove(stockCode);
-                        // 구독자 수 감소
+                        // 구독자 수 감소 (로컬 맵에도 반영)
                         stockCodeSubscriberCount.computeIfPresent(stockCode, (k, v) -> v > 1 ? v - 1 : null);
                         sendSuccessMessage(session, "구독 해제", stockCode);
                         log.info("종목 {} 구독 해제 성공, 현재 구독자 수: {}", stockCode,
@@ -165,6 +135,40 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             } catch (Exception ex) {
                 log.error("오류 메시지 전송 실패", ex);
             }
+        }
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        log.info("클라이언트 연결 종료: {}", session.getId());
+
+        // 해당 세션의 모든 구독 종목 해제
+        Set<String> subscribedStocks = sessionSubscriptions.remove(session.getId());
+        if (subscribedStocks != null && !subscribedStocks.isEmpty()) {
+            // 복사본 생성하여 ConcurrentModificationException 방지
+            Set<String> stocksToUnsubscribe = new HashSet<>(subscribedStocks);
+
+            for (String stockCode : stocksToUnsubscribe) {
+                try {
+                    // 구독자 수 감소
+                    stockCodeSubscriberCount.computeIfPresent(stockCode, (k, v) -> v > 1 ? v - 1 : null);
+
+                    // 웹소켓 목적으로 종목 구독 해제
+                    boolean success = kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, "WEBSOCKET_CLIENT");
+
+                    log.info("세션 종료로 인한 종목 {} 구독 해제, 성공: {}, 남은 구독자 수: {}",
+                            stockCode, success, stockCodeSubscriberCount.getOrDefault(stockCode, 0));
+                } catch (Exception e) {
+                    log.error("종목 {} 구독 해제 중 오류 발생", stockCode, e);
+                }
+            }
+        }
+
+        sessions.remove(session.getId());
+
+        // 연결된 클라이언트가 없으면 리스너 제거
+        if (sessions.isEmpty()) {
+            kiwoomWebSocketClient.removeListener(this);
         }
     }
 
@@ -193,6 +197,9 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
     @Override
     public void onStockPriceUpdate(String stockCode, JsonNode data) {
         try {
+            // 종목 코드에서 _AL 접미사 제거
+            String originalStockCode = stockCode.replace("_AL", "");
+
             // 로그보기
             // 주식체결 데이터 (0B)에서 필요한 정보만 추출
             String currentPrice = data.get("10").asText();      // 현재가
@@ -203,22 +210,21 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             // 자세한 로그 추가
             log.info("[실시간체결] 종목코드: {}, 가격: {}, 변동: {}, 등락률: {}%, 시간: {}, 구독자수: {}",
                     stockCode, currentPrice, priceChange, changeRate, timestamp,
-                    stockCodeSubscriberCount.getOrDefault(stockCode, 0));
+                    stockCodeSubscriberCount.getOrDefault(originalStockCode, 0));
 
             // 주식체결 데이터 (0B)에서 필요한 정보만 추출
             ObjectNode messageNode = objectMapper.createObjectNode();
             messageNode.put("type", "stockPrice");
-            messageNode.put("stockCode", stockCode);
+            messageNode.put("stockCode", originalStockCode);  // 원본 종목 코드 사용
             messageNode.put("currentPrice", data.get("10").asText());      // 현재가
             messageNode.put("priceChange", data.get("11").asText());       // 전일대비
             messageNode.put("changeRate", data.get("12").asText());        // 등락율
             messageNode.put("timestamp", data.get("20").asText());         // 체결시간
 
-
             String message = objectMapper.writeValueAsString(messageNode);
 
-            // 해당 종목을 구독 중인 세션에만 전송
-            broadcastToSubscribers(stockCode, message);
+            // 해당 종목을 구독 중인 세션에만 전송 (원본 종목 코드 사용)
+            broadcastToSubscribers(originalStockCode, message);
         } catch (Exception e) {
             log.error("주식체결 데이터 처리 중 오류 발생", e);
         }
@@ -227,6 +233,9 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
     @Override
     public void onStockBidAskUpdate(String stockCode, JsonNode data) {
         try {
+            // 종목 코드에서 _AL 접미사 제거
+            String originalStockCode = stockCode.replace("_AL", "");
+
             // 로깅용
             // 주식호가잔량 데이터 (0D)에서 필요한 정보만 추출
             String timestamp = data.get("21").asText();         // 호가시간
@@ -238,17 +247,17 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
                 double spread = Double.parseDouble(topAskPrice) - Double.parseDouble(topBidPrice);
                 log.info("[실시간호가] 종목코드: {}, 시간: {}, 매도1호가: {}, 매수1호가: {}, 스프레드: {}, 구독자수: {}",
                         stockCode, timestamp, topAskPrice, topBidPrice, spread,
-                        stockCodeSubscriberCount.getOrDefault(stockCode, 0));
+                        stockCodeSubscriberCount.getOrDefault(originalStockCode, 0));
             } catch (NumberFormatException e) {
                 log.info("[실시간호가] 종목코드: {}, 시간: {}, 매도1호가: {}, 매수1호가: {}, 구독자수: {}",
                         stockCode, timestamp, topAskPrice, topBidPrice,
-                        stockCodeSubscriberCount.getOrDefault(stockCode, 0));
+                        stockCodeSubscriberCount.getOrDefault(originalStockCode, 0));
             }
 
             // 주식호가잔량 데이터 (0D)에서 필요한 정보만 추출
             ObjectNode messageNode = objectMapper.createObjectNode();
             messageNode.put("type", "stockBidAsk");
-            messageNode.put("stockCode", stockCode);
+            messageNode.put("stockCode", originalStockCode);  // 원본 종목 코드 사용
             messageNode.put("timestamp", data.get("21").asText());         // 호가시간
 
             // 매도호가 및 수량 (상위 8개)
@@ -278,8 +287,8 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
             String message = objectMapper.writeValueAsString(messageNode);
 
-            // 해당 종목을 구독 중인 세션에만 전송
-            broadcastToSubscribers(stockCode, message);
+            // 해당 종목을 구독 중인 세션에만 전송 (원본 종목 코드 사용)
+            broadcastToSubscribers(originalStockCode, message);
         } catch (Exception e) {
             log.error("주식호가잔량 데이터 처리 중 오류 발생", e);
         }

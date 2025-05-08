@@ -3,7 +3,7 @@ package realClassOne.chickenStock.stock.trade.controller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import realClassOne.chickenStock.stock.trade.dto.response.TradeHistoriesResponse;
+import realClassOne.chickenStock.stock.trade.dto.response.TradeHistoriesCursorResponse;
 import realClassOne.chickenStock.stock.trade.service.TradeHistoryService;
 
 @RestController
@@ -14,13 +14,12 @@ public class TradeHistoryController {
     private final TradeHistoryService tradeHistoryService;
 
     @GetMapping
-    public ResponseEntity<TradeHistoriesResponse> getTradeHistories(
+    public ResponseEntity<TradeHistoriesCursorResponse> getTradeHistories(
             @RequestHeader("Authorization") String authorizationHeader,
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int size) {
 
-        TradeHistoriesResponse response = tradeHistoryService.getTradeHistories(authorizationHeader, page, size);
-
+        TradeHistoriesCursorResponse response = tradeHistoryService.getTradeHistories(authorizationHeader, cursor, size);
         return ResponseEntity.ok(response);
     }
 }

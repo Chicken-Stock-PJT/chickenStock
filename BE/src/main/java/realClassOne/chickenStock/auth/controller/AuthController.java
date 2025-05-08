@@ -23,6 +23,9 @@ import realClassOne.chickenStock.auth.dto.response.EmailVerifyResponseDTO;
 import realClassOne.chickenStock.auth.dto.request.EmailVerifyRequestDTO;
 import realClassOne.chickenStock.auth.dto.request.NicknameCheckRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
+import realClassOne.chickenStock.common.util.CookieUtils;
+
+import java.io.IOException;
 
 @Slf4j
 @RestController
@@ -32,6 +35,26 @@ public class AuthController {
     // 로그인, 로그아웃, 토큰 갱신 등 인증 작업
     private final AuthService authService;
     private final EmailService emailService;
+
+    // OAuth2 인증 페이지로 리다이렉트하는 편의성 메서드
+    @GetMapping("/oauth2/redirect/{provider}")
+    public void redirectToOAuth2Provider(
+            @PathVariable String provider,
+            @RequestParam(required = false) String redirectUri,
+            @RequestParam(required = false, defaultValue = "web") String platform,
+            HttpServletResponse response) throws IOException {
+
+        // 플랫폼 쿠키 설정
+        CookieUtils.addCookie(response, "platform", platform, 300);
+
+        // 리다이렉트 URI가 있으면 쿠키에 저장
+        if (redirectUri != null && !redirectUri.isEmpty()) {
+            CookieUtils.addCookie(response, "redirect_uri", redirectUri, 300);
+        }
+
+        // OAuth2 인증 URL로 직접 리다이렉트
+        response.sendRedirect("/api/oauth2/authorization/" + provider);
+    }
 
     @PostMapping("/signup")
     public ResponseEntity<SignupResponseDTO> signup(@Valid @RequestBody SignupRequestDTO signupRequestDTO) {
@@ -52,7 +75,8 @@ public class AuthController {
     // 이메일 인증번호 전송 API
     @PostMapping("/send-code")
     public ResponseEntity<Void> sendCode(@RequestBody EmailRequestDTO request) {
-        emailService.sendVerificationCode(request.getEmail());
+//        emailService.sendVerificationCode(request.getEmail());
+        emailService.sendVerificationCodeWithTTL(request.getEmail());
         return ResponseEntity.ok().build();
     }
 

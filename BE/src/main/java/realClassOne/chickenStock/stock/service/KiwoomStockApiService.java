@@ -12,6 +12,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
 import realClassOne.chickenStock.stock.dto.response.StockAskBidResponseDTO;
+import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
@@ -31,6 +32,14 @@ public class KiwoomStockApiService {
     private final ObjectMapper objectMapper;
     private final StockDataRepository stockDataRepository;
 
+    private String convertStockCode(String stockCode) {
+        if (stockCode == null || stockCode.trim().isEmpty()) {
+            return stockCode;
+        }
+
+        return stockCode.trim() + "_AL";
+    }
+
     /**
      * 키움증권 API를 통해 주식 기본 정보 조회
      */
@@ -48,7 +57,7 @@ public class KiwoomStockApiService {
                     .build();
 
             // 요청 본문 생성
-            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCode);
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", convertStockCode(stockCode));
 
             // API 호출
             String response = webClient.post()
@@ -193,5 +202,76 @@ public class KiwoomStockApiService {
         errorResponse.setReturnCode(-1);
         errorResponse.setReturnMsg(errorMessage);
         return errorResponse;
+    }
+
+    // 주식 종목코드로 현재가 정보를 조회합니다.
+    public StockInfoResponseDTO getStockInfo(String stockCode) {
+        try {
+            log.info("종목 코드 {}의 정보 조회 시작", stockCode);
+
+            // 데이터베이스에서 해당 종목 기본 정보 조회
+            StockData stockData = stockDataRepository.findByShortCode(stockCode)
+                    .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND,
+                            "종목 코드 " + stockCode + "에 해당하는 종목을 찾을 수 없습니다."));
+
+            // 키움증권 API 호출을 위한 요청 본문 생성
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCode);
+
+            // API 응답 받아오기
+            String endpoint = "/api/dostk/stkinfo";
+            String url = apiUrl + endpoint;
+
+            WebClient webClient = WebClient.builder()
+                    .baseUrl(url)
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .defaultHeader("authorization", "Bearer " + authService.getAccessToken())
+                    .defaultHeader("api-id", "ka10001")  // TR명: 주식기본정보요청
+                    .defaultHeader("cont-yn", "N")
+                    .defaultHeader("next-key", "")
+                    .build();
+
+            String responseString = webClient.post()
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            // 응답 파싱
+            JsonNode responseJson = objectMapper.readTree(responseString);
+
+            // 응답 코드 확인
+            if (responseJson.has("return_code") && responseJson.get("return_code").asInt() != 0) {
+                String errorMsg = responseJson.has("return_msg") ?
+                        responseJson.get("return_msg").asText() : "API 요청 실패";
+                log.error("키움증권 API 요청 실패: {}", errorMsg);
+                throw new CustomException(StockErrorCode.API_REQUEST_FAILED, errorMsg);
+            }
+
+            // 현재가, 전일대비, 등락률 정보 추출
+            String currentPrice = responseJson.has("cur_prc") ? responseJson.get("cur_prc").asText() : "0";
+            String priceChange = responseJson.has("pred_pre") ? responseJson.get("pred_pre").asText() : "0";
+            String changeRate = responseJson.has("flu_rt") ? responseJson.get("flu_rt").asText() : "0.0";
+
+            // 응답 DTO 생성
+            StockInfoResponseDTO responseDTO = StockInfoResponseDTO.builder()
+                    .stockCode(stockData.getShortCode())
+                    .stockName(stockData.getShortName())
+                    .currentPrice(currentPrice)
+                    .priceChange(priceChange)
+                    .changeRate(changeRate)
+                    .build();
+
+            log.info("종목 {} 정보 조회 성공: 현재가={}, 등락률={}",
+                    stockCode, responseDTO.getCurrentPrice(), responseDTO.getChangeRate());
+
+            return responseDTO;
+
+        } catch (CustomException ce) {
+            throw ce;
+        } catch (Exception e) {
+            log.error("종목 정보 조회 중 예외 발생: {}", stockCode, e);
+            throw new CustomException(StockErrorCode.API_REQUEST_FAILED,
+                    "종목 정보 조회 중 오류가 발생했습니다: " + e.getMessage());
+        }
     }
 }
