@@ -17,6 +17,8 @@ import java.util.List;
 public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long> {
     List<TradeHistory> findByMember(Member member);
 
+    void deleteByMember(Member member);
+
     List<TradeHistory> findByMemberAndStockData(Member member, StockData stockData);
 
     // 특정 시점 이전의 거래 내역을 최신순으로 조회합니다.
