@@ -50,7 +50,8 @@ public class PortfolioService {
             Member member = memberRepository.findById(memberId)
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            List<HoldingPosition> positions = holdingPositionRepository.findByMember(member);
+            // active가 true인 항목만 조회
+            List<HoldingPosition> positions = holdingPositionRepository.findByMemberAndActiveTrue(member);
 
             return buildPortfolioResponseDTO(member, positions);
         } catch (CustomException ce) {
@@ -68,7 +69,8 @@ public class PortfolioService {
             Member member = memberRepository.findById(memberId)
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            List<HoldingPosition> positions = holdingPositionRepository.findByMember(member);
+            // active가 true인 항목만 조회
+            List<HoldingPosition> positions = holdingPositionRepository.findByMemberAndActiveTrue(member);
 
             return buildPortfolioResponseDTO(member, positions);
         } catch (CustomException ce) {
@@ -80,16 +82,23 @@ public class PortfolioService {
         }
     }
 
-
+    /**
+     * 회원과 보유 종목 정보로 포트폴리오 응답 DTO를 생성합니다.
+     */
     /**
      * 회원과 보유 종목 정보로 포트폴리오 응답 DTO를 생성합니다.
      */
     private PortfolioResponseDTO buildPortfolioResponseDTO(Member member, List<HoldingPosition> positions) {
+        // active가 true인 항목만 필터링
+        List<HoldingPosition> activePositions = positions.stream()
+                .filter(position -> position.getActive())
+                .collect(Collectors.toList());
+
         List<PortfolioResponseDTO.StockPositionDTO> positionDTOs = new ArrayList<>();
         Long totalInvestment = 0L;
         Long totalValuation = 0L;
 
-        for (HoldingPosition position : positions) {
+        for (HoldingPosition position : activePositions) {
             String stockCode = position.getStockData().getShortCode();
 
             // 종목 실시간 구독 등록 (아직 구독되지 않은 경우)
@@ -170,7 +179,8 @@ public class PortfolioService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        List<HoldingPosition> positions = holdingPositionRepository.findByMember(member);
+        // active가 true인 항목만 조회
+        List<HoldingPosition> positions = holdingPositionRepository.findByMemberAndActiveTrue(member);
 
         return positions.stream()
                 .map(p -> p.getStockData().getShortCode())
