@@ -16,54 +16,54 @@ pipeline {
                 checkout scm
             }
         }
-        // stage('Setup Frontend Environment') {
-        //     steps {
-        //         withCredentials([
-        //             file(credentialsId: 'frontend-env-file-credentials', variable: 'FRONTEND_ENV_FILE')
-        //         ]) {
-        //             sh '''
-        //                 echo "===== Setting up Frontend Environment ====="
-        //                 cp $FRONTEND_ENV_FILE FE/chickenstock-web/.env
-        //             '''
-        //         }
-        //     }
-        // }
-        // stage('Build Frontend') {
-        //     steps {
-        //         dir('FE/chickenstock-web') {
-        //             sh '''
-        //                 echo "===== Building Frontend Application ====="
-        //                 # 글로벌로 pnpm 설치
-        //                 npm install -g pnpm
+        stage('Setup Frontend Environment') {
+            steps {
+                withCredentials([
+                    file(credentialsId: 'frontend-env-file-credentials', variable: 'FRONTEND_ENV_FILE')
+                ]) {
+                    sh '''
+                        echo "===== Setting up Frontend Environment ====="
+                        cp $FRONTEND_ENV_FILE FE/chickenstock-web/.env
+                    '''
+                }
+            }
+        }
+        stage('Build Frontend') {
+            steps {
+                dir('FE/chickenstock-web') {
+                    sh '''
+                        echo "===== Building Frontend Application ====="
+                        # 글로벌로 pnpm 설치
+                        npm install -g pnpm
                         
-        //                 # pnpm으로 의존성 설치 및 빌드
-        //                 pnpm install
-        //                 pnpm build
+                        # pnpm으로 의존성 설치 및 빌드
+                        pnpm install
+                        pnpm build
                         
-        //                 echo "===== Frontend Build Complete ====="
-        //                 ls -la dist/
-        //             '''
-        //         }
-        //     }
-        // }
-        //  stage('Build and Push Frontend Docker Image') {
-        //     steps {
-        //         script {
-        //             withCredentials([usernamePassword(
-        //                 credentialsId: 'docker-registry-credentials',
-        //                 usernameVariable: 'DOCKER_USER',
-        //                 passwordVariable: 'DOCKER_PASS'
-        //             )]) {
-        //                 def frontendImageTag = "kjeongwoo/frontend:${BUILD_NUMBER}"
-        //                 sh """
-        //                     echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin
-        //                     docker build -t ${frontendImageTag} -f docker/Dockerfile.frontend .
-        //                     docker push ${frontendImageTag}
-        //                 """
-        //             }
-        //         }
-        //     }
-        // }
+                        echo "===== Frontend Build Complete ====="
+                        ls -la dist/
+                    '''
+                }
+            }
+        }
+         stage('Build and Push Frontend Docker Image') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-registry-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        def frontendImageTag = "kjeongwoo/frontend:${BUILD_NUMBER}"
+                        sh """
+                            echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin
+                            docker build -t ${frontendImageTag} -f docker/Dockerfile.frontend .
+                            docker push ${frontendImageTag}
+                        """
+                    }
+                }
+            }
+        }
         stage('Setup Environment') {
             steps {
                 withCredentials([
