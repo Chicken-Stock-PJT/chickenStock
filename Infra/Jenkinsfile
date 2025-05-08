@@ -23,6 +23,8 @@ pipeline {
                 ]) {
                     sh '''
                         echo "===== Setting up Frontend Environment ====="
+                        mkdir -p FE/chickenstock-web
+                        chmod -R 700 FE/chickenstock-web
                         cp $FRONTEND_ENV_FILE FE/chickenstock-web/.env
                     '''
                 }
