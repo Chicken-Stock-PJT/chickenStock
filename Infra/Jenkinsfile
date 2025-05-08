@@ -28,24 +28,7 @@ pipeline {
                 }
             }
         }
-        stage('Build Frontend') {
-            steps {
-                dir('FE/chickenstock-web') {
-                    sh '''
-                        echo "===== Building Frontend Application ====="
-                        # 글로벌로 pnpm 설치
-                        npm install -g pnpm
-                        
-                        # pnpm으로 의존성 설치 및 빌드
-                        pnpm install
-                        pnpm build
-                        
-                        echo "===== Frontend Build Complete ====="
-                        ls -la dist/
-                    '''
-                }
-            }
-        }
+        
          stage('Build and Push Frontend Docker Image') {
             steps {
                 script {
