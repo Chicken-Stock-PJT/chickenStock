@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # 토큰 관리 설정
     TOKEN_REFRESH_MARGIN: int = 300  # 토큰 만료 5분(300초) 전에 갱신
     TOKEN_REFRESH_INTERVAL: int = 3600  # 토큰 갱신 검사 간격(최대 1시간)
-    
+
     # 주식 거래 설정
     MIN_CONFIDENCE: float = 0.6  # 최소 신뢰도 (60% 이상일 때만 거래)
     MAX_POSITIONS: int = 20  # 최대 보유 종목 수

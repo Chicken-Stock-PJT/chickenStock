@@ -59,13 +59,57 @@ class LoginRequest(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행"""
-    global auth_client
+    global auth_client, kiwoom_api, trading_model, backend_client, service_status
     
     logger.info("애플리케이션 시작 중...")
     
     # 인증 클라이언트 초기화 (백엔드 서버 인증용)
     auth_client = AuthClient()
     await auth_client.initialize()
+    
+    try:
+        # 키움 API 토큰 자동 발급
+        logger.info("키움 API 토큰 자동 발급 시작")
+        kiwoom_auth_client = KiwoomAuthClient()
+        kiwoom_token = await kiwoom_auth_client.get_access_token()
+        
+        if not kiwoom_token:
+            logger.error("키움 API 토큰 발급 실패")
+            return
+            
+        logger.info("키움 API 토큰 발급 성공")
+        
+        # 키움 API 인스턴스 생성
+        kiwoom_api = KiwoomAPI(auth_client)
+        
+        # 트레이딩 모델 생성
+        trading_model = TradingModel(kiwoom_api)
+        
+        # 백엔드 클라이언트 생성
+        backend_client = BackendClient(auth_client)
+        
+        # 순환 참조 설정
+        trading_model.set_backend_client(backend_client)
+        backend_client.set_trading_model(trading_model)
+        
+        # 상태 업데이트
+        service_status["is_running"] = True
+        service_status["start_time"] = datetime.now()
+        
+        # 서비스 초기화 및 시작
+        asyncio.create_task(initialize_service())
+        
+        logger.info("자동매매 서비스 자동 시작 완료")
+        
+    except Exception as e:
+        logger.error(f"자동 시작 중 오류 발생: {str(e)}")
+        if kiwoom_api:
+            kiwoom_api = None
+        if trading_model:
+            trading_model = None
+        if backend_client:
+            backend_client = None
+        service_status["is_running"] = False
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -311,6 +355,18 @@ async def initialize_service():
     global auth_client, kiwoom_api, trading_model, backend_client, service_status
     
     try:
+        # 백엔드 서버 자동 로그인 (기본 계정 사용)
+        if not auth_client.is_authenticated:
+            logger.info("백엔드 서버 자동 로그인 시도")         
+            
+            success = await auth_client.login('', '')
+            if not success:
+                logger.error("백엔드 서버 자동 로그인 실패")
+                service_status["is_running"] = False
+                return
+            logger.info("백엔드 서버 자동 로그인 성공")
+
+        
         # REST API 연결 (백엔드 서버 액세스 토큰 사용)
         logger.info("REST API 연결 시작")
         if not await kiwoom_api.connect():
