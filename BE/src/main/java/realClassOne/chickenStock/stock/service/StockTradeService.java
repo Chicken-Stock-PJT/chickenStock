@@ -793,14 +793,25 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             Member member = memberRepository.findById(memberId)
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            // 1억으로 초기화 (100,000,000)
-            member.updateMemberMoney(100_000_000L);
-            memberRepository.save(member);
+            // 1. 보류 중인 주문(PendingOrder) 삭제
+            pendingOrderRepository.deleteByMember(member);
+            log.info("회원 ID: {}의 모든 보류 중인 주문을 삭제했습니다.", memberId);
 
-            log.info("회원 ID: {}의 자산을 1억으로 초기화했습니다.", memberId);
+            // 2. 거래 내역(TradeHistory) 삭제
+            tradeHistoryRepository.deleteByMember(member);
+            log.info("회원 ID: {}의 모든 거래 내역을 삭제했습니다.", memberId);
 
-            // 투자 요약이 없으면 생성
-            if (member.getInvestmentSummary() == null) {
+            // 3. 보유 포지션(HoldingPosition) 삭제
+            holdingPositionRepository.deleteByMember(member);
+            log.info("회원 ID: {}의 모든 보유 포지션을 삭제했습니다.", memberId);
+
+            // 4. 투자 요약(InvestmentSummary) 삭제 또는 초기화
+            if (member.getInvestmentSummary() != null) {
+                InvestmentSummary summary = member.getInvestmentSummary();
+                summary.updateValues(0L, 0L, 0L, 0.0);
+                log.info("회원 ID: {}의 투자 요약 정보를 초기화했습니다.", memberId);
+            } else {
+                // 투자 요약이 없는 경우 새로 생성
                 InvestmentSummary summary = InvestmentSummary.of(
                         member,
                         0L,  // 총 투자금
@@ -808,10 +819,20 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                         0L,  // 총 손익
                         0.0  // 수익률
                 );
+                log.info("회원 ID: {}의 새 투자 요약 정보를 생성했습니다.", memberId);
             }
+
+            // 5. 회원 자금 초기화 (1억원)
+            member.updateMemberMoney(100_000_000L);
+            memberRepository.save(member);
+            log.info("회원 ID: {}의 자산을 1억으로 초기화했습니다.", memberId);
+
+            // 변경사항 즉시 적용을 위한 플러시
+            memberRepository.flush();
+
             return new InitializeMoneyResponseDTO(
                     "success",
-                    "회원 기본금이 1억원으로 초기화되었습니다.",
+                    "회원 기본금이 1억원으로 초기화되었으며, 모든 주식 관련 데이터가 삭제되었습니다.",
                     memberId
             );
         } finally {
