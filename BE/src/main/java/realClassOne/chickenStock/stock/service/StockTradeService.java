@@ -152,8 +152,50 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 );
                 tradeHistoryRepository.save(tradeHistory);
 
-                // 포지션 업데이트
-                updateHoldingPosition(member, stock, request.getQuantity(), currentPrice, TradeHistory.TradeType.BUY);
+                // 비활성화된 기존 포지션 확인 (같은 종목 재매수 확인)
+                Optional<HoldingPosition> existingPosition = holdingPositionRepository
+                        .findByMemberAndStockData(member, stock);
+
+                if (existingPosition.isPresent()) {
+                    HoldingPosition position = existingPosition.get();
+
+                    if (!position.getActive()) {
+                        // 비활성화된 포지션 재활성화
+                        position.activate();
+                        position.updatePosition(
+                                request.getQuantity(),
+                                currentPrice,
+                                0L,  // 초기 수익
+                                0.0  // 초기 수익률
+                        );
+                        holdingPositionRepository.save(position);
+
+                    } else {
+                        // 기존 활성 포지션 업데이트
+                        int newQuantity = position.getQuantity() + request.getQuantity();
+                        long newAvgPrice = ((position.getAveragePrice() * position.getQuantity()) + (currentPrice * request.getQuantity())) / newQuantity;
+                        Long latestPrice = getCurrentStockPriceWithRetry(stock.getShortCode());
+                        if (latestPrice == null) latestPrice = currentPrice;
+
+                        long currentProfit = (latestPrice - newAvgPrice) * newQuantity;
+                        double returnRate = ((double) latestPrice / newAvgPrice - 1.0) * 100.0;
+
+                        position.updatePosition(newQuantity, newAvgPrice, currentProfit, returnRate);
+                        holdingPositionRepository.save(position);
+                    }
+                } else {
+                    // 새 포지션 생성
+                    HoldingPosition newPosition = HoldingPosition.of(
+                            member,
+                            stock,
+                            request.getQuantity(),
+                            currentPrice,
+                            0L, // 초기 수익
+                            0.0 // 초기 수익률
+                    );
+                    holdingPositionRepository.save(newPosition);
+                    member.addHoldingPosition(newPosition);
+                }
 
                 // 투자 요약 업데이트
                 updateInvestmentSummary(member);
@@ -230,9 +272,58 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                         LocalDateTime.now()
                 );
                 tradeHistoryRepository.save(tradeHistory);
+;
 
-                // 포지션 업데이트 및 투자 요약 업데이트
-                updateHoldingPosition(member, stock, request.getQuantity(), currentPrice, TradeHistory.TradeType.BUY);
+                // 비활성화된 기존 포지션 확인 (같은 종목 재매수 확인)
+                Optional<HoldingPosition> existingPosition = holdingPositionRepository
+                        .findByMemberAndStockData(member, stock);
+
+                if (existingPosition.isPresent()) {
+                    HoldingPosition position = existingPosition.get();
+
+                    if (!position.getActive()) {
+                        // 비활성화된 포지션 재활성화
+                        position.activate();
+                        position.updatePosition(
+                                request.getQuantity(),
+                                currentPrice,
+                                0L,  // 초기 수익
+                                0.0  // 초기 수익률
+                        );
+                        holdingPositionRepository.save(position);
+                        holdingPositionRepository.flush();
+
+                    } else {
+                        // 기존 활성 포지션 업데이트
+                        int newQuantity = position.getQuantity() + request.getQuantity();
+                        long newAvgPrice = ((position.getAveragePrice() * position.getQuantity()) + (currentPrice * request.getQuantity())) / newQuantity;
+                        Long latestPrice = getCurrentStockPriceWithRetry(stock.getShortCode());
+                        if (latestPrice == null) latestPrice = currentPrice;
+
+                        long currentProfit = (latestPrice - newAvgPrice) * newQuantity;
+                        double returnRate = ((double) latestPrice / newAvgPrice - 1.0) * 100.0;
+
+                        position.updatePosition(newQuantity, newAvgPrice, currentProfit, returnRate);
+                        holdingPositionRepository.save(position);
+                        holdingPositionRepository.flush();
+                    }
+                } else {
+                    // 새 포지션 생성
+                    HoldingPosition newPosition = HoldingPosition.of(
+                            member,
+                            stock,
+                            request.getQuantity(),
+                            currentPrice,
+                            0L, // 초기 수익
+                            0.0 // 초기 수익률
+                    );
+                    holdingPositionRepository.save(newPosition);
+                    holdingPositionRepository.flush();
+                    member.addHoldingPosition(newPosition);
+
+                }
+
+                // 투자 요약 업데이트
                 updateInvestmentSummary(member);
 
                 // 임시 구독 해제
@@ -241,6 +332,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 }
 
                 successfulTrades.incrementAndGet();
+
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
                 log.error("매수 주문 처리 중 오류 발생", e);
@@ -272,8 +364,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             ReentrantLock stockLock = getStockLock(request.getStockCode());
             stockLock.lock();
             try {
-                // 매번 최신 상태의 포지션 정보를 조회
-                HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, stock)
+                // 매번 최신 상태의 포지션 정보를 조회 (active=true인 포지션만)
+                HoldingPosition position = holdingPositionRepository.findByMemberAndStockDataAndActiveTrue(member, stock)
                         .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK,
                                 "해당 종목을 보유하고 있지 않습니다: " + request.getStockCode()));
 
@@ -305,10 +397,12 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
                 // 매도 수량 만큼 즉시 차감
                 if (newQuantity == 0) {
-                    // 보유량이 0이 되면 포지션 삭제
-                    holdingPositionRepository.delete(position);
-                    // 만약 매도 후 0이 된다면 리스트에서도 삭제
-                    member.getHoldingPositions().remove(position);
+
+                    position.updatePosition(0, position.getAveragePrice(), 0L, 0.0); // 수량을 0으로 설정
+                    position.deactivate();
+                    holdingPositionRepository.save(position);
+                    holdingPositionRepository.flush();
+
                 } else {
                     // 보유량 감소만 처리 (평균단가는 변경하지 않음)
                     Long latestPrice = getCurrentStockPriceWithRetry(stock.getShortCode());
@@ -319,6 +413,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
                     position.updatePosition(newQuantity, position.getAveragePrice(), currentProfit, returnRate);
                     holdingPositionRepository.save(position);
+                    holdingPositionRepository.flush(); // 즉시 DB에 반영
                 }
 
                 // 총 판매 금액 계산 및 매도 처리
@@ -365,6 +460,18 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean deactivateHoldingPosition(Long positionId) {
+        try {
+            // 논리적 삭제
+            int updatedRows = holdingPositionRepository.updateActiveStatus(positionId, false);
+            return updatedRows > 0;
+        } catch (Exception e) {
+            log.error("포지션 논리적 삭제 중 오류 발생: 포지션ID={}", positionId, e);
+            return false;
+        }
+    }
+
     // 오버로딩 - 내부 사용
     @Transactional
     public TradeResponseDTO sellStock(TradeRequestDTO request, Member member) {
@@ -383,8 +490,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 member = memberRepository.findById(member.getMemberId())
                         .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-                // 보유 수량 확인
-                HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, stock)
+                // 보유 수량 확인 (active=true인 포지션만)
+                HoldingPosition position = holdingPositionRepository.findByMemberAndStockDataAndActiveTrue(member, stock)
                         .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "해당 종목을 보유하고 있지 않습니다"));
 
                 if (position.getQuantity() < request.getQuantity()) {
@@ -412,10 +519,12 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
                 // 매도 수량 만큼 즉시 차감
                 if (newQuantity == 0) {
-                    // 보유량이 0이 되면 포지션 삭제
-                    holdingPositionRepository.delete(position);
-                    // 리스트에서도 제거
-                    member.getHoldingPositions().remove(position);
+                    // 포지션 비활성화 (논리적 삭제) + 수량도 0으로 업데이트
+                    position.updatePosition(0, position.getAveragePrice(), 0L, 0.0); // 수량을 0으로 설정
+                    position.deactivate();
+                    holdingPositionRepository.save(position);
+                    holdingPositionRepository.flush();
+
                 } else {
                     // 보유량 감소만 처리 (평균단가는 변경하지 않음)
                     Long latestPrice = getCurrentStockPriceWithRetry(stock.getShortCode());
@@ -426,6 +535,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
                     position.updatePosition(newQuantity, position.getAveragePrice(), currentProfit, returnRate);
                     holdingPositionRepository.save(position);
+                    holdingPositionRepository.flush(); // 즉시 DB에 반영
                 }
 
                 // 총 판매 금액 계산 및 매도 처리
@@ -458,6 +568,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 // 추가: 트랜잭션을 즉시 플러시하여 DB에 반영
                 holdingPositionRepository.flush();
                 memberRepository.flush();
+
 
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
@@ -1055,7 +1166,9 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
             InvestmentSummary summary = freshMember.getInvestmentSummary();
-            List<HoldingPosition> positions = holdingPositionRepository.findByMemberWithStockData(freshMember);
+
+            // active=true인 포지션만 조회
+            List<HoldingPosition> positions = holdingPositionRepository.findByMemberAndActiveTrue(freshMember);
 
             long totalInvestment = 0L;
             long totalValuation = 0L;
