@@ -15,7 +15,7 @@ class TradingModel:
         
         # 매매 관련 설정
         self.max_positions = 20  # 최대 보유 종목 수
-        self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (100만원)
+        self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (500만원)
         self.min_holding_period = 1  # 최소 보유 기간 (일)
         
         # 실행 상태
@@ -55,63 +55,96 @@ class TradingModel:
         if not self.is_running:
             return
         
-        # Envelope 지표 가져오기 (현재가 업데이트)
-        envelope = self.kiwoom_api.stock_cache.get_envelope_indicators(symbol, price)
-        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
-
-        if not envelope:
-            return
-        
-        # 밴드 정보 확인
-        upper_band = envelope.get("upperBand", 0)
-        middle_band = envelope.get("middleBand", 0)
-        lower_band = envelope.get("lowerBand", 0)
-        
-        # 현재 시간
-        now = datetime.now()
-        
-        # 상한선 (전량 매도 신호)
-        if current_price >= upper_band:
-            self.trading_signals[symbol] = {
-                "signal": "upper",
-                "price": current_price,
-                "timestamp": now,
-                "bands": {
-                    "upper": upper_band,
-                    "middle": middle_band,
-                    "lower": lower_band
+        try:
+            # StockCache의 현재가 업데이트
+            self.kiwoom_api.stock_cache.update_price(symbol, price)
+            
+            # Envelope 지표 가져오기 (현재가 업데이트)
+            envelope = self.kiwoom_api.stock_cache.get_envelope_indicators(symbol, price)
+            
+            if not envelope:
+                logger.warning(f"종목 {symbol}에 대한 Envelope 지표가 없습니다")
+                return
+            
+            # 밴드 정보 확인
+            upper_band = envelope.get("upperBand", 0)
+            middle_band = envelope.get("middleBand", 0)
+            lower_band = envelope.get("lowerBand", 0)
+            
+            # 현재 시간
+            now = datetime.now()
+            
+            # 이미 처리된 신호인지 확인
+            last_trade = self.trade_history.get(symbol, {})
+            last_action = last_trade.get("last_action", "")
+            last_trade_time = last_trade.get("last_trade", None)
+            
+            # 마지막 거래 이후 최소 보유 기간(일)이 지났는지 확인
+            min_holding_passed = True
+            if last_trade_time:
+                seconds_passed = (now - last_trade_time).total_seconds()
+                # 최소 보유 기간: 1일 = 86400초 (기본값), self.min_holding_period로 설정 가능
+                min_holding_passed = seconds_passed >= (self.min_holding_period * 86400)
+            
+            # 동일 가격 구간에서의 중복 신호 방지 로직
+            # 상한선 (전량 매도 신호)
+            if price >= upper_band:
+                # 이미 상한선에서 전량 매도한 종목이면 신호 무시
+                if last_action == "sell_all" and not min_holding_passed:
+                    logger.debug(f"이미 상한선에서 매도한 종목: {symbol}, 신호 무시")
+                    return
+                
+                self.trading_signals[symbol] = {
+                    "signal": "upper",
+                    "price": price,
+                    "timestamp": now,
+                    "bands": {
+                        "upper": upper_band,
+                        "middle": middle_band,
+                        "lower": lower_band
+                    }
                 }
-            }
-            logger.info(f"상한선 신호 발생: {symbol}, 현재가: {current_price:.2f}, 상한선: {upper_band:.2f}")
-        
-        # 중앙선 (절반 매도 신호) - 이동평균선
-        # 중앙선보다 높고 상한선보다 낮을 때
-        elif current_price >= middle_band and current_price < upper_band:
-            self.trading_signals[symbol] = {
-                "signal": "middle",
-                "price": current_price,
-                "timestamp": now,
-                "bands": {
-                    "upper": upper_band,
-                    "middle": middle_band,
-                    "lower": lower_band
+                logger.info(f"상한선 신호 발생: {symbol}, 현재가: {price:.2f}, 상한선: {upper_band:.2f}")
+            
+            # 중앙선 (절반 매도 신호) - 이동평균선
+            # 중앙선보다 높고 상한선보다 낮을 때
+            elif price >= middle_band and price < upper_band:
+                # 이미 중앙선에서 절반 매도한 종목이거나 상한선에서 전량 매도한 종목이면 신호 무시
+                if (last_action == "sell_half" or last_action == "sell_all") and not min_holding_passed:
+                    logger.debug(f"이미 중앙선 또는 상한선에서 매도한 종목: {symbol}, 신호 무시")
+                    return
+                
+                self.trading_signals[symbol] = {
+                    "signal": "middle",
+                    "price": price,
+                    "timestamp": now,
+                    "bands": {
+                        "upper": upper_band,
+                        "middle": middle_band,
+                        "lower": lower_band
+                    }
                 }
-            }
-            logger.info(f"중앙선(이동평균선) 신호 발생: {symbol}, 현재가: {current_price:.2f}, 중앙선: {middle_band:.2f}")
-        
-        # 하한선 (매수 신호)
-        elif current_price <= lower_band:
-            self.trading_signals[symbol] = {
-                "signal": "lower",
-                "price": current_price,
-                "timestamp": now,
-                "bands": {
-                    "upper": upper_band,
-                    "middle": middle_band,
-                    "lower": lower_band
+            
+            # 하한선 (매수 신호)
+            elif price <= lower_band:
+                # 이미 하한선에서 매수한 종목이면 신호 무시
+                if last_action == "buy" and not min_holding_passed:
+                    logger.debug(f"이미 하한선에서 매수한 종목: {symbol}, 신호 무시")
+                    return
+                
+                self.trading_signals[symbol] = {
+                    "signal": "lower",
+                    "price": price,
+                    "timestamp": now,
+                    "bands": {
+                        "upper": upper_band,
+                        "middle": middle_band,
+                        "lower": lower_band
+                    }
                 }
-            }
-            logger.info(f"하한선 신호 발생: {symbol}, 현재가: {current_price:.2f}, 하한선: {lower_band:.2f}")
+                logger.info(f"하한선 신호 발생: {symbol}, 현재가: {price:.2f}, 하한선: {lower_band:.2f}")
+        except Exception as e:
+            logger.error(f"실시간 가격 처리 중 오류: {str(e)}")
     
     async def monitor_signals(self):
         """매매 신호 주기적 모니터링 및 처리"""
@@ -194,9 +227,13 @@ class TradingModel:
                         continue
                     
                     # 매수 수량 계산 (종목당 비중에 맞게)
-                    current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                    current_price = price  # 직접 신호의 가격 사용
+                    
                     if not current_price or current_price <= 0:
-                        continue
+                        # 백업으로 캐시에서 가격 조회
+                        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                        if not current_price or current_price <= 0:
+                            continue
                     
                     quantity = int(self.trade_amount_per_stock / current_price)
                     if quantity <= 0:
@@ -240,7 +277,14 @@ class TradingModel:
                         continue
                     
                     # 매도 결정 추가
-                    current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                    current_price = price  # 직접 신호의 가격 사용
+                    
+                    if not current_price or current_price <= 0:
+                        # 백업으로 캐시에서 가격 조회
+                        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                        if not current_price or current_price <= 0:
+                            continue
+                            
                     decision = {
                         "symbol": symbol,
                         "action": "sell",
@@ -275,7 +319,14 @@ class TradingModel:
                         continue
                     
                     # 매도 결정 추가 (전량)
-                    current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                    current_price = price  # 직접 신호의 가격 사용
+                    
+                    if not current_price or current_price <= 0:
+                        # 백업으로 캐시에서 가격 조회
+                        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                        if not current_price or current_price <= 0:
+                            continue
+                            
                     decision = {
                         "symbol": symbol,
                         "action": "sell",
