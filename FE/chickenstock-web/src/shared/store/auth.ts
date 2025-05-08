@@ -13,14 +13,23 @@ interface LoginResponse {
 export const useAuthStore = create<AuthState>()(
   devtools(
     persist(
-      (set) => ({
+      (set, get) => ({
         accessToken: null,
-        setAccessToken: (token) => set({ accessToken: token }),
-        clearAccessToken: () => set({ accessToken: null }),
+        setAccessToken: (token) => {
+          set({
+            accessToken: token,
+            isLoggedIn: !!token,
+          });
+        },
+        clearAccessToken: () =>
+          set({
+            accessToken: null,
+            isLoggedIn: false,
+          }),
 
         simpleProfile: null,
         getSimpleProfile: async () => {
-          const response = await apiClient.get<SimpleProfile>(`${baseURL}/members/simple-profile`);
+          const response = await apiClient.get<SimpleProfile>(`/members/simple-profile`);
           set({ simpleProfile: response.data });
           return response.data;
         },
@@ -38,7 +47,10 @@ export const useAuthStore = create<AuthState>()(
             password,
             platform: "web",
           });
-          set({ accessToken: response.data.accessToken, isLoggedIn: true });
+          set({
+            accessToken: response.data.accessToken,
+            isLoggedIn: true,
+          });
           return response.data;
         },
         socialLogin: async (code: string) => {
@@ -49,21 +61,27 @@ export const useAuthStore = create<AuthState>()(
               platform: "web",
             },
           );
-          set({ accessToken: response.data.accessToken, isLoggedIn: true });
+          console.log("socialLogin", response.data);
+          set({
+            accessToken: response.data.accessToken,
+            isLoggedIn: true,
+          });
+          console.log("socialLogin", get().accessToken);
           return response.data;
         },
         logout: async () => {
           useWatchlistStore.getState().setWatchlist([]);
           const res = await apiClient.post(`${baseURL}/auth/logout`, {}, { withCredentials: true });
           console.log("logout", res);
-          set({ accessToken: null, isLoggedIn: false, simpleProfile: null });
-          set({ simpleProfile: null });
+          set({
+            accessToken: null,
+            isLoggedIn: false,
+            simpleProfile: null,
+          });
         },
       }),
       {
-        name: "auth-store", // DevTools에 표시될 이름
-        // serialize: true,       // 필요 시 serialize 옵션 등 추가 가능
-        // anonymousActionType: true,
+        name: "auth-store",
       },
     ),
   ),

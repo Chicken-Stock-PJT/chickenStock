@@ -9,7 +9,6 @@ interface WebSocketState {
   stockPriceData: StockPriceData | null;
   connect: (stockCode: string) => void;
   disconnect: () => void;
-  unsubscribe: (stockCode: string) => void;
   subscribedList: string[];
   getSubscribedList: () => Promise<void>;
   setStockPriceData: (data: StockPriceData) => void;
@@ -89,21 +88,7 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
         set({ ws: null, orderBookData: null, stockPriceData: null });
       };
     };
-
     set({ ws });
-  },
-
-  unsubscribe: (stockCode: string) => {
-    const { ws } = get();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          action: "unsubscribe",
-          stockCode,
-        }),
-      );
-      void get().getSubscribedList();
-    }
   },
 
   disconnect: () => {

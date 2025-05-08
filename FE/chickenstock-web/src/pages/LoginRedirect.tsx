@@ -13,7 +13,8 @@ const LoginRedirect = () => {
     if (code) {
       const fetchData = async (code: string) => {
         try {
-          await useAuthStore.getState().socialLogin(code);
+          const response = await useAuthStore.getState().socialLogin(code);
+          useAuthStore.getState().setAccessToken(response.accessToken);
           await useAuthStore.getState().getSimpleProfile();
           await refetchWatchlist();
           void navigate("/");
