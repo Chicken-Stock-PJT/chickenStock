@@ -2,6 +2,8 @@ package realClassOne.chickenStock.stock.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -46,6 +48,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class StockTradeService implements KiwoomWebSocketClient.StockDataListener {
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     private final MemberRepository memberRepository;
     private final StockDataRepository stockDataRepository;
     private final TradeHistoryRepository tradeHistoryRepository;
@@ -55,6 +60,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     private final StockSubscriptionService stockSubscriptionService;
     private final JwtTokenProvider jwtTokenProvider;
     private final PortfolioWebSocketHandler portfolioWebSocketHandler;
+
 
     // 동시성 제어를 위한 락 추가
     private final Map<String, ReentrantLock> stockLocks = new ConcurrentHashMap<>();
@@ -790,44 +796,58 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         ReentrantLock memberLock = getMemberLock(memberId);
         memberLock.lock();
         try {
+            // 1. 모든 엔티티를 JPQL을 사용하여 직접 삭제 (순서 중요: 외래 키 제약조건 고려)
+
+            // 1.1 보류 중인 주문(PendingOrder) 삭제
+            int deletedPendingOrders = entityManager.createQuery(
+                            "DELETE FROM PendingOrder p WHERE p.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
+
+            // 1.2 거래 내역(TradeHistory) 삭제
+            int deletedTradeHistories = entityManager.createQuery(
+                            "DELETE FROM TradeHistory t WHERE t.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
+
+            // 1.3 보유 포지션(HoldingPosition) 삭제
+            int deletedPositions = entityManager.createQuery(
+                            "DELETE FROM HoldingPosition h WHERE h.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
+
+            // 1.4 투자 요약(InvestmentSummary) 삭제
+            int deletedSummaries = entityManager.createQuery(
+                            "DELETE FROM InvestmentSummary i WHERE i.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
+
+            // 변경사항을 DB에 반영
+            entityManager.flush();
+
+            // 중요: 영속성 컨텍스트 초기화
+            entityManager.clear();
+
+            // 2. 새로운 상태로 회원 정보 다시 로드
             Member member = memberRepository.findById(memberId)
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            // 1. 보류 중인 주문(PendingOrder) 삭제
-            pendingOrderRepository.deleteByMember(member);
-            log.info("회원 ID: {}의 모든 보류 중인 주문을 삭제했습니다.", memberId);
-
-            // 2. 거래 내역(TradeHistory) 삭제
-            tradeHistoryRepository.deleteByMember(member);
-            log.info("회원 ID: {}의 모든 거래 내역을 삭제했습니다.", memberId);
-
-            // 3. 보유 포지션(HoldingPosition) 삭제
-            holdingPositionRepository.deleteByMember(member);
-            log.info("회원 ID: {}의 모든 보유 포지션을 삭제했습니다.", memberId);
-
-            // 4. 투자 요약(InvestmentSummary) 삭제 또는 초기화
-            if (member.getInvestmentSummary() != null) {
-                InvestmentSummary summary = member.getInvestmentSummary();
-                summary.updateValues(0L, 0L, 0L, 0.0);
-                log.info("회원 ID: {}의 투자 요약 정보를 초기화했습니다.", memberId);
-            } else {
-                // 투자 요약이 없는 경우 새로 생성
-                InvestmentSummary summary = InvestmentSummary.of(
-                        member,
-                        0L,  // 총 투자금
-                        0L,  // 총 평가액
-                        0L,  // 총 손익
-                        0.0  // 수익률
-                );
-                log.info("회원 ID: {}의 새 투자 요약 정보를 생성했습니다.", memberId);
-            }
-
-            // 5. 회원 자금 초기화 (1억원)
+            // 3. 회원 자금 초기화 (1억원)
             member.updateMemberMoney(100_000_000L);
-            memberRepository.save(member);
-            log.info("회원 ID: {}의 자산을 1억으로 초기화했습니다.", memberId);
 
-            // 변경사항 즉시 적용을 위한 플러시
+            // 4. 새로운 투자 요약 생성
+            InvestmentSummary summary = InvestmentSummary.of(
+                    member,
+                    0L,  // 총 투자금
+                    0L,  // 총 평가액
+                    0L,  // 총 손익
+                    0.0  // 수익률
+            );
+
+            // 5. 저장 및 반영
+            memberRepository.save(member);
+
+            // 6. 변경사항 즉시 적용을 위한 플러시
             memberRepository.flush();
 
             return new InitializeMoneyResponseDTO(
