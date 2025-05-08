@@ -21,11 +21,11 @@ import realClassOne.chickenStock.stock.entity.TradeHistory;
 import realClassOne.chickenStock.stock.repository.PendingOrderRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -114,6 +114,8 @@ public class MarketCloseScheduler {
     public int processCancelBatch(List<PendingOrder> pendingOrders) {
         int cancelCount = 0;
         List<String> stockCodes = new ArrayList<>();
+        // 문제가 발생한 주문 정보를 저장할 리스트
+        List<OrderProblemInfo> problemOrders = new ArrayList<>();
 
         for (PendingOrder order : pendingOrders) {
             try {
@@ -131,21 +133,138 @@ public class MarketCloseScheduler {
                 if (order.getOrderType() == TradeHistory.TradeType.BUY) {
                     Long refundAmount = order.getTargetPrice() * order.getQuantity();
 
-                    // 별도 트랜잭션으로 환불 처리
-                    refundMoneyOnOrderCancellation(order.getMember(), refundAmount);
+                    try {
+                        // 별도 트랜잭션으로 환불 처리
+                        refundMoneyOnOrderCancellation(order.getMember(), refundAmount);
 
-                    log.info("취소된 매수 주문 환불 처리 완료: 주문ID={}, 회원ID={}, 금액={}원",
-                            order.getOrderId(), order.getMember().getMemberId(), refundAmount);
+                        log.info("취소된 매수 주문 환불 처리 완료: 주문ID={}, 회원ID={}, 금액={}원",
+                                order.getOrderId(), order.getMember().getMemberId(), refundAmount);
+                    } catch (Exception e) {
+                        log.error("매수 주문 취소 후 환불 처리 중 오류 발생: 주문ID={}, 회원ID={}, 금액={}원, 오류={}",
+                                order.getOrderId(), order.getMember().getMemberId(), refundAmount, e.getMessage());
+
+                        // 문제 정보 수집
+                        OrderProblemInfo problemInfo = new OrderProblemInfo(
+                                order.getMember().getMemberId(),
+                                order.getMember().getEmail(),
+                                order.getStockData().getShortCode(),
+                                order.getStockData().getShortName(),
+                                order.getQuantity(),
+                                order.getTargetPrice(),
+                                "환불 처리 실패: " + e.getMessage()
+                        );
+                        problemOrders.add(problemInfo);
+
+                        // 개별 환불 실패 알림 발송
+                        sendRefundFailureEmail(order.getMember().getMemberId(), refundAmount, e);
+                    }
                 }
 
                 cancelCount++;
             } catch (Exception e) {
                 log.error("지정가 주문 취소 실패: 주문ID={}, 오류={}", order.getOrderId(), e.getMessage());
+
+                // 문제 정보 수집
+                try {
+                    OrderProblemInfo problemInfo = new OrderProblemInfo(
+                            order.getMember().getMemberId(),
+                            order.getMember().getEmail(),
+                            order.getStockData().getShortCode(),
+                            order.getStockData().getShortName(),
+                            order.getQuantity(),
+                            order.getTargetPrice(),
+                            "주문 취소 실패: " + e.getMessage()
+                    );
+                    problemOrders.add(problemInfo);
+                } catch (Exception ex) {
+                    log.error("문제 주문 정보 수집 중 오류 발생", ex);
+                }
+
                 // 실패해도 다음 주문 처리 계속
             }
         }
 
+        // 문제가 발생한 주문이 있으면 취합하여 이메일 발송
+        if (!problemOrders.isEmpty()) {
+            sendOrderProblemSummaryEmail(problemOrders);
+        }
+
         return cancelCount;
+    }
+
+    /**
+     * 문제 주문 정보를 담는 내부 클래스
+     */
+    private static class OrderProblemInfo {
+        final Long memberId;
+        final String memberEmail;
+        final String stockCode;
+        final String stockName;
+        final Integer quantity;
+        final Long targetPrice;
+        final String errorMessage;
+
+        public OrderProblemInfo(Long memberId, String memberEmail, String stockCode, String stockName,
+                                Integer quantity, Long targetPrice, String errorMessage) {
+            this.memberId = memberId;
+            this.memberEmail = memberEmail;
+            this.stockCode = stockCode;
+            this.stockName = stockName;
+            this.quantity = quantity;
+            this.targetPrice = targetPrice;
+            this.errorMessage = errorMessage;
+        }
+    }
+
+    /**
+     * 여러 문제 주문에 대한 취합 이메일 발송
+     */
+    private void sendOrderProblemSummaryEmail(List<OrderProblemInfo> problemOrders) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setTo(adminEmail);
+            message.setSubject("[ChickenStock 긴급] 지정가 주문 취소 문제 발생 요약");
+
+            String dateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            StringBuilder contentBuilder = new StringBuilder();
+            contentBuilder.append(String.format(
+                    "안녕하세요, ChickenStock 관리자님\n\n" +
+                            "시장 마감 시 지정가 주문 취소 중 다음 문제가 발생했습니다.\n\n" +
+                            "- 발생 시간: %s\n" +
+                            "- 문제 발생 주문 수: %d개\n\n" +
+                            "===== 문제 주문 상세 정보 =====\n\n",
+                    dateTime, problemOrders.size()
+            ));
+
+            for (int i = 0; i < problemOrders.size(); i++) {
+                OrderProblemInfo order = problemOrders.get(i);
+                contentBuilder.append(String.format(
+                        "문제 #%d\n" +
+                                "- 회원 ID: %d\n" +
+                                "- 회원 이메일: %s\n" +
+                                "- 종목 코드: %s\n" +
+                                "- 종목 이름: %s\n" +
+                                "- 주문 수량: %d주\n" +
+                                "- 주문 가격: %d원\n" +
+                                "- 오류 내용: %s\n\n",
+                        i + 1, order.memberId, order.memberEmail, order.stockCode, order.stockName,
+                        order.quantity, order.targetPrice, order.errorMessage
+                ));
+            }
+
+            contentBuilder.append(
+                    "위 문제들에 대한 수동 확인 및 조치가 필요합니다.\n" +
+                            "시스템 로그를 확인하여 더 자세한 오류 내용을 확인해주세요.\n\n" +
+                            "감사합니다.\n" +
+                            "ChickenStock 시스템"
+            );
+
+            message.setText(contentBuilder.toString());
+            emailSender.send(message);
+            log.info("지정가 주문 취소 문제 요약 이메일 발송 완료 ({}개 문제)", problemOrders.size());
+        } catch (Exception e) {
+            log.error("지정가 주문 취소 문제 요약 이메일 발송 실패", e);
+        }
     }
 
     /**
@@ -337,8 +456,9 @@ public class MarketCloseScheduler {
 
     /**
      * 마지막 안전장치: 8시 5분에 다시 한번 모든 구독 해제 시도
+     * 실패 시 강제로 웹소켓 연결 종료
      */
-    @Scheduled(cron = "0 5 20 * * *")
+    @Scheduled(cron = "0 5 20 * * *", zone = "Asia/Seoul")
     public void finalUnsubscribeCheck() {
         Set<String> remainingSubscriptions = kiwoomWebSocketClient.getSubscribedStockCodes();
 
@@ -348,6 +468,7 @@ public class MarketCloseScheduler {
             List<String> stockCodes = new ArrayList<>(remainingSubscriptions);
             List<String> finalFailedStocks = new ArrayList<>();
 
+            // 일반적인 방법으로 한 번 더 구독 해제 시도
             for (String stockCode : stockCodes) {
                 try {
                     boolean success = kiwoomWebSocketClient.unsubscribeStock(stockCode);
@@ -363,16 +484,104 @@ public class MarketCloseScheduler {
             // 최종 확인
             Set<String> finalCheck = kiwoomWebSocketClient.getSubscribedStockCodes();
             if (!finalCheck.isEmpty()) {
-                log.error("모든 시도 후에도 {}개 종목 구독 유지됨 - 긴급 조치 필요", finalCheck.size());
+                log.error("모든 시도 후에도 {}개 종목 구독 유지됨 - 웹소켓 강제 종료 시도", finalCheck.size());
+
+                // Reflection을 사용한 강제 초기화
+                try {
+                    // 1. client 필드 접근
+                    Field clientField = kiwoomWebSocketClient.getClass().getDeclaredField("client");
+                    clientField.setAccessible(true);
+                    Object clientObj = clientField.get(kiwoomWebSocketClient);
+
+                    // 2. client의 close 메서드 호출 (WebSocketClient의 메서드)
+                    if (clientObj != null) {
+                        Method closeMethod = clientObj.getClass().getMethod("close");
+                        closeMethod.invoke(clientObj);
+                        log.info("키움증권 WebSocketClient 강제 종료 완료");
+                    }
+
+                    // 3. KiwoomWebSocketClient의 내부 상태 초기화
+                    clearInternalCollection(kiwoomWebSocketClient, "subscribedStockCodes");
+                    clearInternalCollection(kiwoomWebSocketClient, "stockCodeSubscriberCount");
+                    clearInternalCollection(kiwoomWebSocketClient, "stockSubscriptionPurposes");
+                    clearInternalCollection(kiwoomWebSocketClient, "latestPriceDataCache");
+
+                    // 4. connected 필드를 false로 설정
+                    Field connectedField = kiwoomWebSocketClient.getClass().getDeclaredField("connected");
+                    connectedField.setAccessible(true);
+                    connectedField.set(kiwoomWebSocketClient, false);
+
+                    log.info("키움증권 웹소켓 클라이언트 내부 상태 강제 초기화 완료");
+                } catch (Exception e) {
+                    log.error("키움증권 웹소켓 클라이언트 강제 종료 중 오류 발생", e);
+                }
+
+                // 관리자에게 긴급 알림 발송
                 sendUrgentAlertToAdmin(finalCheck);
-                // 최종 실패 이메일 발송
                 sendFinalFailureEmail(finalCheck);
+
+                // 특별 이메일 발송 - 웹소켓 강제 종료 알림
+                sendForcedDisconnectEmail(finalCheck);
             } else if (!finalFailedStocks.isEmpty() && finalCheck.isEmpty()) {
                 // 마지막 시도에서 성공했을 경우 성공 메일 발송
                 sendSuccessEmail(stockCodes.size());
             }
         } else {
             log.info("마지막 안전 점검: 모든 종목 구독 해제 완료");
+        }
+    }
+
+    /**
+     * Reflection을 사용하여 KiwoomWebSocketClient의 내부 컬렉션을 초기화하는 헬퍼 메서드
+     */
+    private void clearInternalCollection(Object target, String fieldName) {
+        try {
+            Field field = target.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            Object collection = field.get(target);
+
+            if (collection instanceof Collection) {
+                ((Collection<?>) collection).clear();
+            } else if (collection instanceof Map) {
+                ((Map<?, ?>) collection).clear();
+            }
+
+            log.info("필드 {} 초기화 완료", fieldName);
+        } catch (Exception e) {
+            log.error("필드 {} 초기화 중 오류 발생: {}", fieldName, e.getMessage());
+        }
+    }
+
+    /**
+     * 웹소켓 강제 종료 알림 이메일 발송
+     */
+    private void sendForcedDisconnectEmail(Set<String> remainingStocks) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setTo(adminEmail);
+            message.setSubject("[ChickenStock 긴급] 키움증권 웹소켓 강제 종료 알림");
+
+            String dateTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            String stockCodesStr = String.join(", ", remainingStocks);
+
+            String content = String.format(
+                    "안녕하세요, ChickenStock 관리자님\n\n" +
+                            "모든 해제 시도 후에도 구독이 유지되어 키움증권 웹소켓 연결을 강제로 종료했습니다.\n\n" +
+                            "- 강제 종료 시간: %s\n" +
+                            "- 구독 해제 실패 종목 수: %d개\n" +
+                            "- 실패 종목 목록: %s\n\n" +
+                            "다음 시장 시작 시 웹소켓이 자동으로 재연결됩니다.\n" +
+                            "시스템 로그를 확인하여 구독 해제 실패 원인을 분석해주세요.\n\n" +
+                            "감사합니다.\n" +
+                            "ChickenStock 시스템",
+                    dateTime, remainingStocks.size(), stockCodesStr
+            );
+
+            message.setText(content);
+            emailSender.send(message);
+            log.info("웹소켓 강제 종료 알림 이메일 발송 완료");
+        } catch (Exception e) {
+            log.error("웹소켓 강제 종료 알림 이메일 발송 실패", e);
         }
     }
 
