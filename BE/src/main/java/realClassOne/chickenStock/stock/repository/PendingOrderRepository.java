@@ -14,6 +14,8 @@ import java.util.Optional;
 
 public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long> {
 
+    void deleteByMember(Member member);
+
     List<PendingOrder> findByMemberAndStatus(Member member, PendingOrder.OrderStatus status);
 
     @Query("SELECT po FROM PendingOrder po JOIN FETCH po.stockData WHERE po.status = realClassOne.chickenStock.stock.entity.PendingOrder$OrderStatus.PENDING")

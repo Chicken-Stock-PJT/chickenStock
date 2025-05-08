@@ -18,6 +18,8 @@ public interface HoldingPositionRepository extends JpaRepository<HoldingPosition
     List<HoldingPosition> findByMember(Member member);
     List<HoldingPosition> findAllByMember_MemberId(Long memberId);
 
+    void deleteByMember(Member member);
+
     // 새로 추가할 메서드: Eager Loading 활용
     @Query("SELECT hp FROM HoldingPosition hp JOIN FETCH hp.stockData WHERE hp.member.memberId = :memberId")
     List<HoldingPosition> findWithStockDataByMemberId(@Param("memberId") Long memberId);
