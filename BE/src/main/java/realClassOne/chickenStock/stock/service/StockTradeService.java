@@ -796,44 +796,46 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         ReentrantLock memberLock = getMemberLock(memberId);
         memberLock.lock();
         try {
-            Member member = memberRepository.findById(memberId)
-                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+            // 1. 모든 엔티티를 JPQL을 사용하여 직접 삭제 (순서 중요: 외래 키 제약조건 고려)
 
-            // 1. 보류 중인 주문(PendingOrder) 삭제
-            pendingOrderRepository.deleteByMember(member);
-            log.info("회원 ID: {}의 모든 보류 중인 주문을 삭제했습니다.", memberId);
+            // 1.1 보류 중인 주문(PendingOrder) 삭제
+            int deletedPendingOrders = entityManager.createQuery(
+                            "DELETE FROM PendingOrder p WHERE p.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
 
-            // 2. 거래 내역(TradeHistory) 삭제
-            tradeHistoryRepository.deleteByMember(member);
-            log.info("회원 ID: {}의 모든 거래 내역을 삭제했습니다.", memberId);
+            // 1.2 거래 내역(TradeHistory) 삭제
+            int deletedTradeHistories = entityManager.createQuery(
+                            "DELETE FROM TradeHistory t WHERE t.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
 
-            // 3. 보유 포지션(HoldingPosition) 삭제
-            holdingPositionRepository.deleteByMember(member);
-            log.info("회원 ID: {}의 모든 보유 포지션을 삭제했습니다.", memberId);
+            // 1.3 보유 포지션(HoldingPosition) 삭제
+            int deletedPositions = entityManager.createQuery(
+                            "DELETE FROM HoldingPosition h WHERE h.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
 
-            // 4. 투자 요약(InvestmentSummary) 초기화
-            // deleteByMember 쿼리를 통한 직접 삭제
-            if (member.getInvestmentSummary() != null) {
-                // SQL을 통한 직접 삭제 - JPQL 사용
-                entityManager.createQuery("DELETE FROM InvestmentSummary i WHERE i.member.id = :memberId")
-                        .setParameter("memberId", memberId)
-                        .executeUpdate();
-            }
+            // 1.4 투자 요약(InvestmentSummary) 삭제
+            int deletedSummaries = entityManager.createQuery(
+                            "DELETE FROM InvestmentSummary i WHERE i.member.id = :memberId")
+                    .setParameter("memberId", memberId)
+                    .executeUpdate();
 
             // 변경사항을 DB에 반영
-            memberRepository.flush();
+            entityManager.flush();
 
             // 중요: 영속성 컨텍스트 초기화
             entityManager.clear();
 
-            // 새로운 상태로 회원 정보 다시 로드
-            member = memberRepository.findById(memberId)
+            // 2. 새로운 상태로 회원 정보 다시 로드
+            Member member = memberRepository.findById(memberId)
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            // 5. 회원 자금 초기화 (1억원)
+            // 3. 회원 자금 초기화 (1억원)
             member.updateMemberMoney(100_000_000L);
 
-            // 6. 새로운 투자 요약 생성
+            // 4. 새로운 투자 요약 생성
             InvestmentSummary summary = InvestmentSummary.of(
                     member,
                     0L,  // 총 투자금
@@ -842,12 +844,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     0.0  // 수익률
             );
 
-            // 7. 저장 및 반영
+            // 5. 저장 및 반영
             memberRepository.save(member);
-            log.info("회원 ID: {}의 자산을 1억으로 초기화했습니다.", memberId);
-            log.info("회원 ID: {}의 새 투자 요약 정보를 생성했습니다.", memberId);
 
-            // 변경사항 즉시 적용을 위한 플러시
+            // 6. 변경사항 즉시 적용을 위한 플러시
             memberRepository.flush();
 
             return new InitializeMoneyResponseDTO(
