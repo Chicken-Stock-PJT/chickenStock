@@ -30,4 +30,8 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
             LocalDateTime createdAt,
             Pageable pageable
     );
+
+    // 특정 회원의 모든 거래 내역을 조회합니다.
+    @Query("SELECT t FROM TradeHistory t WHERE t.member.memberId = :memberId ORDER BY t.tradedAt ASC")
+    List<TradeHistory> findByMemberId(@Param("memberId") Long memberId);
 }

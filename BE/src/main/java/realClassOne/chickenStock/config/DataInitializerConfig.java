@@ -24,7 +24,7 @@ public class DataInitializerConfig {
     public CommandLineRunner initializeData() {
         return args -> {
             // 이미 존재하는지 확인
-            Optional<Member> existingMember = memberRepository.findByEmail("cuteai@gmail.com");
+            Optional<Member> existingMember = memberRepository.findByEmail("a@a");
 
             // 존재하지 않는 경우에만 생성
             if (existingMember.isEmpty()) {
