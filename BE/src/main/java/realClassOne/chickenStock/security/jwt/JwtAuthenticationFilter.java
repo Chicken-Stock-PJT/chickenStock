@@ -27,6 +27,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
+        String header = request.getHeader("Authorization");
+        System.out.println(">>> [JwtAuthFilter] Authorization header: " + header);
+
         // 로그아웃 요청인 경우 로직 탄 후 처리
         if (request.getMethod().equals("POST") && request.getRequestURI().endsWith("/api/auth/logout")) {
             System.out.println("로그아웃 요청 감지");

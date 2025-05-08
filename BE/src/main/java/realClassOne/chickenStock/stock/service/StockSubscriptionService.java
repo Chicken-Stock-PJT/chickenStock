@@ -3,8 +3,10 @@ package realClassOne.chickenStock.stock.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
+import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.util.Set;
@@ -15,6 +17,7 @@ import java.util.Set;
 public class StockSubscriptionService {
 
     private final KiwoomWebSocketClient kiwoomWebSocketClient;
+    private final StockDataRepository stockDataRepository;
 
     /**
      * 종목 코드를 등록하여 실시간 데이터 구독을 시작합니다.
@@ -22,16 +25,35 @@ public class StockSubscriptionService {
      *
      * @param stockCode 종목 코드 (예: 005930)
      */
-    public void registerStockForSubscription(String stockCode) {
+    @Transactional
+    public void registerStockForSubscription(String stockCode, String purpose) {
         validateStockCode(stockCode);
 
-        boolean result = kiwoomWebSocketClient.subscribeStock(stockCode);
+        boolean result = kiwoomWebSocketClient.subscribeStockWithPurpose(stockCode, purpose);
 
         if (result) {
-            log.info("종목 {} 구독 등록 성공", stockCode);
+            log.info("종목 {} 구독 등록 성공 (목적: {})", stockCode, purpose);
         } else {
-            log.error("종목 {} 구독 등록 실패", stockCode);
+            log.error("종목 {} 구독 등록 실패 (목적: {})", stockCode, purpose);
             throw new CustomException(StockErrorCode.SUBSCRIPTION_FAILED);
+        }
+    }
+
+    public void registerStockForSubscription(String stockCode) {
+        registerStockForSubscription(stockCode, "DEFAULT");
+    }
+
+    @Transactional
+    public void unregisterStockForSubscription(String stockCode, String purpose) {
+        validateStockCode(stockCode);
+
+        boolean result = kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, purpose);
+
+        if (result) {
+            log.info("종목 {} 구독 해제 성공 (목적: {})", stockCode, purpose);
+        } else {
+            log.error("종목 {} 구독 해제 실패 (목적: {})", stockCode, purpose);
+            throw new CustomException(StockErrorCode.UNSUBSCRIPTION_FAILED);
         }
     }
 
@@ -42,16 +64,7 @@ public class StockSubscriptionService {
      * @param stockCode 종목 코드 (예: 005930)
      */
     public void unregisterStockForSubscription(String stockCode) {
-        validateStockCode(stockCode);
-
-        boolean result = kiwoomWebSocketClient.unsubscribeStock(stockCode);
-
-        if (result) {
-            log.info("종목 {} 구독 해제 성공", stockCode);
-        } else {
-            log.error("종목 {} 구독 해제 실패", stockCode);
-            throw new CustomException(StockErrorCode.UNSUBSCRIPTION_FAILED);
-        }
+        unregisterStockForSubscription(stockCode, "DEFAULT");
     }
 
     /**

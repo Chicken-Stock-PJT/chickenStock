@@ -2,17 +2,18 @@ package realClassOne.chickenStock.stock.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
-import realClassOne.chickenStock.stock.dto.request.StockSubscriptionRequestDTO;
-import realClassOne.chickenStock.stock.dto.response.StockSubscriptionResponseDTO;
+import realClassOne.chickenStock.stock.dto.response.StockAskBidResponseDTO;
+import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
+import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 import realClassOne.chickenStock.stock.service.StockInfoService;
-import realClassOne.chickenStock.stock.service.StockSubscriptionService;
 
 import java.util.List;
-import java.util.Set;
 
 @RestController
 @RequestMapping(value = "/api/stocks")
@@ -21,54 +22,33 @@ import java.util.Set;
 public class StockController {
 
     private final StockInfoService stockInfoService;
-    private final StockSubscriptionService stockSubscriptionService;
+    private final KiwoomStockApiService kiwoomStockApiService;
 
+    // 모든 주식 정보 요청 API
     @GetMapping("/all")
     public ResponseEntity<List<StockResponse>> getAllStocks() {
-        log.debug("모든 주식 종목 정보 요청");
         return ResponseEntity.ok().body(stockInfoService.getAllStocks());
     }
 
+    // 주식 코드로 실시간 주식 정보 요청
     @GetMapping("/code/{code}")
     public ResponseEntity<StockResponse> getStockByCode(@PathVariable String code) {
-        log.debug("종목코드로 주식 정보 요청: {}", code);
-        StockResponse stock = stockInfoService.getStockByCode(code);
+        StockResponse stock = kiwoomStockApiService.getEnhancedStockByCode(code);
         return ResponseEntity.ok(stock);
     }
 
-    @GetMapping("/name/{name}")
-    public ResponseEntity<StockResponse> getStockByName(@PathVariable String name) {
-        log.debug("종목명으로 주식 정보 요청: {}", name);
-        StockResponse stock = stockInfoService.getStockByName(name);
-        return ResponseEntity.ok(stock);
+    // 주식 코드로 호가 정보 요청
+    @GetMapping("/askbid/{code}")
+    public ResponseEntity<StockAskBidResponseDTO> getStockAskBid(@PathVariable String code) {
+        log.info("종목코드 {}의 호가 정보 요청", code);
+        StockAskBidResponseDTO askBidInfo = kiwoomStockApiService.getStockAskBidInfo(code);
+        return ResponseEntity.ok(askBidInfo);
     }
 
-    @PostMapping("/subscribe")
-    public ResponseEntity<Void> subscribeStock(@RequestBody StockSubscriptionRequestDTO request) {
-        log.info("종목 구독 요청: {}", request.getStockCode());
-        stockSubscriptionService.registerStockForSubscription(request.getStockCode());
-        return ResponseEntity.ok().build();
-    }
-
-    @PostMapping("/unsubscribe")
-    public ResponseEntity<Void> unsubscribeStock(@RequestBody StockSubscriptionRequestDTO request) {
-        log.info("종목 구독 해제 요청: {}", request.getStockCode());
-        stockSubscriptionService.unregisterStockForSubscription(request.getStockCode());
-        return ResponseEntity.ok().build();
-    }
-
-    @GetMapping("/subscribed")
-    public ResponseEntity<Set<String>> getSubscribedStocks() {
-        Set<String> subscribedStocks = stockSubscriptionService.getSubscribedStocks();
-        return ResponseEntity.ok(subscribedStocks);
+    // 주식 종목코드로 현재가 및 기본정보를 조회합니다.
+    @GetMapping("/info/{stockCode}")
+    public ResponseEntity<StockInfoResponseDTO> getStockInfo(@PathVariable String stockCode) {
+        StockInfoResponseDTO response = kiwoomStockApiService.getStockInfo(stockCode);
+        return ResponseEntity.ok(response);
     }
 }
-
-
-
-//    @GetMapping("/register/{stockCode}")
-//    public ResponseEntity<String> registerStock(@PathVariable String stockCode) {
-//        kiwoomWebSocketClient.registerRealTimeData("0B", List.of(stockCode));
-//        kiwoomWebSocketClient.registerRealTimeData("0D", List.of(stockCode));
-//        return ResponseEntity.ok("종목 등록 완료: " + stockCode);
-//    }

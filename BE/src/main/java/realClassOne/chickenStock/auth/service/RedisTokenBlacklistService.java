@@ -17,16 +17,13 @@ public class RedisTokenBlacklistService {
     private static final String ONE_TIME_CODE_PREFIX = "onetime:";
     private static final String BLACKLIST_PREFIX = "blacklist:";
 
-
     public void addToBlacklist(String token, long timeToLiveMillis) {
         String key = BLACKLIST_PREFIX + token;
         redisTemplate.opsForValue().set(key, "1");
         redisTemplate.expire(key, timeToLiveMillis, TimeUnit.MILLISECONDS);
     }
 
-    /**
-     * Check if token is in blacklist
-     */
+    // Check if token is in blacklist
     public boolean isBlacklisted(String token) {
         String key = BLACKLIST_PREFIX + token;
         return Boolean.TRUE.equals(redisTemplate.hasKey(key));

@@ -10,9 +10,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class StockResponse {
-    private String shortCode;     // 단축코드 (6자리)
-    private String shortName;     // 한글 종목약명
-    private String market;        // 시장구분 (KOSPI, KOSDAQ 등)
-    private String stockType;     // 주식종류
-    private String faceValue;     // 액면가
+    private String shortCode;
+    private String shortName;
+    private String market;
+    private String stockType;
+    private String faceValue; // 액면가
+    private String prevDayCompare; // 전일대비
+    private String fluctuationRate; // 등락률
 }
