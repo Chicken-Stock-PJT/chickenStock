@@ -1,4 +1,4 @@
-import LoginCard from "@/features/auth/login/LoginCard";
+import LoginCard from "@/features/auth/login/ui/LoginCard";
 
 const LoginPage = () => {
   return <LoginCard />;
