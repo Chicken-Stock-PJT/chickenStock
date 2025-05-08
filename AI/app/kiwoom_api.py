@@ -111,7 +111,6 @@ class KiwoomAPI:
         """외부에서 제공된 계좌 정보로 업데이트"""
         if account_info:
             self.account_info = account_info
-            logger.info(f"계좌정보 업데이트: 예수금={self.account_info['cash_balance']}, 종목수={len(self.account_info['positions'])}")
             return True
         return False
     

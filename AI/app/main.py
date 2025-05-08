@@ -2,7 +2,8 @@ import asyncio
 import logging
 import aiohttp
 from typing import Dict
-from datetime import datetime
+from datetime import datetime, time, timedelta
+import time as time_module
 from pydantic import BaseModel
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
@@ -43,11 +44,13 @@ auth_client = None
 kiwoom_api = None
 trading_model = None
 backend_client = None
+scheduler_task = None  # 스케줄러 태스크 저장용
 
 # 서비스 상태 추적
 service_status = {
     "is_running": False,
     "start_time": None,
+    "last_data_update": None,  # 마지막 데이터 업데이트 시간 추가
 }
 
 # 로그인 요청 모델
@@ -56,21 +59,156 @@ class LoginRequest(BaseModel):
     password: str
     platform: str = "mobile"
 
+async def get_next_run_time(target_hour=9, target_minute=0, target_second=0):
+    """다음 실행 시간까지 대기해야 하는 시간(초) 계산"""
+    now = datetime.now()
+    target_time = time(target_hour, target_minute, target_second)
+    
+    # 오늘 목표 시간 생성
+    target_datetime = datetime.combine(now.date(), target_time)
+    
+    # 이미 오늘의 목표 시간이 지났으면 내일로 설정
+    if now >= target_datetime:
+        tomorrow = now.date() + timedelta(days=1)
+        target_datetime = datetime.combine(tomorrow, target_time)
+    
+    # 대기 시간 계산 (초 단위)
+    wait_seconds = (target_datetime - now).total_seconds()
+    return wait_seconds
+
+async def scheduled_task():
+    """매일 오전 9시에 실행되는 작업 스케줄러"""
+    global kiwoom_api, service_status
+    
+    while service_status["is_running"]:
+        try:
+            # 다음 실행 시간까지 대기할 시간 계산 (오전 9시)
+            wait_seconds = await get_next_run_time(9, 0, 0)
+            logger.info(f"다음 차트 데이터 수집 및 Envelope 지표 계산까지 {wait_seconds:.2f}초 남음")
+            
+            # 다음 실행 시간까지 대기
+            await asyncio.sleep(wait_seconds)
+            
+            # 서비스가 여전히 실행 중이면 작업 수행
+            if service_status["is_running"] and kiwoom_api:
+                logger.info("정기 스케줄에 따른 차트 데이터 수집 및 Envelope 지표 계산 시작")
+                await update_chart_data_and_indicators()
+                logger.info("정기 스케줄에 따른 차트 데이터 수집 및 Envelope 지표 계산 완료")
+            
+        except asyncio.CancelledError:
+            logger.info("스케줄러 작업이 취소되었습니다.")
+            break
+        except Exception as e:
+            logger.error(f"스케줄러 작업 중 오류 발생: {str(e)}")
+            # 30분 후 재시도
+            await asyncio.sleep(1800)
+
+async def update_chart_data_and_indicators():
+    """차트 데이터 수집 및 Envelope 지표 계산"""
+    global kiwoom_api, service_status
+    
+    try:
+        if not kiwoom_api or not service_status["is_running"]:
+            logger.error("API가 초기화되지 않았거나 서비스가 실행 중이지 않습니다.")
+            return False
+        
+        # 필터링된 종목코드 목록 가져오기
+        filtered_stockcode_list = kiwoom_api.stock_cache.filtered_stockcode_list
+        if not filtered_stockcode_list or len(filtered_stockcode_list) == 0:
+            logger.error("필터링된 종목 목록이 없습니다.")
+            return False
+        
+        logger.info(f"차트 데이터 초기화 시작: {len(filtered_stockcode_list)}개 종목")
+        
+        # 차트 데이터 초기화 - Envelope 지표 계산용
+        await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
+        
+        # Envelope 지표 계산 (차트 데이터 초기화 후)
+        logger.info("Envelope 지표 계산")
+        processed_count = kiwoom_api.stock_cache.calculate_envelope_indicators()
+        
+        # 마지막 데이터 업데이트 시간 기록
+        service_status["last_data_update"] = datetime.now()
+        
+        logger.info(f"차트 데이터 수집 및 Envelope 지표 계산 완료: {processed_count}개 종목 처리됨")
+        return True
+    
+    except Exception as e:
+        logger.error(f"차트 데이터 수집 및 Envelope 지표 계산 중 오류: {str(e)}")
+        return False
+
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행"""
-    global auth_client
+    global auth_client, kiwoom_api, trading_model, backend_client, service_status, scheduler_task
     
     logger.info("애플리케이션 시작 중...")
     
     # 인증 클라이언트 초기화 (백엔드 서버 인증용)
     auth_client = AuthClient()
     await auth_client.initialize()
+    
+    try:
+        # 키움 API 토큰 자동 발급
+        logger.info("키움 API 토큰 자동 발급 시작")
+        kiwoom_auth_client = KiwoomAuthClient()
+        kiwoom_token = await kiwoom_auth_client.get_access_token()
+        
+        if not kiwoom_token:
+            logger.error("키움 API 토큰 발급 실패")
+            return
+            
+        logger.info("키움 API 토큰 발급 성공")
+        
+        # 키움 API 인스턴스 생성
+        kiwoom_api = KiwoomAPI(auth_client)
+        
+        # 트레이딩 모델 생성
+        trading_model = TradingModel(kiwoom_api)
+        
+        # 백엔드 클라이언트 생성
+        backend_client = BackendClient(auth_client)
+        
+        # 순환 참조 설정
+        trading_model.set_backend_client(backend_client)
+        backend_client.set_trading_model(trading_model)
+        
+        # 상태 업데이트
+        service_status["is_running"] = True
+        service_status["start_time"] = datetime.now()
+        
+        # 서비스 초기화 및 시작
+        asyncio.create_task(initialize_service())
+        
+        # 정기 스케줄러 시작 (매일 오전 9시 차트 데이터 수집 및 지표 계산)
+        scheduler_task = asyncio.create_task(scheduled_task())
+        
+        logger.info("자동매매 서비스 자동 시작 완료")
+        
+    except Exception as e:
+        logger.error(f"자동 시작 중 오류 발생: {str(e)}")
+        if kiwoom_api:
+            kiwoom_api = None
+        if trading_model:
+            trading_model = None
+        if backend_client:
+            backend_client = None
+        service_status["is_running"] = False
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """애플리케이션 종료 시 실행"""
+    global scheduler_task
+    
     logger.info("애플리케이션 종료 중...")
+    
+    # 스케줄러 태스크 취소
+    if scheduler_task:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
     
     if service_status["is_running"]:
         await stop_trading_service()
@@ -245,6 +383,7 @@ async def get_status():
         "status": "running" if service_status["is_running"] else "stopped",
         "is_running": service_status["is_running"],
         "start_time": service_status["start_time"].isoformat() if service_status["start_time"] else None,
+        "last_data_update": service_status["last_data_update"].isoformat() if service_status["last_data_update"] else None,
         "connected_to_api": kiwoom_api.connected if kiwoom_api else False,
         "auth_status": auth_status,
         "account_info": {
@@ -257,7 +396,7 @@ async def get_status():
 @app.post("/service/start")
 async def start_trading_service(background_tasks: BackgroundTasks):
     """자동매매 서비스 시작"""
-    global auth_client, kiwoom_api, trading_model, backend_client, service_status
+    global auth_client, kiwoom_api, trading_model, backend_client, service_status, scheduler_task
 
     if service_status["is_running"]:
         return {"message": "서비스가 이미 실행 중입니다."}
@@ -290,6 +429,9 @@ async def start_trading_service(background_tasks: BackgroundTasks):
         service_status["is_running"] = True
         service_status["start_time"] = datetime.now()
         
+        # 정기 스케줄러 태스크 시작 (매일 오전 9시 차트 데이터 수집 및 지표 계산)
+        scheduler_task = asyncio.create_task(scheduled_task())
+        
         return {"message": "자동매매 서비스를 시작합니다. 초기화 작업이 진행 중입니다."}
     
     except Exception as e:
@@ -311,6 +453,18 @@ async def initialize_service():
     global auth_client, kiwoom_api, trading_model, backend_client, service_status
     
     try:
+        # 백엔드 서버 자동 로그인 (기본 계정 사용)
+        if not auth_client.is_authenticated:
+            logger.info("백엔드 서버 자동 로그인 시도")         
+            
+            success = await auth_client.login('', '')
+            if not success:
+                logger.error("백엔드 서버 자동 로그인 실패")
+                service_status["is_running"] = False
+                return
+            logger.info("백엔드 서버 자동 로그인 성공")
+
+        
         # REST API 연결 (백엔드 서버 액세스 토큰 사용)
         logger.info("REST API 연결 시작")
         if not await kiwoom_api.connect():
@@ -362,13 +516,9 @@ async def initialize_service():
         # StockCache에 필터링된 종목 리스트 설정
         kiwoom_api.stock_cache.set_filtered_stocks(filtered_stockcode_list)
         
-        # 차트 데이터 초기화 - Envelope 지표 계산용
-        logger.info("차트 데이터 초기화 시작")
-        await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
-        
-        # Envelope 지표 계산 (차트 데이터 초기화 후)
-        logger.info("Envelope 지표 계산")
-        processed_count = kiwoom_api.stock_cache.calculate_envelope_indicators()
+        # 차트 데이터 수집 및 Envelope 지표 계산
+        logger.info("초기 차트 데이터 수집 및 Envelope 지표 계산 시작")
+        await update_chart_data_and_indicators()
         
         # 실시간 데이터 구독 준비
         await kiwoom_api.prepare_subscription_groups(filtered_stock_list, 30)
@@ -464,12 +614,20 @@ async def trading_loop():
 @app.post("/service/stop")
 async def stop_trading_service():
     """자동매매 서비스 중지"""
-    global kiwoom_api, trading_model, backend_client, service_status
+    global kiwoom_api, trading_model, backend_client, service_status, scheduler_task
     
     if not service_status["is_running"]:
         return {"message": "서비스가 이미 중지되었습니다."}
     
     try:
+        # 스케줄러 태스크 취소
+        if scheduler_task:
+            scheduler_task.cancel()
+            try:
+                await scheduler_task
+            except asyncio.CancelledError:
+                pass
+        
         # API 연결 종료 (구독 해제 포함)
         if kiwoom_api:
             await kiwoom_api.close()
@@ -552,6 +710,38 @@ async def get_account_info():
         kiwoom_api.update_account_info(account_info)
     
     return kiwoom_api.account_info
+
+@app.post("/data/refresh")
+async def manually_refresh_data():
+    """차트 데이터 및 Envelope 지표 수동 갱신"""
+    if not service_status["is_running"] or not kiwoom_api:
+        raise HTTPException(
+            status_code=400,
+            detail="서비스가 실행 중이지 않습니다."
+        )
+    
+    try:
+        # 데이터 갱신 작업 실행
+        logger.info("수동 요청에 의한 차트 데이터 및 Envelope 지표 갱신 시작")
+        success = await update_chart_data_and_indicators()
+        
+        if success:
+            return {
+                "success": True,
+                "message": "차트 데이터 및 Envelope 지표 갱신 완료",
+                "last_update": service_status["last_data_update"].isoformat() if service_status["last_data_update"] else None
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="차트 데이터 및 Envelope 지표 갱신 실패"
+            )
+    except Exception as e:
+        logger.error(f"데이터 수동 갱신 중 오류: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"데이터 갱신 중 오류: {str(e)}"
+        )
 
 @app.get("/symbols")
 async def get_symbols():

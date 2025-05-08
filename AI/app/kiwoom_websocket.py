@@ -381,7 +381,7 @@ class KiwoomWebSocket:
                             
                             for item in data_list:
                                 item_type = item.get("type")
-                                item_code = item.get("item")
+                                item_code = item.get("item")[:-3]
                                 
                                 if item_type == "0B":  # 주식체결 타입
                                     values = item.get("values", {})

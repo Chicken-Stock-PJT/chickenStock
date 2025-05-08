@@ -1,13 +1,11 @@
 import logging
-import os
-import json
 from typing import Dict, List, Optional
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class StockCache:
-    """종목 정보, 차트 데이터 및 지표를 캐싱하는 통합 클래스"""
+    """종목 정보, 차트 데이터 및 지표를 캐싱하는 통합 클래스 (메모리 전용)"""
     
     def __init__(self, kiwoom_api=None):
         """캐시 초기화"""
@@ -32,125 +30,10 @@ class StockCache:
         self.kospi_symbols = []
         self.kosdaq_symbols = []
         
-        # 캐시 파일 경로
-        self.cache_dir = os.path.join(os.getcwd(), "cache")
-        os.makedirs(self.cache_dir, exist_ok=True)
-        
-        # 캐시 파일명
-        self.stock_cache_file = os.path.join(self.cache_dir, "stock_info.json")
-        self.filtered_cache_file = os.path.join(self.cache_dir, "filtered_stocks.json")
-        self.envelope_cache_file = os.path.join(self.cache_dir, "envelope_indicators.json")
-        
-        # 캐시 로드
-        self._load_cache()
-        
         # 구독 관리
         self.subscribed_symbols = set()
-    
-    def _load_cache(self):
-        """저장된 캐시 파일 로드"""
-        # 1. 종목 정보 캐시 로드
-        self._load_stock_info()
         
-        # 2. 필터링된 종목 리스트 로드
-        self._load_filtered_stocks()
-        
-        # 3. Envelope 지표 캐시 로드
-        self._load_envelope_indicators()
-    
-    def _load_stock_info(self):
-        """종목 정보 캐시 로드"""
-        try:
-            if os.path.exists(self.stock_cache_file):
-                with open(self.stock_cache_file, 'r', encoding='utf-8') as f:
-                    cache_data = json.load(f)
-                    self.stock_info_cache = cache_data.get('stock_info', {})
-                    self.kospi_symbols = cache_data.get('kospi_symbols', [])
-                    self.kosdaq_symbols = cache_data.get('kosdaq_symbols', [])
-                    
-                    logger.info(f"종목 정보 캐시 로드 완료: {len(self.stock_info_cache)}개 종목")
-        except Exception as e:
-            logger.error(f"종목 정보 캐시 로드 중 오류: {str(e)}")
-            self.stock_info_cache = {}
-            self.kospi_symbols = []
-            self.kosdaq_symbols = []
-    
-    def _load_filtered_stocks(self):
-        """필터링된 종목 리스트 로드"""
-        try:
-            if os.path.exists(self.filtered_cache_file):
-                with open(self.filtered_cache_file, 'r', encoding='utf-8') as f:
-                    cache_data = json.load(f)
-                    self.filtered_stockcode_list = cache_data.get('filtered_stocks', [])
-                    logger.info(f"필터링된 종목 캐시 로드 완료: {len(self.filtered_stockcode_list)}개 종목")
-        except Exception as e:
-            logger.error(f"필터링된 종목 캐시 로드 중 오류: {str(e)}")
-            self.filtered_stockcode_list = []
-    
-    def _load_envelope_indicators(self):
-        """Envelope 지표 캐시 로드"""
-        try:
-            if os.path.exists(self.envelope_cache_file):
-                with open(self.envelope_cache_file, 'r', encoding='utf-8') as f:
-                    cache_data = json.load(f)
-                    self.envelope_cache = cache_data.get('indicators', {})
-                    logger.info(f"Envelope 지표 캐시 로드 완료: {len(self.envelope_cache)}개 종목")
-        except Exception as e:
-            logger.error(f"Envelope 지표 캐시 로드 중 오류: {str(e)}")
-            self.envelope_cache = {}
-    
-    def _save_cache(self):
-        """모든 캐시 파일 저장"""
-        self._save_stock_info()
-        self._save_filtered_stocks()
-        self._save_envelope_indicators()
-    
-    def _save_stock_info(self):
-        """종목 정보 캐시 저장"""
-        try:
-            cache_data = {
-                'stock_info': self.stock_info_cache,
-                'kospi_symbols': self.kospi_symbols,
-                'kosdaq_symbols': self.kosdaq_symbols,
-                'last_update': datetime.now().isoformat()
-            }
-            
-            with open(self.stock_cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f)
-            
-            logger.info(f"종목 정보 캐시 저장 완료: {len(self.stock_info_cache)}개 종목")
-        except Exception as e:
-            logger.error(f"종목 정보 캐시 저장 중 오류: {str(e)}")
-    
-    def _save_filtered_stocks(self):
-        """필터링된 종목 리스트 저장"""
-        try:
-            cache_data = {
-                'filtered_stocks': self.filtered_stockcode_list,
-                'last_update': datetime.now().isoformat()
-            }
-            
-            with open(self.filtered_cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f)
-            
-            logger.info(f"필터링된 종목 캐시 저장 완료: {len(self.filtered_stockcode_list)}개 종목")
-        except Exception as e:
-            logger.error(f"필터링된 종목 캐시 저장 중 오류: {str(e)}")
-    
-    def _save_envelope_indicators(self):
-        """Envelope 지표 캐시 저장"""
-        try:
-            cache_data = {
-                'indicators': self.envelope_cache,
-                'last_update': datetime.now().isoformat()
-            }
-            
-            with open(self.envelope_cache_file, 'w', encoding='utf-8') as f:
-                json.dump(cache_data, f)
-            
-            logger.info(f"Envelope 지표 캐시 저장 완료: {len(self.envelope_cache)}개 종목")
-        except Exception as e:
-            logger.error(f"Envelope 지표 캐시 저장 중 오류: {str(e)}")
+        logger.info("메모리 전용 StockCache 초기화 완료")
     
     # 구독 관리 메서드
     def add_subscribed_symbol(self, code: str):
@@ -204,9 +87,6 @@ class StockCache:
             logger.info(f"종목 정보 캐시 초기화 완료: 총 {len(self.stock_info_cache)}개 종목")
             logger.info(f"코스피: {len(self.kospi_symbols)}개, 코스닥: {len(self.kosdaq_symbols)}개")
             
-            # 캐시 저장
-            self._save_stock_info()
-            
             return True
                 
         except Exception as e:
@@ -218,7 +98,6 @@ class StockCache:
         """필터링된 종목 리스트 설정"""
         self.filtered_stockcode_list = symbols
         logger.info(f"필터링된 종목 리스트 설정: {len(symbols)}개 종목")
-        self._save_filtered_stocks()
     
     # 차트 데이터 관련 메서드
     def add_chart_data(self, symbol: str, chart_data: List[Dict]):
@@ -304,9 +183,6 @@ class StockCache:
                 
             except Exception as e:
                 logger.error(f"종목 {symbol} Envelope 지표 계산 오류: {str(e)}")
-        
-        # 캐시 저장
-        self._save_envelope_indicators()
         
         logger.info(f"Envelope 지표 계산 완료: {success_count}/{len(self.filtered_stockcode_list)}개 성공")
         
