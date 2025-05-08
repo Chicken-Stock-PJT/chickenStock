@@ -1,6 +1,7 @@
 package realClassOne.chickenStock.stock.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -30,4 +31,17 @@ public interface HoldingPositionRepository extends JpaRepository<HoldingPosition
     @Query("SELECT hp FROM HoldingPosition hp JOIN FETCH hp.stockData WHERE hp.member = :member")
     List<HoldingPosition> findByMemberWithStockData(@Param("member") Member member);
 
+    Optional<HoldingPosition> findByMemberAndStockDataAndActiveTrue(Member member, StockData stockData);
+
+    List<HoldingPosition> findByMemberAndActiveTrue(Member member);
+
+    // active 상태 업데이트를 위한 메서드 추가
+    @Modifying
+    @Query("UPDATE HoldingPosition h SET h.active = :active WHERE h.stockHoldingId = :id")
+    int updateActiveStatus(@Param("id") Long id, @Param("active") boolean active);
+
+    @Modifying
+    @Query(value = "DELETE FROM holding_position WHERE member_id = :memberId AND stock_data_id = :stockDataId",
+            nativeQuery = true)
+    int deleteByMemberIdAndStockDataIdNative(@Param("memberId") Long memberId, @Param("stockDataId") Long stockDataId);
 }
