@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import StockListIndex from "@/features/stocks/list/ui/StockListIndex";
 import StockListItem from "@/features/stocks/list/ui/StockListItem";
 import { MarketType, RankingType, StockProps } from "@/features/stocks/list/model/types";
@@ -7,38 +7,73 @@ import StockListSkeleton from "@/features/stocks/list/ui/StockListSkeleton";
 import { getStockRanking } from "@/features/stocks/list/api";
 
 const StockList = () => {
-  const [stocks, setStocks] = useState<StockProps[]>([]);
+  const [stocks, setStocks] = useState<StockProps[]>([]); // 현재 순위
+  const [prevStocks, setPrevStocks] = useState<StockProps[]>([]); // 이전 순위
   const [marketType, setMarketType] = useState<MarketType>("000");
   const [rankingType, setRankingType] = useState<RankingType>("tradeAmount");
   const [sortType, setSortType] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const stockRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pollingInterval = useRef<NodeJS.Timeout>(null);
 
   const handleRankingTypeChange = (type: RankingType, newSortType?: string) => {
     setRankingType(type);
     setSortType(newSortType);
   };
 
-  useEffect(() => {
-    const fetchStocks = async () => {
+  const fetchStocks = async () => {
+    try {
       setLoading(true);
-      try {
-        const response = await getStockRanking(rankingType, marketType, sortType);
-        const formattedStocks = response.rankingItems.map((item, index: number) => ({
-          ...item,
-          rankingType: rankingType.toLowerCase() as RankingType,
-          rank: index + 1,
-        }));
+      const response = await getStockRanking(rankingType, marketType, sortType);
+      const formattedStocks = response.rankingItems.map((item, index: number) => ({
+        ...item,
+        rankingType: rankingType.toLowerCase() as RankingType,
+        rank: index + 1,
+      }));
 
-        setStocks(formattedStocks as StockProps[]);
-      } catch (error) {
-        console.error("Error fetching stocks:", error);
-      } finally {
-        setLoading(false);
+      console.log(formattedStocks);
+      setPrevStocks(stocks);
+      setStocks(formattedStocks as StockProps[]);
+    } catch (error) {
+      console.error("Error fetching stocks:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchStocks();
+
+    pollingInterval.current = setInterval(() => {
+      void fetchStocks();
+    }, 30000);
+
+    return () => {
+      if (pollingInterval.current) {
+        clearInterval(pollingInterval.current);
       }
     };
-
-    void fetchStocks();
   }, [marketType, rankingType, sortType]);
+
+  useEffect(() => {
+    stocks.forEach((stock) => {
+      const prevStock = prevStocks.find((prevStock) => prevStock.stockCode === stock.stockCode);
+      const element = stockRefs.current[stock.stockCode];
+
+      if (!element) return;
+
+      if (!prevStock) {
+        element.style.animation = "fadeIn";
+      } else {
+        const rankDiff = stock.rank - prevStock.rank;
+        if (rankDiff > 0) {
+          element.style.animation = "slideUp";
+        } else if (rankDiff < 0) {
+          element.style.animation = "slideDown";
+        }
+      }
+    });
+  }, [stocks, prevStocks]);
 
   return (
     <div>
@@ -62,7 +97,17 @@ const StockList = () => {
             rankingType, // 명시적으로 rankingType 지정
           } as StockProps; // StockProps로 타입 단언
 
-          return <StockListItem key={stock.stockCode} {...stockWithRank} />;
+          return (
+            <div
+              key={stock.stockCode}
+              ref={(el) => {
+                stockRefs.current[stock.stockCode] = el;
+              }}
+              className="transition-all duration-300 ease-in-out"
+            >
+              <StockListItem {...stockWithRank} />
+            </div>
+          );
         })
       )}
     </div>
