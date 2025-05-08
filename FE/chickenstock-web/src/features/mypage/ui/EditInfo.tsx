@@ -10,11 +10,11 @@ import { Label } from "@/shared/libs/ui/label";
 import { Input } from "@/shared/libs/ui/input";
 import { useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
-import { useAuthStore } from "@/shared/store/auth";
-import { useUpdateNickname } from "../model/queries";
+import { useUpdateNickname } from "../model/mutations";
+import { useSimpleProfile } from "@/shared/model/queries";
 
 const EditInfo = () => {
-  const { simpleProfile } = useAuthStore();
+  const { data: simpleProfile } = useSimpleProfile();
   const [nickname, setNickname] = useState<string>(simpleProfile?.nickname ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { mutateAsync: updateNickname } = useUpdateNickname();

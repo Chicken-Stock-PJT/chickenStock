@@ -86,3 +86,12 @@ interface DailyProfitLoss {
   startDate: string;
   endDate: string;
 }
+
+export interface ErrorResponse {
+  status: number;
+  code: string;
+  error: string;
+  message: string;
+  path: string;
+  timestamp: string;
+}
