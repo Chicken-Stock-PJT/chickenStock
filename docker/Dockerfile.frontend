@@ -1,0 +1,32 @@
+# 빌드 단계
+FROM node:18-alpine as build
+
+# pnpm 설치
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# 의존성 파일 복사
+COPY FE/chickenstock-web/package.json FE/chickenstock-web/pnpm-lock.yaml ./
+
+# pnpm으로 의존성 설치
+RUN pnpm install
+
+# 소스 코드 복사
+COPY FE/chickenstock-web/ ./
+
+# 빌드
+RUN pnpm build
+
+# 실행 단계
+FROM nginx:alpine
+
+# 기존 nginx 설정을 사용하지 않고 간단한 설정 추가
+COPY docker/nginx-frontend.conf /etc/nginx/conf.d/default.conf
+
+# 빌드된 파일 복사
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 5173
+
+CMD ["nginx", "-g", "daemon off;"]
