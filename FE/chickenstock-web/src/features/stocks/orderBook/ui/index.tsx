@@ -9,6 +9,9 @@ import {
   OrderBookProps,
 } from "@/features/stocks/orderBook/model/types";
 import { useWebSocketStore } from "@/shared/store/websocket";
+import React from "react";
+
+const MemoizedOrderRow = React.memo(OrderRow);
 
 const OrderBook = ({ stockCode, currentPrice }: OrderBookProps) => {
   const [orderBookRows, setOrderBookRows] = useState<OrderBookRow[]>([]);
@@ -28,10 +31,15 @@ const OrderBook = ({ stockCode, currentPrice }: OrderBookProps) => {
   }, [stockCode]);
 
   useEffect(() => {
-    if (orderBookData) {
-      const rows = convertOrderBookDataToRows(orderBookData);
-      setOrderBookRows(rows);
-    }
+    if (!orderBookData) return;
+
+    const rows = convertOrderBookDataToRows(orderBookData);
+    setOrderBookRows((prevRows) => {
+      if (JSON.stringify(prevRows) === JSON.stringify(rows)) {
+        return prevRows;
+      }
+      return rows;
+    });
   }, [orderBookData]);
 
   if (orderBookRows.length === 0) return null;
@@ -49,7 +57,7 @@ const OrderBook = ({ stockCode, currentPrice }: OrderBookProps) => {
         <OrderIndex />
         <div className="divide-y divide-gray-100">
           {orderBookRows.map((row, index) => (
-            <OrderRow
+            <MemoizedOrderRow
               key={`row-${index}`}
               price={row.price}
               askVolume={row.askVolume}

@@ -72,7 +72,8 @@ const Header = () => {
             <div
               className={`text-sm ${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
             >
-              {simpleProfile?.returnRate}%
+              {Number(simpleProfile?.returnRate) > 0 ? "+" : "-"}
+              {Number(simpleProfile?.returnRate).toFixed(2)}%
             </div>
           </div>
           <HeaderDropdown nickname={simpleProfile?.nickname ?? ""} />
