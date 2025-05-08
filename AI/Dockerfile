@@ -14,15 +14,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Poetry 및 필요한 시스템 의존성 설치
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    apt-utils \
     && pip install --no-cache-dir "poetry==$POETRY_VERSION" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Poetry 설정 파일 복사
-COPY pyproject.toml poetry.lock* /app/
+COPY pyproject.toml poetry.lock* README.md /app/
 
 # 의존성 설치
-RUN poetry install --no-interaction --no-ansi --no-dev
+RUN poetry install --no-interaction --no-ansi --only main
 
 # 프로젝트 파일 복사
 COPY . /app/

@@ -23,29 +23,14 @@ pipeline {
                 ]) {
                     sh '''
                         echo "===== Setting up Frontend Environment ====="
+                        mkdir -p FE/chickenstock-web
+                        chmod -R 700 FE/chickenstock-web
                         cp $FRONTEND_ENV_FILE FE/chickenstock-web/.env
                     '''
                 }
             }
         }
-        stage('Build Frontend') {
-            steps {
-                dir('FE/chickenstock-web') {
-                    sh '''
-                        echo "===== Building Frontend Application ====="
-                        # 글로벌로 pnpm 설치
-                        npm install -g pnpm
-                        
-                        # pnpm으로 의존성 설치 및 빌드
-                        pnpm install
-                        pnpm build
-                        
-                        echo "===== Frontend Build Complete ====="
-                        ls -la dist/
-                    '''
-                }
-            }
-        }
+        
          stage('Build and Push Frontend Docker Image') {
             steps {
                 script {

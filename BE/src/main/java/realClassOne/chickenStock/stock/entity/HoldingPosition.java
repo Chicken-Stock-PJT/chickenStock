@@ -36,6 +36,9 @@ public class HoldingPosition {
     @Column(name = "return_rate", nullable = false)
     private Double returnRate;
 
+    @Column(name = "active", nullable = false)
+    private Boolean active = true;  // 기본값은 true (활성 상태)
+
     private HoldingPosition(Member member, StockData stockData, Integer quantity,
                             Long averagePrice, Long currentProfit, Double returnRate) {
         this.member = member;
@@ -56,5 +59,13 @@ public class HoldingPosition {
         this.averagePrice = averagePrice;
         this.currentProfit = currentProfit;
         this.returnRate = returnRate;
+    }
+
+    public void deactivate() {
+        this.active = false;
+    }
+
+    public void activate() {
+        this.active = true;
     }
 }
