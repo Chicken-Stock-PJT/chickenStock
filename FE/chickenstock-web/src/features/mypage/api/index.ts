@@ -12,10 +12,20 @@ import {
 import { UpdateNicknameError } from "../model/types";
 import { ErrorResponse } from "react-router-dom";
 import axios, { AxiosError } from "axios";
+import { useAuthStore } from "@/shared/store/auth";
 
 export const getUserInfo = async () => {
-  const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
-  return response.data;
+  try {
+    const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
+    return response.data;
+  } catch (error) {
+    void useAuthStore.setState(() => ({
+      isLoggedIn: false,
+      accessToken: null,
+      simpleProfile: null,
+    }));
+    throw error;
+  }
 };
 
 export const updateNickname = async (

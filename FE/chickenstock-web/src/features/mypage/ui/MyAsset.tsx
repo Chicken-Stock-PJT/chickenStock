@@ -1,10 +1,7 @@
-import { useAuthStore } from "@/shared/store/auth";
-
-const MyAsset = () => {
-  const { simpleProfile } = useAuthStore();
+const MyAsset = ({ memberMoney }: { memberMoney: number }) => {
   const assetRatio = {
-    cash: Number(simpleProfile?.memberMoney ?? 0),
-    stock: 100000000 - Number(simpleProfile?.memberMoney ?? 0), // 아직 데이터 X
+    cash: Number(memberMoney ?? 0),
+    stock: 100000000 - Number(memberMoney ?? 0), // 아직 데이터 X
   };
 
   return (

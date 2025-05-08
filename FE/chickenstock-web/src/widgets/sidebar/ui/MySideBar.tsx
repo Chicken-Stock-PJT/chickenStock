@@ -1,5 +1,5 @@
 // src/widgets/my-sidebar/ui/MySidebar.tsx
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -28,10 +28,10 @@ export const MySidebar = () => {
                   {item.menus.map((menu, menuIdx) => (
                     <SidebarMenuItem key={menuIdx}>
                       <SidebarMenuButton asChild isActive={pathname === menu.url}>
-                        <a href={menu.url}>
+                        <Link to={menu.url}>
                           <menu.icon className="mr-2 size-4" />
                           {menu.title}
-                        </a>
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}

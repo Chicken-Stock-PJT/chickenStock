@@ -14,7 +14,7 @@ const StockPage = () => {
   const [priceChange, setPriceChange] = useState<string>("");
   const [changeRate, setChangeRate] = useState<string>("");
 
-  const { connect, disconnect, unsubscribe, stockPriceData } = useWebSocketStore();
+  const { connect, disconnect, stockPriceData } = useWebSocketStore();
 
   useEffect(() => {
     const initialStockPrice = async () => {
@@ -44,8 +44,7 @@ const StockPage = () => {
     // 언마운트 시 웹소켓 연결 해제
     return () => {
       if (stockCode) {
-        unsubscribe(stockCode); // 먼저 구독 해제
-        disconnect(); // 그 다음 연결 종료
+        disconnect(); // 연결 종료
       }
     };
   }, [stockCode, connect, disconnect]);
