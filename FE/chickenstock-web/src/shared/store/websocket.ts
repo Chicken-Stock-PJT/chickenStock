@@ -9,8 +9,11 @@ interface WebSocketState {
   stockPriceData: StockPriceData | null;
   connect: (stockCode: string) => void;
   disconnect: () => void;
+  unsubscribe: (stockCode: string) => void;
   subscribedList: string[];
   getSubscribedList: () => Promise<void>;
+  setStockPriceData: (data: StockPriceData) => void;
+  setOrderBookData: (data: OrderBookData) => void;
 }
 
 export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
@@ -18,39 +21,56 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
   orderBookData: null,
   stockPriceData: null,
   subscribedList: [],
+
   getSubscribedList: async () => {
     const response = await apiClient.get(`${import.meta.env.VITE_BASE_URL}/stocks/subscribed`);
     set({ subscribedList: response.data as string[] });
     console.log(response);
   },
 
+  setStockPriceData: (data) =>
+    set((state) => {
+      if (JSON.stringify(state.stockPriceData) === JSON.stringify(data)) {
+        return state;
+      }
+      return { stockPriceData: data };
+    }),
+  setOrderBookData: (data) =>
+    set((state) => {
+      if (JSON.stringify(state.orderBookData) === JSON.stringify(data)) {
+        return state;
+      }
+      return { orderBookData: data };
+    }),
+
   connect: (stockCode: string) => {
     const ws = new WebSocket(`${import.meta.env.VITE_BASE_WS_URL}/stock`);
 
     ws.onopen = () => {
-      const response = ws.send(
-        JSON.stringify({
-          action: "subscribe",
-          stockCode,
-        }),
-      );
-      console.log(response);
-      void get().getSubscribedList();
+      setTimeout(() => {
+        const response = ws.send(
+          JSON.stringify({
+            action: "subscribe",
+            stockCode,
+          }),
+        );
+        console.log(response);
+        void get().getSubscribedList();
+      }, 1000);
     };
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data as string) as WebSocketResponse;
+        console.log(data);
 
         switch (data.type) {
           case "stockBidAsk": {
-            const orderBookData = data as RealTimeOrderBook;
-            set({ orderBookData });
+            get().setOrderBookData(data as RealTimeOrderBook);
             break;
           }
           case "stockPrice": {
-            const stockPriceData = data as StockPriceData;
-            set({ stockPriceData });
+            get().setStockPriceData(data as StockPriceData);
             break;
           }
         }
@@ -64,26 +84,35 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
     };
 
     ws.onclose = () => {
-      const response = ws.send(
-        JSON.stringify({
-          action: "unsubscribe",
-          stockCode,
-        }),
-      );
-      console.log(response);
-      console.log(get().subscribedList);
-      console.log("WebSocket 연결 종료");
+      ws.onclose = () => {
+        console.log("WebSocket 연결 종료");
+        set({ ws: null, orderBookData: null, stockPriceData: null });
+      };
     };
 
     set({ ws });
   },
 
+  unsubscribe: (stockCode: string) => {
+    const { ws } = get();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(
+        JSON.stringify({
+          action: "unsubscribe",
+          stockCode,
+        }),
+      );
+      void get().getSubscribedList();
+    }
+  },
+
   disconnect: () => {
     const { ws } = get();
     if (ws) {
-      ws.close();
-      set({ ws: null, orderBookData: null, stockPriceData: null });
-      void get().getSubscribedList();
+      setTimeout(() => {
+        ws.close();
+        set({ ws: null, orderBookData: null, stockPriceData: null });
+      }, 100);
     }
   },
 }));

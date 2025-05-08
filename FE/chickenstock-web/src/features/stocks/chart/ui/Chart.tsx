@@ -43,29 +43,25 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     void fetchData();
   }, [stockCode, chartType]);
 
-  // 웹소켓으로 받은 실시간 데이터로 차트 업데이트
+  // 웹소켓 데이터 업데이트 최적화
   useEffect(() => {
-    if (stockPriceData && chartData.length > 0) {
-      const lastData = chartData[0];
-      const updatedData = [...chartData];
+    if (!stockPriceData || chartData.length === 0) return;
 
-      // 마지막 데이터 업데이트
+    const lastData = chartData[0];
+    const newPrice = Number(stockPriceData.currentPrice);
+
+    // 가격이 실제로 변경되었을 때만 업데이트
+    if (Number(lastData.currentPrice) !== newPrice) {
+      const updatedData = [...chartData];
       updatedData[0] = {
         ...lastData,
         currentPrice: stockPriceData.currentPrice,
-        highPrice: Math.max(
-          Number(lastData.highPrice),
-          Number(stockPriceData.currentPrice),
-        ).toString(),
-        lowPrice: Math.min(
-          Number(lastData.lowPrice),
-          Number(stockPriceData.currentPrice),
-        ).toString(),
+        highPrice: Math.max(Number(lastData.highPrice), newPrice).toString(),
+        lowPrice: Math.min(Number(lastData.lowPrice), newPrice).toString(),
       };
-
       setChartData(updatedData);
     }
-  }, [stockPriceData]);
+  }, [stockPriceData, chartData]);
 
   const handleChartTypeChange = (type: ChartType) => {
     setChartType(type);

@@ -34,6 +34,8 @@ export const useGetPortfolio = () => {
   const { data, isLoading, error } = useQuery({
     queryKey: ["portfolio"],
     queryFn: getPortfolio,
+    staleTime: 0,
+    gcTime: 0,
   });
   return { data, isLoading, error };
 };
