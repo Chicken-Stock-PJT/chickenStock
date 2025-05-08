@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import json
+import pytz
 from typing import Dict, List, Callable, Any
 import aiohttp
 from datetime import datetime
@@ -35,6 +36,9 @@ class KiwoomWebSocket:
         
         # 웹소켓 구독 관리 태스크
         self._subscription_task = None
+
+        # 웹소켓 메세지 처리 태스크
+        self._message_task = None
         
         # 구독 그룹 관리
         self._subscription_groups = []
@@ -217,8 +221,9 @@ class KiwoomWebSocket:
             
             while self.connected:
                 try:
-                    # 현재 시간 확인 - 16시 이후인지 체크
-                    current_time = datetime.now()
+                    # 현재 시간 확인 - 16시 이후인지 체크(서울 기준준)
+                    seoul_timezone = pytz.timezone('Asia/Seoul')
+                    current_time = datetime.now(seoul_timezone)
                     after_market_hours = current_time.hour >= 16
                     
                     # 현재 구독 중인 그룹 해제
