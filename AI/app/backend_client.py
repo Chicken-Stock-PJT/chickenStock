@@ -244,3 +244,30 @@ class BackendClient:
         except Exception as e:
             logger.error(f"매도 요청 처리 중 오류: {str(e)}")
             return False
+        
+    async def request_trade_history(self, size: int = 10, cursor: str = None):
+        """백엔드 서버에서 거래 내역 요청"""
+        if not self.auth_client or not self.auth_client.is_authenticated:
+            logger.error("백엔드 서버에 인증되지 않았습니다.")
+            return None
+        
+        try:
+            url = f"{self.backend_url}/api/trade-histories?size={size}"
+            if cursor:
+                url += f"&cursor={cursor}"
+            
+            headers = {
+                "Authorization": f"Bearer {self.auth_client.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        logger.error(f"거래 내역 요청 실패: 상태 코드 {response.status}")
+                        return None
+        except Exception as e:
+            logger.error(f"거래 내역 요청 중 오류: {str(e)}")
+            return None

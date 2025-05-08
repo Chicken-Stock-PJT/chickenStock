@@ -263,7 +263,13 @@ function App() {
       
       if (response.ok) {
         const data = await response.json();
-        setTrades(data);
+        // API가 반환하는 형식이 tradeHistories 객체를 포함하는 형식이므로 이를 처리
+        if (data.tradeHistories) {
+          setTrades(data.tradeHistories);
+        } else {
+          // API가 배열을 직접 반환하는 경우 (이전 버전 호환성)
+          setTrades(data);
+        }
       }
     } catch (error) {
       console.error('Error loading trade history:', error);

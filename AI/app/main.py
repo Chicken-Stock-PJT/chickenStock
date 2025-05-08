@@ -334,8 +334,8 @@ async def initialize_service():
         # 필터링된 종목 리스트 가져오기 (키움 API 토큰 사용)
         logger.info("시가총액 기준 종목 필터링 시작")
 
-        # 초기 필터링 - 더 많은 종목을 가져옴 (최종 30개 대상)
-        initial_filtered_symbols = await kiwoom_api.get_filtered_symbols(500, 300)
+        # 초기 필터링 - 더 많은 종목을 가져옴 (최종 600개 대상)
+        initial_filtered_symbols = await kiwoom_api.get_filtered_symbols(600, 200)
         logger.info(f"시가총액 기준 초기 필터링 완료: 총 {len(initial_filtered_symbols)}개 종목")
         
         # 필터링된 종목 중 실제 stock_list에 있는 종목만 추출
@@ -344,7 +344,7 @@ async def initialize_service():
             if any(stock.get('shortCode') == symbol for stock in stock_list)
         ]
         
-        # 정확히 30개 종목을 선택
+        # 정확히 600개 종목을 선택
         target_count = 600
         final_symbols = available_symbols[:target_count]
         
@@ -598,6 +598,35 @@ async def get_realtime_prices():
         )
     
     return kiwoom_api.stock_cache.price_cache
+
+@app.get("/trades")
+async def get_trade_history(size: int = 10, cursor: str = None):
+    """거래 내역 조회"""
+    if not service_status["is_running"] or not backend_client:
+        raise HTTPException(
+            status_code=400,
+            detail="서비스가 실행 중이지 않습니다."
+        )
+    
+    try:
+        # 백엔드 서버에서 거래 내역 요청
+        trade_history = await backend_client.request_trade_history(size, cursor)
+        
+        if trade_history:
+            return trade_history
+        else:
+            return {
+                "tradeHistories": [],
+                "realizedProfit": 0,
+                "hasNext": False,
+                "nextCursor": None
+            }
+    except Exception as e:
+        logger.error(f"거래 내역 조회 중 오류: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"거래 내역 조회 중 오류: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
