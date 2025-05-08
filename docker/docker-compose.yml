@@ -10,39 +10,39 @@ services:
     networks:
       - chickenStock-network
 
-  backend2:
-    image: kjeongwoo/backend:${BUILD_NUMBER}
-    ports:
-      - "${BACKEND2_PORT}:${BACKEND2_PORT}"
-    environment:
-      - SERVER_PORT=${BACKEND2_PORT}
-    env_file:
-      - .env
-    networks:
-      - chickenStock-network
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:${BACKEND2_PORT}/actuator/health",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+  # backend2:
+  #   image: kjeongwoo/backend:${BUILD_NUMBER}
+  #   ports:
+  #     - "${BACKEND2_PORT}:${BACKEND2_PORT}"
+  #   environment:
+  #     - SERVER_PORT=${BACKEND2_PORT}
+  #   env_file:
+  #     - .env
+  #   networks:
+  #     - chickenStock-network
+  #   healthcheck:
+  #     test:
+  #       [
+  #         "CMD",
+  #         "curl",
+  #         "-f",
+  #         "http://localhost:${BACKEND2_PORT}/actuator/health",
+  #       ]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
 
-  backend3:
-    image: kjeongwoo/backend:${BUILD_NUMBER}
-    ports:
-      - "${BACKEND3_PORT}:${BACKEND3_PORT}"
-    environment:
-      - SERVER_PORT=${BACKEND3_PORT}
-    env_file:
-      - .env
-    networks:
-      - chickenStock-network
+  # backend3:
+  #   image: kjeongwoo/backend:${BUILD_NUMBER}
+  #   ports:
+  #     - "${BACKEND3_PORT}:${BACKEND3_PORT}"
+  #   environment:
+  #     - SERVER_PORT=${BACKEND3_PORT}
+  #   env_file:
+  #     - .env
+  #   networks:
+  #     - chickenStock-network
 
   frontend:
     image: kjeongwoo/frontend:${BUILD_NUMBER}
