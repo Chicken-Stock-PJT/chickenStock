@@ -60,34 +60,43 @@ const TransactionsList = () => {
             <div className="text-right">총액</div>
           </div>
           <div className="divide-y">
-            {transactions.map((transaction: TradeHistory) => (
-              <div key={transaction.createdAt} className="grid grid-cols-6 items-center gap-4 p-4">
-                <div>
-                  {new Date(transaction.tradedAt).toLocaleDateString("ko-KR", {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                  })}
-                </div>
-                <div>
-                  <div
-                    className={`inline-block rounded-full border-transparent px-2 py-1 text-xs text-gray-50 shadow ${
-                      transaction.tradeType === "BUY" ? "bg-chart-red" : "bg-chart-blue"
-                    }`}
-                  >
-                    {transaction.tradeType === "BUY" ? "매수" : "매도"}
+            {transactions.length > 0 ? (
+              transactions.map((transaction: TradeHistory) => (
+                <div
+                  key={transaction.createdAt}
+                  className="grid grid-cols-6 items-center gap-4 p-4"
+                >
+                  <div>
+                    {new Date(transaction.tradedAt).toLocaleDateString("ko-KR", {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                    })}
+                  </div>
+                  <div>
+                    <div
+                      className={`inline-block rounded-full border-transparent px-2 py-1 text-xs text-gray-50 shadow ${
+                        transaction.tradeType === "BUY" ? "bg-chart-red" : "bg-chart-blue"
+                      }`}
+                    >
+                      {transaction.tradeType === "BUY" ? "매수" : "매도"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-medium">{transaction.stockName}</div>
+                  </div>
+                  <div className="text-right">{transaction.quantity.toLocaleString()}주</div>
+                  <div className="text-right">{transaction.unitPrice.toLocaleString()}원</div>
+                  <div className="text-right">
+                    {(transaction.quantity * transaction.unitPrice).toLocaleString()}원
                   </div>
                 </div>
-                <div>
-                  <div className="font-medium">{transaction.stockName}</div>
-                </div>
-                <div className="text-right">{transaction.quantity.toLocaleString()}주</div>
-                <div className="text-right">{transaction.unitPrice.toLocaleString()}원</div>
-                <div className="text-right">
-                  {(transaction.quantity * transaction.unitPrice).toLocaleString()}원
-                </div>
+              ))
+            ) : (
+              <div className="my-20 p-4 text-center text-muted-foreground">
+                거래 내역이 없습니다.
               </div>
-            ))}
+            )}
           </div>
         </div>
         <div ref={loadMoreRef}>

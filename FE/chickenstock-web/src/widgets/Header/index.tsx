@@ -14,7 +14,7 @@ const Header = () => {
 
   return (
     <div className="sticky top-0 z-50 flex h-14 w-screen items-center justify-between bg-white px-4 md:px-6 lg:px-8">
-      <div className="flex items-center">
+      <div className="flex items-center lg:mr-[200px]">
         <img
           src={logo}
           alt="Chicken Stock Logo"
@@ -64,18 +64,20 @@ const Header = () => {
       </div>
 
       {isLogin ? (
-        <div className="flex items-center gap-4 text-sm font-semibold lg:gap-8 lg:text-lg">
-          <div className="hidden items-center gap-2 sm:flex">
-            <div className="rounded-md bg-primary-100 p-2 text-xs">잔고</div>
-            <div className="text-sm">\{Number(simpleProfile?.memberMoney).toLocaleString()}</div>
-          </div>
-          <div className="hidden items-center gap-2 sm:flex">
-            <div className="rounded-md bg-primary-100 p-2 text-xs">수익률</div>
-            <div
-              className={`text-sm ${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
-            >
-              {Number(simpleProfile?.returnRate) > 0 ? "+" : "-"}
-              {Number(simpleProfile?.returnRate).toFixed(2)}%
+        <div className="flex items-center text-sm font-semibold lg:text-lg">
+          <div className="flex items-center gap-4">
+            <div className="hidden items-center gap-2 lg:flex">
+              <div className="rounded-md bg-primary-100 p-2 text-xs">잔고</div>
+              <div className="text-sm">\{Number(simpleProfile?.memberMoney).toLocaleString()}</div>
+            </div>
+            <div className="hidden items-center gap-2 lg:flex">
+              <div className="rounded-md bg-primary-100 p-2 text-xs">수익률</div>
+              <div
+                className={`text-sm ${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
+              >
+                {Number(simpleProfile?.returnRate) > 0 ? "+" : ""}
+                {Number(simpleProfile?.returnRate).toFixed(2)}%
+              </div>
             </div>
           </div>
           <HeaderDropdown nickname={simpleProfile?.nickname ?? ""} />
