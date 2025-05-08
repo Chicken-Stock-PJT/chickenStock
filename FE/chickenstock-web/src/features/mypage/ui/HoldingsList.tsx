@@ -26,12 +26,8 @@ const HoldingsList = ({ holdings }: HoldingsListProps) => {
             {/* <div className="text-right">비중</div> */}
           </div>
           <div className="divide-y">
-            {holdings.map((stock) => {
-              const profit = stock.currentPrice - stock.averagePrice;
-              const profitRate = (profit / stock.averagePrice) * 100;
-              const totalProfit = profit * stock.quantity;
-
-              return (
+            {holdings.length > 0 ? (
+              holdings.map((stock) => (
                 <div
                   key={stock.stockCode}
                   className="grid cursor-pointer grid-cols-12 items-center gap-2 p-4 hover:bg-gray-50"
@@ -52,19 +48,33 @@ const HoldingsList = ({ holdings }: HoldingsListProps) => {
                     {stock.valuationAmount.toLocaleString()}원
                   </div>
                   <div className="col-span-2 text-right">
-                    <div className={profit >= 0 ? "text-green-500" : "text-red-500"}>
-                      {profit >= 0 ? "+" : ""}
-                      {totalProfit.toLocaleString()}원
+                    <div
+                      className={
+                        stock.profitLoss > 0
+                          ? "text-chart-red"
+                          : stock.profitLoss < 0
+                            ? "text-chart-blue"
+                            : ""
+                      }
+                    >
+                      {stock.profitLoss > 0 ? "+" : ""}
+                      {stock.profitLoss.toLocaleString()}원
                     </div>
-                    <div className={`text-xs ${profit >= 0 ? "text-green-500" : "text-red-500"}`}>
-                      {profit >= 0 ? "+" : ""}
-                      {profitRate.toFixed(2)}%
+                    <div
+                      className={`text-xs ${stock.returnRate > 0 ? "text-chart-red" : stock.returnRate < 0 ? "text-chart-blue" : ""}`}
+                    >
+                      {stock.returnRate > 0 ? "+" : ""}
+                      {stock.returnRate.toFixed(2)}%
                     </div>
                   </div>
                   {/* <div className="text-right">{stock.weight}%</div> */}
                 </div>
-              );
-            })}
+              ))
+            ) : (
+              <div className="my-20 p-4 text-center text-muted-foreground">
+                보유 종목이 없습니다.
+              </div>
+            )}
           </div>
         </div>
       </CardContent>

@@ -86,10 +86,10 @@ const WatchList = () => {
                     <div
                       className={`text-right ${
                         stock.priceChange.startsWith("+")
-                          ? "text-red-500"
+                          ? "text-chart-red"
                           : stock.priceChange.startsWith("-")
-                            ? "text-blue-500"
-                            : "text-gray-500"
+                            ? "text-chart-blue"
+                            : ""
                       }`}
                     >
                       {stock.priceChange}원
@@ -97,10 +97,10 @@ const WatchList = () => {
                     <div
                       className={`flex items-center justify-end text-right ${
                         stock.priceChange.startsWith("+")
-                          ? "text-red-500"
+                          ? "text-chart-red"
                           : stock.priceChange.startsWith("-")
-                            ? "text-blue-500"
-                            : "text-gray-500"
+                            ? "text-chart-blue"
+                            : ""
                       }`}
                     >
                       {stock.changeRate}%
@@ -110,7 +110,7 @@ const WatchList = () => {
                 </div>
               ))
             ) : (
-              <div className="p-8 text-center text-muted-foreground">
+              <div className="my-20 p-8 text-center text-muted-foreground">
                 {searchTerm ? "검색 결과가 없습니다." : "관심종목이 없습니다."}
               </div>
             )}
