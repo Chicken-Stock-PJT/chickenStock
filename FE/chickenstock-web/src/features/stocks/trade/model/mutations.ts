@@ -12,7 +12,8 @@ export const useBuyLimitOrder = (params: LimitTradeRequest) => {
   return useMutation({
     mutationFn: () => buyLimitOrder(params),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["status", params.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["pendingOrders", params.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
     onError: (error) => {
       console.error("오류 발생:", error);
@@ -26,6 +27,7 @@ export const useBuyMarketOrder = (params: MarketTradeRequest) => {
     mutationFn: () => buyMarketOrder(params),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["status", params.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
   });
 };
@@ -35,7 +37,8 @@ export const useSellLimitOrder = (params: LimitTradeRequest) => {
   return useMutation({
     mutationFn: () => sellLimitOrder(params),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["status", params.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["pendingOrders", params.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
   });
 };
@@ -46,6 +49,7 @@ export const useSellMarketOrder = (params: MarketTradeRequest) => {
     mutationFn: () => sellMarketOrder(params),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["status", params.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
   });
 };
