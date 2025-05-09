@@ -36,6 +36,10 @@ import com.example.chickenstock.api.RetrofitClient
 import kotlinx.coroutines.launch
 import com.example.chickenstock.data.TokenManager
 import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
+import android.util.Log
+import com.example.chickenstock.api.TokenExchangeService
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +60,7 @@ fun LoginScreen(
     val coroutineScope = rememberCoroutineScope()
     val authService = remember { RetrofitClient.getInstance(context).create(AuthService::class.java) }
     val tokenManager = remember { TokenManager.getInstance(context) }
+    val tokenExchangeService = remember { RetrofitClient.getInstance(context).create(TokenExchangeService::class.java) }
     
     // 사용자 입력이 있는지 확인하는 함수
     fun hasUserInput(): Boolean {
@@ -74,6 +79,18 @@ fun LoginScreen(
     // 시스템 뒤로가기 처리
     BackHandler {
         handleBackNavigation()
+    }
+    
+    // 소셜 로그인 처리 함수
+    fun handleSocialLogin(provider: String) {
+        val redirectUri = "chickenstock://oauth2callback"
+        val authUrl = "https://k12a106.p.ssafy.io/api/auth/oauth2/redirect/$provider?redirectUri=$redirectUri&platform=mobile"
+        
+        Log.d("SocialLogin", "Opening URL: $authUrl")
+        
+        // 시스템 브라우저로 소셜 로그인 URL 열기
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+        context.startActivity(intent)
     }
     
     // 경고 대화상자
@@ -408,7 +425,7 @@ fun LoginScreen(
             ) {
                 // 구글 로그인
                 IconButton(
-                    onClick = { /* 구글 로그인 처리 */ },
+                    onClick = { handleSocialLogin("google") },
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(24.dp))
@@ -423,7 +440,7 @@ fun LoginScreen(
                 
                 // 카카오 로그인
                 IconButton(
-                    onClick = { /* 카카오 로그인 처리 */ },
+                    onClick = { handleSocialLogin("kakao") },
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(24.dp))
@@ -438,7 +455,7 @@ fun LoginScreen(
                 
                 // 네이버 로그인
                 IconButton(
-                    onClick = { /* 네이버 로그인 처리 */ },
+                    onClick = { handleSocialLogin("naver") },
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(24.dp))

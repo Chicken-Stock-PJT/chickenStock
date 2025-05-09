@@ -8,7 +8,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.chickenstock.ui.screens.stock.StockScreen
-import com.example.chickenstock.ui.screens.home.HomeScreen
+import com.example.chickenstock.ui.screens.Home.HomeScreen
 import com.example.chickenstock.ui.screens.mypage.MyPageScreen
 import com.example.chickenstock.viewmodel.MainViewModel
 import com.example.chickenstock.ui.screens.stock.StockDetailScreen
@@ -23,6 +23,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chickenstock.ui.screens.login.FindPWScreen
 import com.example.chickenstock.ui.screens.login.VerificationScreen
 import com.example.chickenstock.ui.screens.login.SignupSuccessScreen
+import com.example.chickenstock.api.MemberService
+import com.example.chickenstock.api.StockService
+import com.example.chickenstock.api.RetrofitClient
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -48,13 +51,23 @@ fun NavGraph(
     viewModel: MainViewModel,
     authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory(LocalContext.current))
 ) {
+    val context = LocalContext.current
+    val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+    val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+
     NavHost(
         navController = navController,
         startDestination = Screen.Home.route,
         modifier = modifier
     ) {
         composable(Screen.Home.route) {
-            HomeScreen(navController = navController, viewModel = viewModel, authViewModel = authViewModel)
+            HomeScreen(
+                navController = navController,
+                authViewModel = authViewModel,
+                memberService = memberService,
+                stockService = stockService,
+                viewModel = viewModel
+            )
         }
         composable(Screen.Stock.route) {
             StockScreen(

@@ -43,6 +43,7 @@ import com.example.chickenstock.viewmodel.MainViewModel
 import com.example.chickenstock.viewmodel.AuthViewModel
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.lifecycleScope
 import com.example.chickenstock.api.RetrofitClient
 import com.example.chickenstock.api.StockService
@@ -60,6 +61,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusState
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.example.chickenstock.api.TokenRefreshRequest
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,10 +74,59 @@ class MainActivity : ComponentActivity() {
         val tokenManager = TokenManager.getInstance(this)
         val accessToken = tokenManager.getAccessToken()
         val refreshToken = tokenManager.getRefreshToken()
+        val expiresIn = tokenManager.getAccessTokenExpiresIn()
         val prefs = tokenManager.getSharedPreferences()
         Log.d("TokenInfo", "Access Token: $accessToken")
         Log.d("TokenInfo", "Refresh Token: $refreshToken")
         Log.d("TokenInfo", "All SharedPreferences: ${prefs.all}")
+        
+        // 토큰 상태 확인
+        if (accessToken != null && refreshToken != null) {
+            // 만료 시간 확인
+            val currentTime = System.currentTimeMillis()
+            val timeRemaining = expiresIn - currentTime
+            
+            Log.d("TokenInfo", "Token expires in: ${timeRemaining}ms")
+            
+            // 토큰이 만료되었거나 만료가 임박한 경우(10분 이내) 토큰 갱신 시도
+            if (timeRemaining < 10 * 60 * 1000) {
+                Log.d("TokenInfo", "토큰 만료가 임박하거나 이미 만료되었습니다. 갱신을 시도합니다.")
+                lifecycleScope.launch {
+                    try {
+                        // Retrofit 인스턴스 초기화 (기존 인스턴스 문제 해결)
+                        RetrofitClient.resetInstance()
+                        
+                        val authService = RetrofitClient.getInstance(this@MainActivity)
+                            .create(AuthService::class.java)
+                        val response = authService.refreshAllTokens(
+                            TokenRefreshRequest(accessToken, refreshToken)
+                        )
+                        
+                        if (response.isSuccessful && response.body() != null) {
+                            val newTokens = response.body()!!
+                            tokenManager.saveTokens(
+                                newTokens.accessToken,
+                                newTokens.refreshToken,
+                                3600000L // 1시간
+                            )
+                            Log.d("TokenInfo", "토큰 갱신 성공")
+                        } else {
+                            Log.e("TokenInfo", "토큰 갱신 실패: ${response.code()}")
+                            // 토큰 갱신 실패 시, 기존 토큰 삭제 및 인스턴스 초기화
+                            tokenManager.clearTokens()
+                            RetrofitClient.resetInstance()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("TokenInfo", "토큰 갱신 중 오류: ${e.message}", e)
+                        // 예외 발생 시 Retrofit 인스턴스 재설정
+                        RetrofitClient.resetInstance()
+                    }
+                }
+            }
+        } else {
+            // 토큰이 없는 경우
+            Log.d("TokenInfo", "토큰이 없습니다. 로그인이 필요합니다.")
+        }
         
         // 키 해시 얻기
         try {
@@ -126,6 +177,10 @@ class MainActivity : ComponentActivity() {
         }
 
         val authService = RetrofitClient.getInstance(this).create(AuthService::class.java)
+
+        // Retrofit 인스턴스 초기화
+        val retrofit = RetrofitClient.getInstance(this)
+        Log.d("RetrofitInit", "Retrofit 인스턴스 초기화 완료")
 
         setContent {
             ChickenStockTheme {
@@ -219,7 +274,7 @@ fun SearchTopAppBar(
         color = Gray0,
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(56.dp)
     ) {
         Row(
             modifier = Modifier
@@ -247,7 +302,7 @@ fun SearchTopAppBar(
                             contentDescription = "뒤로가기",
                             tint = Gray700,
                             modifier = Modifier
-                                .size(30.dp)
+                                .size(26.dp)
                         )
                     }
                 } else {
@@ -256,7 +311,7 @@ fun SearchTopAppBar(
                         contentDescription = "로고",
                         tint = Color.Unspecified,
                         modifier = Modifier
-                            .size(52.dp)
+                            .size(40.dp)
                             .padding(start = 4.dp)
                     )
                 }
@@ -273,13 +328,15 @@ fun SearchTopAppBar(
                         onSearchIconClick()
                         isSearchFieldFocused = true
                     },
-                    modifier = Modifier.offset(x = iconOffsetX)
+                    modifier = Modifier
+                        .offset(x = iconOffsetX)
+                        .size(42.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "검색",
                         tint = Gray700,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
@@ -288,7 +345,7 @@ fun SearchTopAppBar(
                     modifier = Modifier
                         .offset(x = iconOffsetX + 40.dp, y = 3.dp)
                         .width(textFieldWidth)
-                        .height(40.dp)
+                        .height(36.dp)
                         .graphicsLayer(alpha = alpha)
                         .background(Color(0xFFF5F5F5), shape = MaterialTheme.shapes.medium),
                     contentAlignment = Alignment.CenterStart
@@ -299,7 +356,7 @@ fun SearchTopAppBar(
                         singleLine = true,
                         textStyle = TextStyle(
                             color = Gray700,
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             fontFamily = SCDreamFontFamily
                         ),
                         modifier = Modifier
@@ -314,7 +371,7 @@ fun SearchTopAppBar(
                                     Text(
                                         text = "종목을 검색하세요",
                                         color = Gray700.copy(alpha = 0.5f),
-                                        fontSize = 16.sp,
+                                        fontSize = 14.sp,
                                         fontFamily = SCDreamFontFamily
                                     )
                                 }
@@ -421,6 +478,8 @@ fun MainScreen(
                     onBackClick = {
                         isSearchExpanded = false
                         navController.navigateUp()
+                        // 검색어 초기화
+                        searchText = ""
                     },
                     onSearchIconClick = {
                         isSearchExpanded = true
@@ -449,9 +508,15 @@ fun MainScreen(
             }
         }
     ) { innerPadding ->
+        // 여백이 줄어들게 패딩 조정
         NavGraph(
             navController = navController,
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier.padding(
+                top = if (currentRoute == Screen.Home.route) 0.dp else innerPadding.calculateTopPadding(),
+                bottom = innerPadding.calculateBottomPadding(),
+                start = 0.dp,
+                end = 0.dp
+            ),
             viewModel = viewModel,
             authViewModel = authViewModel
         )

@@ -4,6 +4,7 @@ import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -124,6 +125,11 @@ import com.example.chickenstock.api.MemberService
 import com.example.chickenstock.api.SimpleProfileResponse
 import com.example.chickenstock.api.BuyOrderRequest
 import com.example.chickenstock.api.SellOrderRequest
+import com.example.chickenstock.data.TokenManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.Calendar
 
 class CustomMarkerView(
     context: Context,
@@ -184,10 +190,21 @@ fun StockDetailScreen(
     authViewModel: AuthViewModel
 ) {
     val context = LocalContext.current
+    val token = com.example.chickenstock.data.TokenManager.getInstance(context).getAccessToken()
     var selectedPeriod by remember { mutableStateOf("일") }
-    var showMinuteDropdown by remember { mutableStateOf(false) }
-    val minuteOptions = listOf("1분", "3분", "5분", "10분", "30분", "60분")
     val coroutineScope = rememberCoroutineScope()
+    
+    // 거래 가능 시간 체크
+    val currentTime = remember { Calendar.getInstance() }
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val currentTimeStr = timeFormat.format(currentTime.time)
+    val currentHour = currentTime.get(Calendar.HOUR_OF_DAY)
+    
+    // 평일 08:00~18:00 사이에만 거래 가능
+    val isTradingHours = currentHour in 8..17
+    
+    // 거래 불가능 안내 다이얼로그 상태
+    var showTradingHoursDialog by remember { mutableStateOf(false) }
 
     var showSellBottomSheet by remember { mutableStateOf(false) }
     var showBuyBottomSheet by remember { mutableStateOf(false) }
@@ -216,16 +233,19 @@ fun StockDetailScreen(
     var userProfile by remember { mutableStateOf<SimpleProfileResponse?>(null) }
     var isProfileLoading by remember { mutableStateOf(false) }
     var profileError by remember { mutableStateOf<String?>(null) }
+    var portfolioData by remember { mutableStateOf(viewModel.portfolioData.value) }
+    var isPortfolioLoading by remember { mutableStateOf(false) }
+    var portfolioError by remember { mutableStateOf<String?>(null) }
 
     // 현재 잔고 계산
     val currentBalance = userProfile?.memberMoney?.replace(",", "")?.toIntOrNull() ?: 0
 
-    // 임시 보유 주식 데이터
+    // 임시 보유 주식 데이터 (이름 변경)
+    val holdingCurrentPrice = stock.currentPrice.toInt()
     val holdingQuantity = 100
     val averagePrice = 55000
-    val currentPrice = stock.currentPrice.toInt()
-    val profitRate = ((currentPrice.toFloat() - averagePrice.toFloat()) / averagePrice.toFloat() * 100)
-    val totalProfit = (currentPrice.toLong() - averagePrice.toLong()) * holdingQuantity.toLong()
+    val profitRate = ((holdingCurrentPrice.toFloat() - averagePrice.toFloat()) / averagePrice.toFloat() * 100)
+    val totalProfit = (holdingCurrentPrice.toLong() - averagePrice.toLong()) * holdingQuantity.toLong()
 
     // 키보드 컨트롤러를 최상단에서 선언
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -257,20 +277,31 @@ fun StockDetailScreen(
     var apiStockBidAsk by remember { mutableStateOf<StockBidAsk?>(null) }
     var isLoadingPrice by remember { mutableStateOf(false) }
     var isLoadingBidAsk by remember { mutableStateOf(false) }
+    
+    // 에러 메시지 상태 변수 추가
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // 현재 보유 주식 정보 찾기
-    val currentPosition = remember(stock.stockCode) {
-        viewModel.portfolioData.value?.positions?.find { position -> 
+    // 현재 보유 주식 정보 찾기 (항상 최신 portfolioData 사용)
+    val currentPosition = remember(stock.stockCode, portfolioData) {
+        portfolioData?.positions?.find { position -> 
             position.stockCode == stock.stockCode 
         }
     }
 
+    // 웹소켓 실시간 데이터 상태
+    var currentPrice by remember { mutableStateOf(0) }
+    var priceChange by remember { mutableStateOf(0) }
+    var changeRate by remember { mutableStateOf(0.0) }
+    var askPrices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var askVolumes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var bidPrices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var bidVolumes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
     // 웹소켓 연결 및 API 데이터 로드
     LaunchedEffect(stock.stockCode) {
-        Log.d("StockDetailScreen", "웹소켓 연결 시작: ${stock.stockCode}")
-        webSocketManager.connect(stock.stockCode)
-
-        // 초기 데이터 로드
+        Log.d("StockDetailScreen", "초기 데이터 로드 시작: ${stock.stockCode}")
+        
+        // 1. 먼저 REST API로 데이터 로드
         isLoadingPrice = true
         isLoadingBidAsk = true
         try {
@@ -280,6 +311,14 @@ fun StockDetailScreen(
             val priceResponse = stockService.getStockInfo(stock.stockCode)
             if (priceResponse.isSuccessful) {
                 apiStockPrice = priceResponse.body()
+                Log.d("StockDetailScreen", "API 현재가 로드 성공: ${apiStockPrice?.currentPrice}")
+                
+                // 초기 현재가 설정
+                currentPrice = apiStockPrice?.currentPrice?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() ?: 0
+                priceChange = apiStockPrice?.priceChange?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() ?: 0
+                changeRate = apiStockPrice?.changeRate?.replace("""[+\-,%]""".toRegex(), "")?.toDoubleOrNull() ?: 0.0
+            } else {
+                Log.e("StockDetailScreen", "API 현재가 로드 실패: ${priceResponse.code()}")
             }
 
             // 호가 조회
@@ -288,8 +327,8 @@ fun StockDetailScreen(
                 val response = bidAskResponse.body()!!
                 
                 // 매도 호가 및 수량 맵 생성
-                val askPrices = mutableMapOf<String, String>()
-                val askVolumes = mutableMapOf<String, String>()
+                val askPricesMap = mutableMapOf<String, String>()
+                val askVolumesMap = mutableMapOf<String, String>()
                 
                 // 매도 10호가부터 1호가까지 (역순)
                 listOf(
@@ -305,13 +344,13 @@ fun StockDetailScreen(
                     response.sel_fpr_bid to response.sel_fpr_req
                 ).forEachIndexed { index, (price, volume) ->
                     val key = (10 - index).toString()
-                    askPrices[key] = price.replace("""[+\-]""".toRegex(), "")
-                    askVolumes[key] = volume
+                    askPricesMap[key] = price.replace("""[+\-]""".toRegex(), "")
+                    askVolumesMap[key] = volume
                 }
 
                 // 매수 호가 및 수량 맵 생성
-                val bidPrices = mutableMapOf<String, String>()
-                val bidVolumes = mutableMapOf<String, String>()
+                val bidPricesMap = mutableMapOf<String, String>()
+                val bidVolumesMap = mutableMapOf<String, String>()
                 
                 // 매수 1호가부터 10호가까지
                 listOf(
@@ -327,19 +366,40 @@ fun StockDetailScreen(
                     response.buy_10th_pre_bid to response.buy_10th_pre_req
                 ).forEachIndexed { index, (price, volume) ->
                     val key = (index + 1).toString()
-                    bidPrices[key] = price.replace("""[+\-]""".toRegex(), "")
-                    bidVolumes[key] = volume
+                    bidPricesMap[key] = price.replace("""[+\-]""".toRegex(), "")
+                    bidVolumesMap[key] = volume
                 }
 
                 apiStockBidAsk = StockBidAsk(
                     type = "bidask",
                     stockCode = stock.stockCode,
                     timestamp = response.bid_req_base_tm,
-                    askPrices = askPrices,
-                    askVolumes = askVolumes,
-                    bidPrices = bidPrices,
-                    bidVolumes = bidVolumes
+                    askPrices = askPricesMap,
+                    askVolumes = askVolumesMap,
+                    bidPrices = bidPricesMap,
+                    bidVolumes = bidVolumesMap
                 )
+                
+                // API 데이터로 초기 호가 정보 설정
+                askPrices = askPricesMap
+                askVolumes = askVolumesMap
+                bidPrices = bidPricesMap
+                bidVolumes = bidVolumesMap
+                
+                Log.d("StockDetailScreen", "API 호가 로드 성공: ${askPricesMap.size} 매도, ${bidPricesMap.size} 매수")
+            } else {
+                Log.e("StockDetailScreen", "API 호가 로드 실패: ${bidAskResponse.code()}")
+            }
+            
+            // 종목 상세 정보 로드
+            try {
+                val response = stockService.getStockDetail(stock.stockCode)
+                if (response.isSuccessful) {
+                    stockDetail = response.body()
+                    Log.d("StockDetailScreen", "종목 상세 정보 로드 성공: ${stockDetail?.shortName}")
+                }
+            } catch (e: Exception) {
+                Log.e("StockDetailScreen", "종목 상세 정보 로드 실패", e)
             }
         } catch (e: Exception) {
             Log.e("StockDetailScreen", "API 데이터 로드 실패", e)
@@ -347,44 +407,43 @@ fun StockDetailScreen(
             isLoadingPrice = false
             isLoadingBidAsk = false
         }
-    }
-
-    // 화면이 사라질 때 웹소켓 연결 해제
-    DisposableEffect(Unit) {
-        onDispose {
-            Log.d("StockDetailScreen", "웹소켓 연결 해제")
-            // 종료 메시지 전송 후 연결 해제
-            webSocketManager.sendCloseMessage(stock.stockCode)
-            webSocketManager.disconnect()
+        
+        // 2. 데이터 로드 후 웹소켓 연결
+        Log.d("StockDetailScreen", "웹소켓 연결 시작: ${stock.stockCode}")
+        try {
+            webSocketManager.connect(stock.stockCode)
+        } catch (e: Exception) {
+            Log.e("StockDetailScreen", "웹소켓 연결 실패: ${e.message}", e)
         }
     }
 
-    // 상단 가격 정보 업데이트
+    DisposableEffect(stock.stockCode) {
+        onDispose { 
+            Log.d("StockDetailScreen", "웹소켓 연결 해제")
+            webSocketManager.disconnect() 
+        }
+    }
+
+    // 웹소켓 데이터 수신 시 상태 업데이트
     LaunchedEffect(stockPrice) {
         stockPrice?.let { price ->
-            Log.d("StockDetailScreen", "주식 가격 업데이트: ${price.currentPrice}")
+            Log.d("StockDetailScreen", "웹소켓 현재가 업데이트: ${price.currentPrice}")
+            // 음수 값이 올 경우 절대값으로 변환하여 저장
+            val parsedPrice = price.currentPrice.replace("""[+\-,]""".toRegex(), "").toIntOrNull() ?: currentPrice
+            currentPrice = parsedPrice
+            priceChange = price.priceChange.toIntOrNull() ?: priceChange
+            changeRate = price.changeRate.toDoubleOrNull() ?: changeRate
+            Log.d("StockDetailScreen", "변환된 현재가: $currentPrice")
         }
     }
-
-    // 호가 데이터 업데이트
+    
     LaunchedEffect(stockBidAsk) {
         stockBidAsk?.let { bidAsk ->
-            Log.d("StockDetailScreen", "호가 데이터 업데이트: ${bidAsk.timestamp}")
-        }
-    }
-
-    // 종목 상세 정보 로드
-    LaunchedEffect(stock.stockCode) {
-        try {
-            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
-            val response = stockService.getStockDetail(stock.stockCode)
-            if (response.isSuccessful) {
-                stockDetail = response.body()
-                isLoading = false
-            }
-        } catch (e: Exception) {
-            Log.e("StockDetailScreen", "Failed to load stock detail", e)
-            isLoading = false
+            Log.d("StockDetailScreen", "웹소켓 호가 업데이트: ${bidAsk.timestamp}")
+            askPrices = bidAsk.askPrices
+            askVolumes = bidAsk.askVolumes
+            bidPrices = bidAsk.bidPrices
+            bidVolumes = bidAsk.bidVolumes
         }
     }
 
@@ -393,7 +452,7 @@ fun StockDetailScreen(
         isChartLoading = true
         try {
             val chartType = when (selectedPeriod) {
-                "1분", "3분", "5분", "10분", "30분", "60분" -> "MINUTE"
+                "분" -> "MINUTE"
                 "일" -> "DAILY"
                 "주" -> "WEEKLY"
                 "월" -> "MONTHLY"
@@ -401,27 +460,70 @@ fun StockDetailScreen(
                 else -> "DAILY"
             }
             
-            val timeInterval = if (selectedPeriod.endsWith("분")) {
-                selectedPeriod.replace("분", "")
+            val timeInterval = if (selectedPeriod == "분") {
+                "1"
             } else null
 
             Log.d("StockDetailScreen", "차트 데이터 요청: chartType=$chartType, timeInterval=$timeInterval, stockCode=${stock.stockCode}")
 
             val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
-            val response = stockService.getStockChart(
+            
+            // 첫 번째 데이터 로드
+            val initialResponse = stockService.getStockChart(
                 chartType = chartType,
                 stockCode = stock.stockCode,
                 timeInterval = timeInterval,
                 nextKey = null
             )
-            chartData = response
-            nextKey = response.nextKey
-            hasNext = response.hasNext
-            Log.d("StockDetailScreen", "차트 데이터 로드 성공: ${response.chartData.size}개, nextKey=${response.nextKey}, hasNext=${response.hasNext}")
+            
+            val allChartData = initialResponse.chartData.toMutableList()
+            var currentNextKey = initialResponse.nextKey
+            var hasMoreData = initialResponse.hasNext
+            
+            // 년 차트는 데이터가 적어서 추가 로딩이 필요 없으나,
+            // 다른 차트의 경우 모든 데이터를 가져오기 위해 nextKey가 있는 한 계속 로드
+            if (selectedPeriod != "년" && hasMoreData && currentNextKey != null) {
+                // 최대 10회까지 추가 데이터 로드 (성능 및 무한 루프 방지)
+                for (i in 0 until 10) {
+                    if (!hasMoreData || currentNextKey == null) break
+                    
+                    val additionalResponse = stockService.getStockChart(
+                        chartType = chartType,
+                        stockCode = stock.stockCode,
+                        timeInterval = timeInterval,
+                        nextKey = currentNextKey
+                    )
+                    
+                    // 기존 데이터에 추가
+                    allChartData.addAll(additionalResponse.chartData)
+                    currentNextKey = additionalResponse.nextKey
+                    hasMoreData = additionalResponse.hasNext
+                }
+            }
+            
+            // 통합된 데이터로 응답 생성
+            chartData = ChartResponse(
+                stockCode = stock.stockCode,
+                chartType = chartType,
+                chartData = allChartData,
+                nextKey = currentNextKey,
+                hasNext = hasMoreData,
+                code = initialResponse.code,
+                message = initialResponse.message
+            )
+            
+            nextKey = currentNextKey
+            hasNext = hasMoreData
+            
+            Log.d("StockDetailScreen", "차트 데이터 로드 성공: ${allChartData.size}개, nextKey=${currentNextKey}, hasNext=${hasMoreData}")
             
             // 데이터 상세 로그
-            response.chartData.take(3).forEachIndexed { index, data ->
-                Log.d("StockDetailScreen", "데이터 $index: date=${data.date}, currentPrice=${data.currentPrice}, openPrice=${data.openPrice}, highPrice=${data.highPrice}, lowPrice=${data.lowPrice}")
+            allChartData.take(3).forEachIndexed { index, data ->
+                Log.d("StockDetailScreen", "첫 데이터 $index: date=${data.date}, currentPrice=${data.currentPrice}")
+            }
+            if (allChartData.size > 3) {
+                val lastIndex = allChartData.size - 1
+                Log.d("StockDetailScreen", "마지막 데이터: date=${allChartData[lastIndex].date}, currentPrice=${allChartData[lastIndex].currentPrice}")
             }
         } catch (e: Exception) {
             Log.e("StockDetailScreen", "차트 데이터 로드 실패", e)
@@ -443,7 +545,7 @@ fun StockDetailScreen(
             coroutineScope.launch {
                 try {
                     val chartType = when (selectedPeriod) {
-                        "1분", "3분", "5분", "10분", "30분", "60분" -> "MINUTE"
+                        "분" -> "MINUTE"
                         "일" -> "DAILY"
                         "주" -> "WEEKLY"
                         "월" -> "MONTHLY"
@@ -451,8 +553,8 @@ fun StockDetailScreen(
                         else -> "DAILY"
                     }
                     
-                    val timeInterval = if (selectedPeriod.endsWith("분")) {
-                        selectedPeriod.replace("분", "")
+                    val timeInterval = if (selectedPeriod == "분") {
+                        "1"
                     } else null
 
                     val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
@@ -482,22 +584,32 @@ fun StockDetailScreen(
 
     // 로그인 다이얼로그 상태
     var showLoginDialog by remember { mutableStateOf(false) }
-    var loginDialogType by remember { mutableStateOf("") } // "buy" 또는 "sell"
+    var loginDialogType by remember { mutableStateOf("") } // "buy", "sell", "favorite"
+
+    // 관심종목 여부 확인
+    val isInWatchlist = viewModel.watchlist.value.contains(stock.stockCode)
 
     // 프로필 정보 로드
     LaunchedEffect(authViewModel.isLoggedIn.value) {
         if (authViewModel.isLoggedIn.value) {
             isProfileLoading = true
+            isPortfolioLoading = true
             try {
                 val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
-                val response = memberService.getSimpleProfile()
-                if (response.isSuccessful) {
-                    userProfile = response.body()
+                val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                if (profileResponse.isSuccessful) {
+                    userProfile = profileResponse.body()
+                }
+                val portfolioResponse = memberService.getPortfolio("Bearer $token")
+                if (portfolioResponse.isSuccessful) {
+                    portfolioData = portfolioResponse.body()
                 }
             } catch (e: Exception) {
                 profileError = e.message
+                portfolioError = e.message
             } finally {
                 isProfileLoading = false
+                isPortfolioLoading = false
             }
         }
     }
@@ -506,7 +618,7 @@ fun StockDetailScreen(
     if (showLoginDialog) {
         AlertDialog(
             onDismissRequest = { showLoginDialog = false },
-            title = { 
+            title = {
                 Text(
                     "로그인이 필요합니다",
                     fontFamily = SCDreamFontFamily,
@@ -514,10 +626,14 @@ fun StockDetailScreen(
                     fontWeight = FontWeight.Bold
                 )
             },
-            text = { 
+            text = {
                 Text(
-                    if (loginDialogType == "buy") "매수 주문을 위해서는 로그인이 필요합니다."
-                    else "매도 주문을 위해서는 로그인이 필요합니다.",
+                    when (loginDialogType) {
+                        "buy" -> "매수 주문을 위해서는 로그인이 필요합니다."
+                        "sell" -> "매도 주문을 위해서는 로그인이 필요합니다."
+                        "favorite" -> "관심 종목 등록을 위해서는 로그인이 필요합니다."
+                        else -> "로그인이 필요합니다."
+                    },
                     fontFamily = SCDreamFontFamily,
                     color = Color.Black
                 )
@@ -553,12 +669,96 @@ fun StockDetailScreen(
         )
     }
 
+    // 매도 바텀시트 열릴 때마다 최신 데이터 로드
+    LaunchedEffect(showSellBottomSheet) {
+        if (showSellBottomSheet && authViewModel.isLoggedIn.value) {
+            isProfileLoading = true
+            isPortfolioLoading = true
+            try {
+                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                if (profileResponse.isSuccessful) {
+                    userProfile = profileResponse.body()
+                }
+                val portfolioResponse = memberService.getPortfolio("Bearer $token")
+                if (portfolioResponse.isSuccessful) {
+                    portfolioData = portfolioResponse.body()
+                }
+            } catch (e: Exception) {
+                profileError = e.message
+                portfolioError = e.message
+            } finally {
+                isProfileLoading = false
+                isPortfolioLoading = false
+            }
+        }
+    }
+    // 매수 바텀시트 열릴 때마다 최신 데이터 로드
+    LaunchedEffect(showBuyBottomSheet) {
+        if (showBuyBottomSheet && authViewModel.isLoggedIn.value) {
+            isProfileLoading = true
+            isPortfolioLoading = true
+            try {
+                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                if (profileResponse.isSuccessful) {
+                    userProfile = profileResponse.body()
+                }
+                val portfolioResponse = memberService.getPortfolio("Bearer $token")
+                if (portfolioResponse.isSuccessful) {
+                    portfolioData = portfolioResponse.body()
+                }
+            } catch (e: Exception) {
+                profileError = e.message
+                portfolioError = e.message
+            } finally {
+                isProfileLoading = false
+                isPortfolioLoading = false
+            }
+        }
+    }
+
+    // 거래 시간 외 안내 다이얼로그
+    if (showTradingHoursDialog) {
+        AlertDialog(
+            onDismissRequest = { showTradingHoursDialog = false },
+            title = {
+                Text(
+                    "거래 시간 안내",
+                    fontFamily = SCDreamFontFamily,
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "주식 거래는 평일 08:00~18:00에만 가능합니다. (현재 시간: $currentTimeStr)",
+                    fontFamily = SCDreamFontFamily,
+                    color = Color.Black
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showTradingHoursDialog = false }
+                ) {
+                    Text(
+                        "확인",
+                        color = Color(0xFF0066CC),
+                        fontFamily = SCDreamFontFamily,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            containerColor = Color.White
+        )
+    }
+
     if (showSellBottomSheet) {
         val scrollState = rememberScrollState()
 
         // 매도 바텀 시트 초기화
         LaunchedEffect(Unit) {
-            sellPrice = stockPrice?.currentPrice ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
+            sellPrice = (stockPrice?.currentPrice ?: stock.currentPrice).replace("""[+\-]""".toRegex(), "")
         }
 
         ModalBottomSheet(
@@ -672,38 +872,6 @@ fun StockDetailScreen(
                             }
                             
                             Spacer(modifier = Modifier.height(24.dp))
-                            
-                            // 주문 유형 선택 (주석 처리)
-                            /*
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf("지정가", "시장가").forEach { type ->
-                                    Button(
-                                        onClick = { 
-                                            sellOrderType = type
-                                            if (type == "시장가") {
-                                                sellPrice = stock.currentPrice.toString()
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (sellOrderType == type) ChartBlue else Gray200,
-                                            contentColor = if (sellOrderType == type) Color.White else Gray700
-                                        ),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            text = type,
-                                            fontSize = 14.sp,
-                                            fontFamily = SCDreamFontFamily
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(24.dp))
-                            */
                             
                             // 가격 입력 (현재가로 자동 설정, 수정 불가)
                             OutlinedTextField(
@@ -944,43 +1112,49 @@ fun StockDetailScreen(
                                     coroutineScope.launch {
                                         try {
                                             val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
-                                            val response = stockService.sellStock(
-                                                SellOrderRequest(
-                                                    stockCode = stock.stockCode,
-                                                    quantity = sellQuantity.toInt(),
-                                                    price = null,
-                                                    marketOrder = true
-                                                )
+                                            val sellOrder = SellOrderRequest(
+                                                stockCode = stock.stockCode,
+                                                quantity = sellQuantity.toInt(),
+                                                price = null,
+                                                marketOrder = true
                                             )
+                                            // 바디 로그 출력
+                                            Log.d("매도요청", Gson().toJson(sellOrder))
+                                            val response = stockService.sellStock(sellOrder)
                                             
+                                            // 응답 처리
                                             if (response.isSuccessful) {
+                                                Log.d("매도응답", "성공: ${response.body()}")
+                                                // 성공 처리
+                                                showSellSuccessMessage = true
                                                 delay(500) // 성공 시 잠시 대기
                                                 isLoading = false
-                                                sellStep = 3
-                                                showSellSuccessMessage = true
+                                                sellStep = 3 // 매도 완료 화면으로 이동
                                                 
                                                 // 프로필 정보 새로고침 (잔고 업데이트를 위해)
                                                 val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
-                                                val profileResponse = memberService.getSimpleProfile()
+                                                val profileResponse = memberService.getSimpleProfile("Bearer $token")
                                                 if (profileResponse.isSuccessful) {
                                                     userProfile = profileResponse.body()
                                                 }
+                                                
+                                                // 포트폴리오 정보 새로고침
+                                                val portfolioResponse = memberService.getPortfolio("Bearer $token")
+                                                if (portfolioResponse.isSuccessful) {
+                                                    portfolioData = portfolioResponse.body()
+                                                }
                                             } else {
-                                                // 실패 시 에러 메시지 표시
-                                                Toast.makeText(
-                                                    context,
-                                                    "주문 실패: ${response.message()}",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                                isLoading = false
+                                                Log.e("매도응답", "실패: ${response.code()} - ${response.errorBody()?.string()}")
+                                                errorMessage = "매도 요청이 실패했습니다 (${response.code()})"
                                             }
                                         } catch (e: Exception) {
-                                            // 에러 발생 시
-                                            Toast.makeText(
-                                                context,
-                                                "주문 실패: ${e.message}",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            Log.e("매도요청", "오류 발생: ${e.message}", e)
+                                            errorMessage = when {
+                                                e.message?.contains("timeout") == true -> "서버 응답 시간이 초과되었습니다."
+                                                e.message?.contains("Unable to resolve host") == true -> "인터넷 연결을 확인해주세요."
+                                                else -> "매도 요청 중 오류가 발생했습니다: ${e.message}"
+                                            }
+                                        } finally {
                                             isLoading = false
                                         }
                                     }
@@ -1067,7 +1241,7 @@ fun StockDetailScreen(
 
         // 매수 바텀 시트 초기화
         LaunchedEffect(Unit) {
-            buyPrice = stockPrice?.currentPrice ?: stock.currentPrice.replace("""[+\-]""".toRegex(), "")
+            buyPrice = (stockPrice?.currentPrice ?: stock.currentPrice).replace("""[+\-]""".toRegex(), "")
         }
 
         ModalBottomSheet(
@@ -1129,38 +1303,6 @@ fun StockDetailScreen(
                             }
                             
                             Spacer(modifier = Modifier.height(24.dp))
-                            
-                            // 주문 유형 선택 (주석 처리)
-                            /*
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf("지정가", "시장가").forEach { type ->
-                                    Button(
-                                        onClick = { 
-                                            buyOrderType = type
-                                            if (type == "시장가") {
-                                                buyPrice = stock.currentPrice.toString()
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (buyOrderType == type) Secondary500 else Gray200,
-                                            contentColor = if (buyOrderType == type) Color.White else Gray700
-                                        ),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            text = type,
-                                            fontSize = 14.sp,
-                                            fontFamily = SCDreamFontFamily
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(24.dp))
-                            */
                             
                             // 가격 입력 (현재가로 자동 설정, 수정 불가)
                             OutlinedTextField(
@@ -1399,14 +1541,15 @@ fun StockDetailScreen(
                                     coroutineScope.launch {
                                         try {
                                             val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
-                                            val response = stockService.buyStock(
-                                                BuyOrderRequest(
-                                                    stockCode = stock.stockCode,
-                                                    quantity = buyQuantity.toInt(),
-                                                    price = null,
-                                                    marketOrder = true
-                                                )
+                                            val buyOrder = BuyOrderRequest(
+                                                stockCode = stock.stockCode,
+                                                quantity = buyQuantity.toInt(),
+                                                price = null,
+                                                marketOrder = true
                                             )
+                                            // 바디 로그 출력
+                                            Log.d("매수요청", Gson().toJson(buyOrder))
+                                            val response = stockService.buyStock(buyOrder)
                                             
                                             if (response.isSuccessful) {
                                                 delay(500) // 성공 시 잠시 대기
@@ -1416,7 +1559,7 @@ fun StockDetailScreen(
                                                 
                                                 // 프로필 정보 새로고침 (잔고 업데이트를 위해)
                                                 val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
-                                                val profileResponse = memberService.getSimpleProfile()
+                                                val profileResponse = memberService.getSimpleProfile("Bearer $token")
                                                 if (profileResponse.isSuccessful) {
                                                     userProfile = profileResponse.body()
                                                 }
@@ -1539,14 +1682,52 @@ fun StockDetailScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = { /* 즐겨찾기 */ },
-                        modifier = Modifier.size(72.dp)
+                        onClick = {
+                            if (authViewModel.isLoggedIn.value) {
+                                // 현재 관심 종목 여부에 따라 API 호출
+                                if (isInWatchlist) {
+                                    // 관심 종목에서 제거
+                                    viewModel.removeFromWatchlist(
+                                        stockCode = stock.stockCode,
+                                        context = context,
+                                        onSuccess = { 
+                                            // 관심 종목 목록 새로고침하여 즉시 UI에 반영
+                                            viewModel.loadWatchlist(context)
+                                        },
+                                        onError = { errorMsg ->
+                                            // 오류 발생 시 메시지 표시
+                                            Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                } else {
+                                    // 관심 종목에 추가
+                                    viewModel.addToWatchlist(
+                                        stockCode = stock.stockCode,
+                                        context = context,
+                                        onSuccess = {
+                                            // 관심 종목 목록 새로고침하여 즉시 UI에 반영
+                                            viewModel.loadWatchlist(context)
+                                        },
+                                        onError = { errorMsg ->
+                                            // 오류 발생 시 메시지 표시
+                                            Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            } else {
+                                // 로그인이 필요한 경우 안내
+                                showLoginDialog = true
+                            }
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .padding(end = 16.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.FavoriteBorder,
-                            contentDescription = "Favorite",
-                            tint = Gray300,
-                            modifier = Modifier.size(48.dp)
+                            imageVector = if (isInWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = if (isInWatchlist) "관심 종목에서 제거" else "관심 종목에 추가",
+                            tint = if (isInWatchlist) Color(0xFFFF4081) else Gray300,
+                            modifier = Modifier.size(28.dp)
                         )
                     }
                 },
@@ -1567,6 +1748,11 @@ fun StockDetailScreen(
                 // 매도 버튼 (왼쪽)
                 Button(
                     onClick = { 
+                        if (!isTradingHours) {
+                            showTradingHoursDialog = true
+                            return@Button
+                        }
+                        
                         if (authViewModel.isLoggedIn.value) {
                             showSellBottomSheet = true
                         } else {
@@ -1578,9 +1764,11 @@ fun StockDetailScreen(
                         .weight(1f)
                         .fillMaxHeight(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ChartBlue
+                        containerColor = if (isTradingHours) ChartBlue else Gray300,
+                        disabledContainerColor = Gray300
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = isTradingHours
                 ) {
                     Text(
                         text = "매도",
@@ -1596,6 +1784,11 @@ fun StockDetailScreen(
                 // 매수 버튼 (오른쪽)
                 Button(
                     onClick = { 
+                        if (!isTradingHours) {
+                            showTradingHoursDialog = true
+                            return@Button
+                        }
+                        
                         if (authViewModel.isLoggedIn.value) {
                             showBuyBottomSheet = true
                         } else {
@@ -1607,9 +1800,11 @@ fun StockDetailScreen(
                         .weight(1f)
                         .fillMaxHeight(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Secondary500
+                        containerColor = if (isTradingHours) Secondary500 else Gray300,
+                        disabledContainerColor = Gray300
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = isTradingHours
                 ) {
                     Text(
                         text = "매수",
@@ -1651,28 +1846,14 @@ fun StockDetailScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 현재가 표시 (웹소켓 또는 API 데이터 사용)
-                        val currentPrice = when {
-                            stockPrice != null -> {
-                                Log.d("StockDetailScreen", "웹소켓 현재가 데이터 사용: ${stockPrice.currentPrice}")
-                                stockPrice.currentPrice
-                            }
-                            apiStockPrice != null -> {
-                                Log.d("StockDetailScreen", "API 현재가 데이터 사용: ${apiStockPrice?.currentPrice}")
-                                apiStockPrice?.currentPrice ?: ""
-                            }
-                            else -> {
-                                Log.d("StockDetailScreen", "기본 현재가 데이터 사용: ${stock.currentPrice}")
-                                stock.currentPrice.replace("""[+\-]""".toRegex(), "")
-                            }
-                        }
-                        
+                        // 현재가 표시 - 상태 변수 사용
                         Text(
-                            text = "${String.format("%,d", currentPrice.replace("""[+\-,]""".toRegex(), "").toIntOrNull() ?: 0)}원",
+                            text = "${String.format("%,d", currentPrice)}원",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
                         )
+                        
                         Text(
                             text = " 어제보다 ",
                             fontSize = 12.sp,
@@ -1681,43 +1862,19 @@ fun StockDetailScreen(
                             fontFamily = SCDreamFontFamily
                         )
 
-                        // 전일대비와 등락률 표시
-                        val (priceChange, changeRate, isPositive) = when {
-                            stockPrice != null -> {
-                                Log.d("StockDetailScreen", "웹소켓 데이터 사용 - 전일대비: ${stockPrice.priceChange}, 등락률: ${stockPrice.changeRate}")
-                                Triple(
-                                    stockPrice.priceChange.replace("""[+\-,]""".toRegex(), "").toIntOrNull() ?: 0,
-                                    stockPrice.changeRate.replace("""[+\-,%]""".toRegex(), "").toFloatOrNull() ?: 0f,
-                                    stockPrice.isPositiveChange()
-                                )
-                            }
-                            apiStockPrice != null -> {
-                                Log.d("StockDetailScreen", "API 데이터 사용 - 전일대비: ${apiStockPrice?.priceChange}, 등락률: ${apiStockPrice?.changeRate}")
-                                Triple(
-                                    apiStockPrice?.priceChange?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() ?: 0,
-                                    apiStockPrice?.changeRate?.replace("""[+\-,%]""".toRegex(), "")?.toFloatOrNull() ?: 0f,
-                                    apiStockPrice?.priceChange?.startsWith("+") ?: false
-                                )
-                            }
-                            else -> {
-                                Log.d("StockDetailScreen", "기본 데이터 사용 - 전일대비: ${stock.priceChange}, 등락률: ${stock.fluctuationRate}")
-                                Triple(
-                                    stock.priceChange.replace("""[+\-,]""".toRegex(), "").toIntOrNull() ?: 0,
-                                    stock.fluctuationRate.replace("""[+\-,%]""".toRegex(), "").toFloatOrNull() ?: 0f,
-                                    stock.fluctuationRate.startsWith("+")
-                                )
-                            }
-                        }
+                        // 전일대비와 등락률 표시 - 상태 변수 사용
+                        val isPositive = priceChange > 0 || (priceChange == 0 && changeRate > 0)
                         
                         Text(
-                            text = "${if (isPositive) "+" else "-"}${String.format("%,d", priceChange)}원",
+                            text = "${if (isPositive) "+" else "-"}${String.format("%,d", Math.abs(priceChange))}원",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
                             color = if (isPositive) Color.Red else Color.Blue,
                             fontFamily = SCDreamFontFamily
                         )
+                        
                         Text(
-                            text = " (${if (isPositive) "+" else "-"}${String.format("%.2f", changeRate)}%)",
+                            text = " (${if (isPositive) "+" else "-"}${String.format("%.2f", Math.abs(changeRate))}%)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.W500,
                             color = if (isPositive) Color.Red else Color.Blue,
@@ -1754,57 +1911,8 @@ fun StockDetailScreen(
                                     .padding(bottom = 8.dp),
                                 horizontalArrangement = Arrangement.End
                             ) {
-                                // 분 버튼 (드롭다운)
-                                Box {
-                                    Row(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(if (selectedPeriod.endsWith("분")) Gray100 else Color.Transparent)
-                                            .clickable { showMinuteDropdown = true }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = selectedPeriod.takeIf { it.endsWith("분") } ?: "1분",
-                                            fontSize = 12.sp,
-                                            color = Gray700,
-                                            fontFamily = SCDreamFontFamily
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowDown,
-                                            contentDescription = "드롭다운",
-                                            tint = Gray700,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    DropdownMenu(
-                                        expanded = showMinuteDropdown,
-                                        onDismissRequest = { showMinuteDropdown = false },
-                                        modifier = Modifier.background(Gray0)
-                                    ) {
-                                        minuteOptions.forEach { option ->
-                                            DropdownMenuItem(
-                                                text = { 
-                                                    Text(
-                                                        text = option, 
-                                                        fontSize = 12.sp, 
-                                                        fontFamily = SCDreamFontFamily,
-                                                        color = Gray700
-                                                    ) 
-                                                },
-                                                onClick = {
-                                                    selectedPeriod = option
-                                                    showMinuteDropdown = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                                
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                // 일/주/월/년 버튼들
-                                listOf("일", "주", "월", "년").forEach { period ->
+                                // 1분/일/년 버튼
+                                listOf("분", "일", "년").forEach { period ->
                                     Text(
                                         text = period,
                                         fontSize = 12.sp,
@@ -1866,12 +1974,12 @@ fun StockDetailScreen(
                                                 setDragDecelerationEnabled(true)
                                                 setDragDecelerationFrictionCoef(0.9f)
                                                 
-                                                // 차트 표시 설정
-                                                setVisibleXRangeMaximum(30f)  // 한 번에 보이는 캔들 개수
-                                                setVisibleXRangeMinimum(10f)  // 최소 보이는 캔들 개수
+                                                // 차트 표시 설정 - 최대 표시 캔들 개수를 증가
+                                                setVisibleXRangeMaximum(100f)  // 한 번에 보이는 캔들 개수 증가
+                                                setVisibleXRangeMinimum(5f)    // 최소 보이는 캔들 개수 감소
                                                 
                                                 // 차트 여백 설정
-                                                setViewPortOffsets(40f, 20f, 40f, 20f)
+                                                setViewPortOffsets(120f, 20f, 40f, 20f)
                                                 
                                                 // 스크롤 이벤트 리스너 추가
                                                 setOnChartGestureListener(object : OnChartGestureListener {
@@ -1887,20 +1995,33 @@ fun StockDetailScreen(
                                                     override fun onChartGestureEnd(me: MotionEvent?, lastPerformedGesture: ChartTouchListener.ChartGesture?) {}
                                                 })
 
-                                                val entries = chartData?.chartData
-                                                    ?.sortedBy { it.date }  // 날짜순으로 정렬
-                                                    ?.takeLast(100)
-                                                    ?.mapIndexed { index, data ->
-                                                        CandleEntry(
-                                                            index.toFloat(),
-                                                            data.highPrice.toFloatOrNull() ?: 0f,
-                                                            data.lowPrice.toFloatOrNull() ?: 0f,
-                                                            data.openPrice.toFloatOrNull() ?: 0f,
-                                                            data.currentPrice.toFloatOrNull() ?: 0f
-                                                        )
-                                                    } ?: listOf()
+                                                // 데이터를 오래된 순으로 정렬하여 차트 오른쪽에 최신 데이터가 나오도록 함
+                                                val rawData = chartData?.chartData
+                                                    ?.filter { it.volume != "0" }  // volume이 0인 데이터는 제외 (거래가 없는 날)
+                                                    ?.distinctBy { it.date }  // 중복 날짜 제거
+                                                    ?.sortedBy { it.date }  // 날짜 오름차순으로 정렬(오래된 데이터가 왼쪽, 최신 데이터가 오른쪽에 오도록)
+                                                
+                                                Log.d("StockDetailScreen", "차트 데이터 처리: 전체 ${chartData?.chartData?.size ?: 0}개, 필터링 후 ${rawData?.size ?: 0}개")
+                                                rawData?.take(5)?.forEachIndexed { idx, data ->
+                                                    Log.d("StockDetailScreen", "샘플 데이터[$idx]: date=${data.date}, price=${data.currentPrice}, volume=${data.volume}")
+                                                }
+                                                
+                                                // 인덱스 기반으로 다시 변경하되, 데이터는 정렬된 상태 유지
+                                                val entries = rawData?.mapIndexed { index, data ->
+                                                    CandleEntry(
+                                                        index.toFloat(),
+                                                        data.highPrice.toFloatOrNull()?.let { kotlin.math.abs(it) } ?: 0f,
+                                                        data.lowPrice.toFloatOrNull()?.let { kotlin.math.abs(it) } ?: 0f,
+                                                        data.openPrice.toFloatOrNull()?.let { kotlin.math.abs(it) } ?: 0f,
+                                                        data.currentPrice.toFloatOrNull()?.let { kotlin.math.abs(it) } ?: 0f
+                                                    )
+                                                } ?: listOf()
 
                                                 if (entries.isNotEmpty()) {
+                                                    // Y축 최솟값 계산 - 가장 낮은 저가의 95%로 설정
+                                                    val lowestLow = entries.minByOrNull { it.low }?.low ?: 0f
+                                                    val yAxisMinimum = if (lowestLow > 0) lowestLow * 0.95f else 0f
+                                                    
                                                     val dataSet = CandleDataSet(entries, "주가").apply {
                                                         color = AndroidColor.BLACK
                                                         shadowColorSameAsCandle = true
@@ -1926,11 +2047,11 @@ fun StockDetailScreen(
                                                         valueFormatter = object : ValueFormatter() {
                                                             override fun getFormattedValue(value: Float): String {
                                                                 val index = value.toInt()
-                                                                return if (index >= 0 && index < entries.size) {
-                                                                    val date = chartData?.chartData?.get(index)?.date ?: ""
+                                                                return if (index >= 0 && rawData != null && index < rawData.size) {
+                                                                    val date = rawData[index].date
                                                                     when {
                                                                         // 분봉 (YYYYMMDDHHmm)
-                                                                        selectedPeriod.endsWith("분") && date.length >= 12 -> {
+                                                                        selectedPeriod == "분" && date.length >= 12 -> {
                                                                             val hour = date.substring(8, 10)
                                                                             val minute = date.substring(10, 12)
                                                                             "$hour:$minute"
@@ -1972,13 +2093,66 @@ fun StockDetailScreen(
                                                         setDrawGridLines(true)
                                                         textColor = Gray500.toArgb()
                                                         setLabelCount(5, true)
+                                                        axisMinimum = yAxisMinimum  // 계산된 Y축 최솟값 적용
                                                         setPosition(YAxis.YAxisLabelPosition.OUTSIDE_CHART)
                                                     }
 
-                                                    // 초기 위치 설정 - 가장 최근 데이터 표시
-                                                    moveViewToX(entries.size.toFloat())
-                                                    setVisibleXRangeMaximum(50f)  // 한 번에 보이는 캔들 개수 조정
+                                                    // 초기 위치 설정 - 가장 최신 데이터(마지막 데이터) 표시
+                                                    if (entries.isNotEmpty()) {
+                                                        // 데이터의 전체 범위를 보이게 설정
+                                                        fitScreen()
+                                                        // 다시 오른쪽(최신 데이터) 부분으로 이동
+                                                        moveViewToX(entries.size - 1f)
+                                                        // 보이는 범위 설정 - 더 많은 캔들 표시
+                                                        setVisibleXRangeMaximum(100f)
+                                                    }
                                                     invalidate()
+                                                }
+                                            }
+                                        },
+                                        update = { chart ->
+                                            // 실시간 현재가 업데이트 적용 (분/일 차트에만 적용)
+                                            if (selectedPeriod == "분" || selectedPeriod == "일") {
+                                                // 차트에 데이터가 있고, 웹소켓에서 현재가가 유효한 경우에만 업데이트
+                                                if (chart.data != null && chart.data.dataSetCount > 0 && currentPrice > 0) {
+                                                    val dataSet = chart.data.getDataSetByIndex(0) as? CandleDataSet
+                                                    if (dataSet != null && dataSet.entryCount > 0) {
+                                                        // 마지막 항목(최신 데이터)을 가져옴
+                                                        val lastEntryIndex = dataSet.entryCount - 1
+                                                        val lastEntry = dataSet.getEntryForIndex(lastEntryIndex) as? CandleEntry
+                                                        if (lastEntry != null) {
+                                                            // 현재가 절대값 확인
+                                                            val currentPriceValue = kotlin.math.abs(currentPrice.toFloat())
+                                                            
+                                                            // 현재가를 반영한 고가/저가 계산
+                                                            val highPrice = maxOf(lastEntry.high, currentPriceValue)
+                                                            val lowPrice = minOf(lastEntry.low, currentPriceValue)
+                                                            
+                                                            try {
+                                                                // 기존 엔트리의 값을 수정
+                                                                // 시가(open)는 유지, 종가(close)만 현재가로 업데이트
+                                                                lastEntry.close = currentPriceValue
+                                                                
+                                                                // 고가와 저가 업데이트
+                                                                if (currentPriceValue > lastEntry.high) {
+                                                                    lastEntry.high = currentPriceValue
+                                                                }
+                                                                if (currentPriceValue < lastEntry.low) {
+                                                                    lastEntry.low = currentPriceValue
+                                                                }
+                                                                
+                                                                // 데이터셋 갱신 및 차트 갱신
+                                                                dataSet.notifyDataSetChanged()
+                                                                chart.data.notifyDataChanged()
+                                                                chart.notifyDataSetChanged()
+                                                                chart.invalidate()
+                                                                
+                                                                Log.d("StockDetailScreen", "차트 실시간 업데이트: 현재가=$currentPriceValue, 엔트리 수=${dataSet.entryCount}, 업데이트 인덱스=$lastEntryIndex")
+                                                            } catch (e: Exception) {
+                                                                Log.e("StockDetailScreen", "차트 업데이트 중 오류 발생", e)
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -1995,13 +2169,42 @@ fun StockDetailScreen(
                             .padding(vertical = 16.dp),
                         colors = CardDefaults.cardColors(containerColor = Gray50)
                     ) {
-                        // 웹소켓 또는 API 데이터 사용
-                        val bidAskData = stockBidAsk ?: apiStockBidAsk
-                        bidAskData?.let { bidAsk ->
-                            StockBidAskView(
-                                stockBidAsk = bidAsk,
-                                modifier = Modifier.padding(8.dp)
-                            )
+                        if (isLoadingBidAsk) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(300.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Secondary500)
+                            }
+                        } else {
+                            // REST API 데이터 또는 웹소켓 데이터 사용
+                            // askPrices, askVolumes, bidPrices, bidVolumes 변수에는 이미 최신 데이터가 저장되어 있음
+                            if (askPrices.isNotEmpty() && bidPrices.isNotEmpty()) {
+                                StockBidAskView(
+                                    stockBidAsk = StockBidAsk(
+                                        type = "bidask",
+                                        stockCode = stock.stockCode,
+                                        timestamp = stockBidAsk?.timestamp ?: apiStockBidAsk?.timestamp ?: "",
+                                        askPrices = askPrices,
+                                        askVolumes = askVolumes,
+                                        bidPrices = bidPrices,
+                                        bidVolumes = bidVolumes
+                                    ),
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            } else {
+                                Text(
+                                    text = "호가 데이터를 불러올 수 없습니다.",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 24.dp),
+                                    textAlign = TextAlign.Center,
+                                    color = Gray500,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                            }
                         }
                     }
                 }
@@ -2009,3 +2212,4 @@ fun StockDetailScreen(
         }
     }
 }
+

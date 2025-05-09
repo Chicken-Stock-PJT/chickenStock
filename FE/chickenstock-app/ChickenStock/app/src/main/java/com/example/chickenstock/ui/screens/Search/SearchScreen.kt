@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -59,6 +60,13 @@ fun SearchScreen(navController: NavController) {
     val context = LocalContext.current
     val backStackEntry = navController.currentBackStackEntry
     var searchQuery by remember { mutableStateOf("") }
+    
+    // 뒤로가기 처리
+    BackHandler {
+        // 뒤로가기 시 검색어 초기화
+        backStackEntry?.savedStateHandle?.set("searchQuery", "")
+        navController.navigateUp()
+    }
     
     // SharedPreferences에서 최근 검색어 불러오기
     val prefs = context.getSharedPreferences("recent_searches", Context.MODE_PRIVATE)
@@ -116,19 +124,20 @@ fun SearchScreen(navController: NavController) {
             modifier = Modifier.padding(bottom = 12.dp)
         )
         
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (recentSearches.isEmpty()) {
-                Text(
-                    text = "최근 검색어가 없습니다.",
-                    color = Gray500,
-                    fontFamily = SCDreamFontFamily,
-                    fontSize = 14.sp
-                )
-            } else {
-                recentSearches.forEach { stock ->
+        if (recentSearches.isEmpty()) {
+            Text(
+                text = "최근 검색어가 없습니다.",
+                color = Gray500,
+                fontFamily = SCDreamFontFamily,
+                fontSize = 14.sp
+            )
+        } else {
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(end = 8.dp)
+            ) {
+                items(recentSearches) { stock ->
                     RecentSearchChip(
                         keyword = stock.shortName,
                         onRemove = {
@@ -136,7 +145,11 @@ fun SearchScreen(navController: NavController) {
                             saveRecentSearches(recentSearches)
                         },
                         onClick = {
-                            navController.navigate("stock_detail/${stock.shortCode}")
+                            navController.navigate(Screen.StockDetail.createRoute(
+                                stockCode = stock.shortCode,
+                                currentPrice = "0",  // API에서 현재가를 가져올 것이므로 임시값
+                                fluctuationRate = "0.0"  // API에서 등락률을 가져올 것이므로 임시값
+                            ))
                         }
                     )
                 }
@@ -175,8 +188,12 @@ fun SearchScreen(navController: NavController) {
                                     recentSearches = newSearches
                                     saveRecentSearches(newSearches)
                                 }
-                                // 상세 페이지로 이동 (종목 코드만 사용)
-                                navController.navigate("stock_detail/${stock.shortCode}")
+                                // 상세 페이지로 이동
+                                navController.navigate(Screen.StockDetail.createRoute(
+                                    stockCode = stock.shortCode,
+                                    currentPrice = "0",  // API에서 현재가를 가져올 것이므로 임시값
+                                    fluctuationRate = "0.0"  // API에서 등락률을 가져올 것이므로 임시값
+                                ))
                             }
                         )
                     }

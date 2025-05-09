@@ -8,6 +8,7 @@ import retrofit2.http.Query
 import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.Body
+import retrofit2.http.Headers
 
 data class StockDetailResponse(
     val stockCode: String,          // 종목 코드
@@ -117,15 +118,24 @@ interface StockService {
         @Query("contYn") contYn: String? = null
     ): ChartResponse
 
+    @GET("stock/chart/all/{stockCode}")
+    suspend fun getStockChartAll(
+        @Path("stockCode") stockCode: String,
+        @Query("chartType") chartType: String,
+        @Query("timeInterval") timeInterval: String? = null
+    ): ChartResponse
+
+    @Headers("Content-Type: application/json")
     @POST("stock/trading/buy")
     suspend fun buyStock(@Body request: BuyOrderRequest): Response<BuyOrderResponse>
 
+    @Headers("Content-Type: application/json")
     @POST("stock/trading/sell")
     suspend fun sellStock(@Body request: SellOrderRequest): Response<SellOrderResponse>
 
-    @GET("/api/stocks/info/{stockCode}")
+    @GET("stocks/info/{stockCode}")
     suspend fun getStockInfo(@Path("stockCode") stockCode: String): Response<StockDetailResponse>
 
-    @GET("/api/stocks/askbid/{code}")
+    @GET("stocks/askbid/{code}")
     suspend fun getStockBidAsk(@Path("code") stockCode: String): Response<StockBidAskResponse>
 } 

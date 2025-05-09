@@ -28,20 +28,17 @@ data class WatchlistItem(
 
 interface MemberService {
     @GET("members/simple-profile")
-    suspend fun getSimpleProfile(): Response<SimpleProfileResponse>
+    suspend fun getSimpleProfile(@Header("Authorization") token: String): Response<SimpleProfileResponse>
 
     @GET("members/portfolio")
-    suspend fun getPortfolio(): Response<PortfolioData>
-
-    @GET("members/asset-allocation")
-    suspend fun getAssetAllocation(): Response<AssetAllocationResponse>
+    suspend fun getPortfolio(@Header("Authorization") token: String): Response<PortfolioData>
 
     @GET("members/watchlist")
-    suspend fun getWatchlist(): Response<WatchlistResponse>
+    suspend fun getWatchlist(@Header("Authorization") token: String): Response<WatchlistResponse>
 
     @POST("members/watchlist/{stockCode}")
-    suspend fun addToWatchlist(@Path("stockCode") stockCode: String): Response<Unit>
+    suspend fun addToWatchlist(@Header("Authorization") token: String, @Path("stockCode") stockCode: String): Response<Unit>
 
     @DELETE("members/watchlist/{stockCode}")
-    suspend fun removeFromWatchlist(@Path("stockCode") stockCode: String): Response<Unit>
+    suspend fun removeFromWatchlist(@Header("Authorization") token: String, @Path("stockCode") stockCode: String): Response<Unit>
 } 

@@ -7,7 +7,9 @@ data class PortfolioData(
     val totalValuation: Int,
     val totalProfitLoss: Int,
     val totalReturnRate: Double,
-    val positions: List<Position>
+    val positions: List<Position>,
+    val updatedAt: String,
+    val cashRatio: Double
 )
 
 data class Position(
@@ -18,7 +20,8 @@ data class Position(
     val currentPrice: Int,
     val valuationAmount: Int,
     val profitLoss: Int,
-    val returnRate: Double
+    val returnRate: Double,
+    val allocationRatio: Double
 )
 
 data class StockUpdate(
@@ -35,4 +38,20 @@ data class TotalData(
     val totalAsset: Int,
     val totalProfitLoss: Int,
     val totalReturnRate: Double
+)
+
+data class TradeHistoryResponse(
+    val tradeHistories: List<TradeHistory>,
+    val realizedProfit: Int,
+    val hasNext: Boolean,
+    val nextCursor: String?
+)
+
+data class TradeHistory(
+    val stockName: String,
+    val tradeType: String, // "BUY" or "SELL"
+    val quantity: Int,
+    val unitPrice: Int,
+    val createdAt: String,
+    val tradedAt: String
 ) 

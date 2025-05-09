@@ -5,6 +5,7 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Header
 
 data class EmailCheckRequest(
     val email: String
@@ -102,5 +103,8 @@ interface AuthService {
     suspend fun signup(@Body request: SignupRequest): Response<Unit>
 
     @POST("members/change-password")
-    suspend fun changePassword(@Body request: ChangePasswordRequest): Response<Unit>
+    suspend fun changePassword(
+        @Header("Authorization") authorization: String,
+        @Body request: ChangePasswordRequest
+    ): Response<Unit>
 } 

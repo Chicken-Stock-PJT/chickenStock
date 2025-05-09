@@ -33,9 +33,21 @@ data class StockItem(
     val stockName: String,
     val market: String,
     val currentPrice: String,
+    val priceChange: String = "",
     val fluctuationRate: String,
     val tradeAmount: String
 )
+
+private fun String.formatWithCommas(): String {
+    return try {
+        // +, - 부호와 쉼표 제거 후 Int로 변환
+        val cleanNumber = this.replace("""[+\-,]""".toRegex(), "")
+        val number = cleanNumber.toIntOrNull() ?: return this
+        String.format("%,d", number)
+    } catch (e: Exception) {
+        this
+    }
+}
 
 @Composable
 fun StockListItem(
@@ -145,14 +157,28 @@ fun StockListItem(
                             if (isInWatchlist) {
                                 viewModel.removeFromWatchlist(
                                     stockCode = stock.stockCode,
-                                    onSuccess = {},
-                                    onError = {}
+                                    context = context,
+                                    onSuccess = {
+                                        // 관심 종목 목록 새로고침
+                                        viewModel.loadWatchlist(context)
+                                    },
+                                    onError = { errorMsg ->
+                                        // 실패 시 Toast 메시지 표시
+                                        Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
+                                    }
                                 )
                             } else {
                                 viewModel.addToWatchlist(
                                     stockCode = stock.stockCode,
-                                    onSuccess = {},
-                                    onError = {}
+                                    context = context,
+                                    onSuccess = {
+                                        // 관심 종목 목록 새로고침
+                                        viewModel.loadWatchlist(context)
+                                    },
+                                    onError = { errorMsg ->
+                                        // 실패 시 Toast 메시지 표시
+                                        Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
+                                    }
                                 )
                             }
                         } else {
@@ -197,7 +223,7 @@ fun StockListItem(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "${stock.currentPrice}원",
+                            text = "${stock.currentPrice.formatWithCommas()}원",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
@@ -223,8 +249,8 @@ fun StockListItem(
                 ) {
                     val (label, value, unit) = when {
                         showContractStrength -> Triple("체결강도", stock.tradeAmount, "%")
-                        showTradeVolume -> Triple("거래량", stock.tradeAmount, "주")
-                        else -> Triple("거래대금", stock.tradeAmount, "원")
+                        showTradeVolume -> Triple("거래량", stock.tradeAmount.formatWithCommas(), "주")
+                        else -> Triple("거래대금", stock.tradeAmount.formatWithCommas(), "원")
                     }
                     Text(
                         text = label,

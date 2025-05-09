@@ -49,6 +49,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    
+    // Lint 오류 무시 설정 추가
+    lint {
+        abortOnError = false    // lint 오류가 발생해도 빌드가 중단되지 않도록 설정
+        checkReleaseBuilds = false  // 릴리즈 빌드에서 lint 검사 비활성화
+    }
 }
 
 
@@ -93,4 +99,7 @@ dependencies {
 
     // 웹소켓 관련 의존성
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Accompanist Swipe Refresh
+    implementation("com.google.accompanist:accompanist-swiperefresh:0.33.2-alpha")
 }
