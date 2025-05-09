@@ -121,24 +121,34 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   };
 
   const handleBuyOrder = () => {
+    const { available, message } = checkAvailableTime(false, isLimitOrder);
+    if (!available) {
+      alert(message);
+      return;
+    }
     if (isLimitOrder) {
       // 지정가 주문
       buyLimitOrder();
+      alert("지정가 주문이 완료되었습니다.");
     } else {
       // 시장가 주문
       buyMarketOrder();
+      alert("거래가 체결되었습니다.");
     }
   };
 
   const handleSellOrder = () => {
-    if (!checkAvailableTime(false, isLimitOrder)) {
-      alert("현재 시간에는 지정가 주문만 가능합니다.");
+    const { available, message } = checkAvailableTime(false, isLimitOrder);
+    if (!available) {
+      alert(message);
       return;
     }
     if (isLimitOrder) {
       sellLimitOrder();
+      alert("지정가 주문이 완료되었습니다.");
     } else {
       sellMarketOrder();
+      alert("거래가 체결되었습니다.");
     }
   };
 

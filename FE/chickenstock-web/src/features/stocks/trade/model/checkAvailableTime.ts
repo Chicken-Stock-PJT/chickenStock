@@ -37,6 +37,9 @@ const checkAvailableTime = (isNxt: boolean, isLimitOrder: boolean) => {
     }
     return { available: false, message: "정규 거래가 마감되었습니다." };
   } else {
+    if (hour === 8 && minute < 50 && minute >= 30) {
+      return { available: isLimitOrder, message: "KRX 시가 단일가 거래 시간입니다." };
+    }
     // 일반 종목 거래 가능 시간: 오전 9시~오후 3시 30분
     if (hour < 9 || hour > 15 || (hour === 15 && minute >= 30)) {
       return { available: false, message: "정규 거래가 마감되었습니다." };
