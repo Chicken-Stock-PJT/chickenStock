@@ -21,7 +21,10 @@ const StockListItem = (props: StockProps) => {
       case "tradeAmount":
         return (
           <>
-            <div className="w-1/6 text-right">{Number(props.tradeAmount).toLocaleString()}</div>
+            <div className="w-1/6 text-right">
+              <span>{Number(props.tradeAmount).toLocaleString()}</span>
+              <span className="text-sm text-gray-500">백만</span>
+            </div>
             <div className="w-1/6 text-right">
               {Number(props.currentTradeVolume).toLocaleString()}
             </div>
