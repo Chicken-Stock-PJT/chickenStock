@@ -43,17 +43,22 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
     }),
 
   connect: (stockCode: string) => {
+    // 기존 웹소켓이 있다면 먼저 닫기
+    const currentWs = get().ws;
+    if (currentWs && currentWs.readyState !== WebSocket.CLOSED) {
+      currentWs.close();
+    }
+
     const ws = new WebSocket(`${import.meta.env.VITE_BASE_WS_URL}/stock`);
 
     ws.onopen = () => {
       setTimeout(() => {
-        const response = ws.send(
+        ws.send(
           JSON.stringify({
             action: "subscribe",
             stockCode,
           }),
         );
-        console.log(response);
         void get().getSubscribedList();
       }, 1000);
     };
@@ -83,21 +88,26 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
     };
 
     ws.onclose = () => {
-      ws.onclose = () => {
-        console.log("WebSocket 연결 종료");
+      console.log("WebSocket 연결 종료");
+
+      // 현재 저장된 웹소켓이 닫히는 웹소켓과 동일한 경우에만 상태 초기화
+      const currentWs = get().ws;
+      if (currentWs === ws) {
         set({ ws: null, orderBookData: null, stockPriceData: null });
-      };
+      }
     };
+
     set({ ws });
   },
 
   disconnect: () => {
     const { ws } = get();
     if (ws) {
-      setTimeout(() => {
+      if (ws.readyState !== WebSocket.CLOSED) {
         ws.close();
-        set({ ws: null, orderBookData: null, stockPriceData: null });
-      }, 100);
+      }
+      set({ ws: null, orderBookData: null, stockPriceData: null });
+      console.log("WebSocket 연결 종료");
     }
   },
 }));

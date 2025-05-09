@@ -43,11 +43,9 @@ const StockPage = () => {
 
     // 언마운트 시 웹소켓 연결 해제
     return () => {
-      if (stockCode) {
-        disconnect(); // 연결 종료
-      }
+      disconnect();
     };
-  }, [stockCode, connect, disconnect]);
+  }, [stockCode]);
 
   return (
     <div className="absolute left-0 top-[60px] flex max-h-[calc(90vh)] w-screen flex-col overflow-hidden overflow-x-auto px-[10px]">
