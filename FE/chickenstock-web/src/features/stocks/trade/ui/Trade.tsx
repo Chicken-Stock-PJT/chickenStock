@@ -7,8 +7,10 @@ import {
   useSellLimitOrder,
   useSellMarketOrder,
 } from "@/features/stocks/trade/model/mutations";
+import checkAvailableTime from "../model/checkAvailableTime";
 
 const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: string }) => {
+  const [isNxt, setIsNxt] = useState<boolean>(false);
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
   const [quantity, setQuantity] = useState<number>(1); // 수량
   const lowPrice = 50000; // 최저 가격 (예시로 50000으로 설정, 실제로는 API에서 받아와야 함)
@@ -40,11 +42,10 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   });
 
   const handlePriceType = (toLimitOrder: boolean) => {
-    if (toLimitOrder) {
-      alert("지정가로 주문할 수 없는 주식입니다.");
+    if (!checkAvailableTime(false, toLimitOrder)) {
+      alert("현재 시간에는 지정가 주문만 가능합니다.");
       return;
     }
-
     setIsLimitOrder(toLimitOrder ? true : false);
     if (!toLimitOrder) {
       setPrice(currentPrice); // 시장가 주문 시 현재 가격으로 설정
@@ -121,13 +122,19 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
 
   const handleBuyOrder = () => {
     if (isLimitOrder) {
+      // 지정가 주문
       buyLimitOrder();
     } else {
+      // 시장가 주문
       buyMarketOrder();
     }
   };
 
   const handleSellOrder = () => {
+    if (!checkAvailableTime(false, isLimitOrder)) {
+      alert("현재 시간에는 지정가 주문만 가능합니다.");
+      return;
+    }
     if (isLimitOrder) {
       sellLimitOrder();
     } else {
