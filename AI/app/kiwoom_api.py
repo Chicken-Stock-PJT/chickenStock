@@ -1,11 +1,11 @@
 import logging
 import asyncio
-from typing import Dict, List, Callable, Optional, Any
+from typing import List, Callable, Any
 import aiohttp
 from datetime import datetime
 
 from app.config import settings
-from app.auth_client import AuthClient
+from app.token_manager import TokenManager
 from app.stock_cache import StockCache
 from app.kiwoom_auth import KiwoomAuthClient
 from app.kiwoom_websocket import KiwoomWebSocket
@@ -15,20 +15,17 @@ logger = logging.getLogger(__name__)
 class KiwoomAPI:
     """REST API와 WebSocket을 사용하는 키움 API 클래스"""
     
-    def __init__(self, auth_client: AuthClient):
+    def __init__(self, token_manager: TokenManager):
         """API 초기화"""
         # REST API 설정
         self.base_url = settings.API_BASE_URL
         self.websocket_url = settings.WEBSOCKET_API_URL
         
-        # 인증 클라이언트 (백엔드 서버 인증용)
-        self.auth_client = auth_client
-
-        # 키움 API 토큰 클라이언트 (키움증권 API 인증용)
-        self.kiwoom_auth_client = KiwoomAuthClient()
-
-        # 키움 토큰 저장
-        self.kiwoom_token = ''
+        # 토큰 관리자
+        self.token_manager = token_manager
+        
+        # 키움 API 토큰
+        self.kiwoom_token = ""
         
         # HTTP 세션
         self.session = None
@@ -37,17 +34,54 @@ class KiwoomAPI:
         self.connected = False
         
         # 종목 캐시
-        self.stock_cache = StockCache(self)
+        self.stock_cache = StockCache()
         
-        # 웹소켓 클라이언트 (초기화는 connect에서)
+        # 웹소켓 클라이언트
         self.websocket_client = None
         
-        # 매매 관련 정보
+        # 계좌 정보
         self.account_info = {
             "cash_balance": 0,
             "positions": {},
             "total_asset_value": 0
         }
+    
+    async def connect(self) -> bool:
+        """API 연결"""
+        try:
+            # HTTP 세션 생성
+            if not self.session:
+                self.session = aiohttp.ClientSession(
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    }
+                )
+            
+            # 키움 API 토큰 가져오기
+            kiwoom_auth_client = KiwoomAuthClient()
+            kiwoom_auth_client.set_token_manager(self.token_manager)
+            await kiwoom_auth_client.initialize()
+            
+            self.kiwoom_token = await kiwoom_auth_client.get_access_token()
+            if not self.kiwoom_token:
+                logger.error("키움 API 토큰 발급 실패")
+                return False
+            
+            # 웹소켓 클라이언트 초기화
+            self.websocket_client = KiwoomWebSocket(
+                base_url=self.websocket_url,
+                stock_cache=self.stock_cache
+            )
+            
+            # 연결 상태 설정
+            self.connected = True
+            logger.info("키움 API 연결 완료")
+            return True
+        
+        except Exception as e:
+            logger.error(f"API 연결 중 오류: {str(e)}")
+            return False
     
     async def initialize_stock_list(self, stock_list=None):
         """종목 정보 초기화"""
@@ -68,45 +102,6 @@ class KiwoomAPI:
             logger.error(f"종목 정보 초기화 중 오류: {str(e)}")
             return False
     
-    async def connect(self) -> bool:
-        """API 연결"""
-        try:
-            # HTTP 세션 생성
-            if not self.session:
-                self.session = aiohttp.ClientSession(
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    }
-                )
-            
-            # 백엔드 서버 인증 상태 확인
-            if not self.auth_client.is_authenticated:
-                logger.error("백엔드 서버 인증되지 않았습니다. 먼저 로그인이 필요합니다.")
-                return False
-            
-            # 키움 API 토큰 발급 (최초 1회)
-            self.kiwoom_token = await self.kiwoom_auth_client.get_access_token()
-            if not self.kiwoom_token:
-                logger.error("키움 API 토큰 발급 실패")
-                return False
-            
-            # 웹소켓 클라이언트 초기화
-            self.websocket_client = KiwoomWebSocket(
-                base_url=self.websocket_url,
-                session=self.session,
-                stock_cache=self.stock_cache
-            )
-            
-            # 연결 상태 설정
-            self.connected = True
-            logger.info("REST API 연결 완료")
-            return True
-        
-        except Exception as e:
-            logger.error(f"API 연결 중 오류: {str(e)}")
-            return False
-    
     def update_account_info(self, account_info):
         """외부에서 제공된 계좌 정보로 업데이트"""
         if account_info:
@@ -114,22 +109,35 @@ class KiwoomAPI:
             return True
         return False
     
+    def get_cash_balance(self):
+        """현금 잔고 조회"""
+        return self.account_info.get("cash_balance", 0)
+    
+    def get_positions(self):
+        """보유 종목 조회"""
+        return self.account_info.get("positions", {})
+    
+    def get_total_asset_value(self):
+        """총 자산 가치 조회"""
+        return self.account_info.get("total_asset_value", 0)
+    
+    def get_trade_history(self):
+        """거래 이력 조회"""
+        # 실제 구현에서는 백엔드에서 거래 이력을 가져옴
+        return []
+    
     async def get_filtered_symbols(self, top_kospi: int = 450, top_kosdaq: int = 150) -> List[str]:
         """시가총액 기준으로 종목 필터링"""
         try:
-            # 키움 API 토큰 가져오기
-            kiwoom_token = self.kiwoom_token
+            if not self.session:
+                self.session = aiohttp.ClientSession()
             
-            if not kiwoom_token:
-                logger.error("키움 API 토큰을 가져올 수 없습니다")
-                return []
-
             # 키움 API 요청 헤더 구성
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "Authorization": f"Bearer {kiwoom_token}",
-                "api-id": "ka10099"
+                "Authorization": f"Bearer {self.kiwoom_token}",
+                "api-id": "ka10099"  # API ID 설정
             }
 
             # 코스피, 코스닥 시장 정보 요청
@@ -188,7 +196,7 @@ class KiwoomAPI:
         except Exception as e:
             logger.error(f"종목 필터링 중 오류: {str(e)}")
             return []
-            
+    
     async def initialize_chart_data(self, symbols, from_date=None, period=90):
         """여러 종목의 차트 데이터를 한 번에 초기화하고 캐싱"""
         try:
@@ -197,12 +205,7 @@ class KiwoomAPI:
             # 세션이 없으면 생성
             if not self.session:
                 self.session = aiohttp.ClientSession()
-
-            kiwoom_token = self.kiwoom_token
                 
-            # 필터링된 종목 리스트 저장
-            self.filtered_stockcode_list = symbols
-            
             # 동시 요청 제한 (5개씩 처리)
             batch_size = 5
             total_batches = (len(symbols) + batch_size - 1) // batch_size
@@ -215,12 +218,8 @@ class KiwoomAPI:
                 
                 # 배치 내 종목 병렬 처리
                 tasks = [
-                    self.get_daily_chart_data(
-                        code, 
-                        from_date=from_date,
-                        period=period,
-                        kiwoom_token=kiwoom_token
-                    ) for code in current_batch
+                    self.get_daily_chart_data(code, from_date=from_date, period=period)
+                    for code in current_batch
                 ]
                 
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -243,20 +242,18 @@ class KiwoomAPI:
             logger.error(f"차트 데이터 일괄 초기화 중 오류: {str(e)}")
             return False
     
-    async def get_daily_chart_data(self, code, from_date=None, to_date=None, period=None, kiwoom_token=None):
-        """일별 차트 데이터 조회 - Envelope 지표 계산용"""
+    async def get_daily_chart_data(self, code, from_date=None, to_date=None, period=None):
+        """일별 차트 데이터 조회"""
         try:
-            # 캐시 키 생성
-            cache_key = code
-            
-            # 키움 API 토큰 가져오기 (전달되지 않은 경우)
-            kiwoom_token = self.kiwoom_token
+            # 세션 확인
+            if not self.session:
+                self.session = aiohttp.ClientSession()
                 
             # 키움 API 요청 헤더 구성
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "Authorization": f"Bearer {kiwoom_token}",
+                "Authorization": f"Bearer {self.kiwoom_token}",
                 "api-id": "ka10081"  # API ID 설정
             }
             
@@ -300,7 +297,7 @@ class KiwoomAPI:
                     all_data.sort(key=lambda x: x["date"], reverse=True)
                     
                     # StockCache에 차트 데이터 저장
-                    self.stock_cache.add_chart_data(cache_key, all_data)
+                    self.stock_cache.add_chart_data(code, all_data)
                     
                     return all_data
                 else:
@@ -326,21 +323,10 @@ class KiwoomAPI:
             logger.error("웹소켓 클라이언트가 초기화되지 않았습니다.")
             return False
         
-        # 키움 API 토큰 가져오기
-        kiwoom_token = self.kiwoom_token
-            
         return await self.websocket_client.start_rotating_subscriptions(
             callback=callback,
-            kiwoom_token=kiwoom_token
+            kiwoom_token=self.kiwoom_token
         )
-        
-    async def handle_websocket_message(self):
-        """웹소켓 메시지 처리 루프"""
-        if not self.websocket_client:
-            logger.error("웹소켓 클라이언트가 초기화되지 않았습니다.")
-            return False
-            
-        return await self.websocket_client.handle_websocket_message()
     
     async def close(self):
         """API 연결 종료"""
@@ -354,7 +340,7 @@ class KiwoomAPI:
                 await self.session.close()
             
             self.connected = False
-            logger.info("REST API 연결 종료")
+            logger.info("키움 API 연결 종료")
             return True
         except Exception as e:
             logger.error(f"API 연결 종료 중 오류: {str(e)}")

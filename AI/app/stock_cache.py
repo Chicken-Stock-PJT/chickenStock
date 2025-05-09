@@ -1,16 +1,15 @@
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 class StockCache:
-    """종목 정보, 차트 데이터 및 지표를 캐싱하는 통합 클래스 (메모리 전용)"""
+    """종목 정보, 차트 데이터 및 지표를 캐싱하는 통합 클래스"""
     
-    def __init__(self, kiwoom_api=None):
+    def __init__(self):
         """캐시 초기화"""
-        self.kiwoom_api = kiwoom_api
-
         # 종목 정보 캐시
         self.stock_info_cache = {}
         
@@ -23,6 +22,13 @@ class StockCache:
         # Envelope 지표 캐시
         self.envelope_cache = {}
         
+        # 볼린저 밴드 지표 캐시
+        self.bollinger_cache = {}
+        
+        # 볼린저 밴드 설정
+        self.bb_period = 26  # 기간 (26일)
+        self.bb_std_dev = 2.0  # 표준편차 승수 (2)
+        
         # 현재가 시세 캐시
         self.price_cache = {}
         
@@ -33,7 +39,7 @@ class StockCache:
         # 구독 관리
         self.subscribed_symbols = set()
         
-        logger.info("메모리 전용 StockCache 초기화 완료")
+        logger.info("StockCache 초기화 완료")
     
     # 구독 관리 메서드
     def add_subscribed_symbol(self, code: str):
@@ -125,13 +131,6 @@ class StockCache:
                 # 차트 데이터 접근
                 chart_data = self.get_chart_data(symbol)
                 
-                # 차트 데이터가 없으면 키움 API에서 직접 가져오기
-                if not chart_data and self.kiwoom_api:
-                    for key in self.kiwoom_api.stock_cache.chart_cache:
-                        if symbol in key:
-                            chart_data = self.kiwoom_api.stock_cache.chart_cache[key]
-                            break
-                
                 # 차트 데이터가 없으면 건너뛰기
                 if not chart_data or len(chart_data) < 20:
                     logger.warning(f"종목 {symbol} 차트 데이터 부족: {len(chart_data) if chart_data else 0}개")
@@ -166,12 +165,9 @@ class StockCache:
                 elif last_close <= lower_band:
                     signal = "매수"
                 
-                # 디버깅 로그 추가
-                logger.debug(f"종목 {symbol} Envelope 계산: MA20={ma20:.2f}, 상한={upper_band:.2f}, 하한={lower_band:.2f}, 현재가={last_close:.2f}")
-                
-                # 캐시에 저장 - middleBand를 명시적으로 설정
+                # 캐시에 저장
                 self.envelope_cache[symbol] = {
-                    "middleBand": float(ma20),  # 이동평균선을 중앙선으로 설정
+                    "middleBand": float(ma20),
                     "upperBand": float(upper_band),
                     "lowerBand": float(lower_band),
                     "currentPrice": float(last_close),
@@ -209,11 +205,126 @@ class StockCache:
         
         return None
     
+    # 볼린저 밴드 지표 관련 메서드
+    def calculate_bollinger_bands(self):
+        """모든 필터링된 종목의 볼린저 밴드 지표 계산"""
+        logger.info(f"볼린저 밴드 지표 계산 시작: {len(self.filtered_stockcode_list)}개 종목")
+        self.bollinger_cache = {}
+
+        success_count = 0
+        
+        # 모든 필터링된 종목에 대해 계산
+        for symbol in self.filtered_stockcode_list:
+            try:
+                # 차트 데이터 접근
+                chart_data = self.get_chart_data(symbol)
+                
+                # 차트 데이터가 없으면 건너뛰기
+                if not chart_data:
+                    logger.warning(f"종목 {symbol} 차트 데이터 없음")
+                    continue
+                
+                # 사용 가능한 데이터로 최대한 계산 (차트 데이터 길이 확인)
+                actual_period = min(self.bb_period, len(chart_data))
+                if actual_period < 10:  # 최소 10일 데이터는 필요
+                    logger.warning(f"종목 {symbol} 차트 데이터 부족: {len(chart_data)}개 (최소 10일 필요)")
+                    continue
+                
+                # 종가 추출
+                closing_prices = []
+                for item in chart_data:
+                    if isinstance(item, dict) and 'close' in item:
+                        closing_prices.append(float(item['close']))
+                    elif isinstance(item, list) and len(item) >= 5:
+                        closing_prices.append(float(item[4]))
+                
+                if len(closing_prices) < self.bb_period:
+                    logger.warning(f"종목 {symbol} 종가 데이터 부족: {len(closing_prices)}개")
+                    continue
+                
+                # 사용 가능한 데이터로 최대한 계산
+                actual_period = min(self.bb_period, len(closing_prices))
+                prices = closing_prices[:actual_period]
+                
+                # 볼린저 밴드 계산
+                sma = np.mean(prices)  # 단순 이동평균
+                std_dev = np.std(prices)  # 표준편차
+                
+                # 실제 사용된 기간 저장
+                used_period = actual_period
+                
+                upper_band = sma + (self.bb_std_dev * std_dev)
+                lower_band = sma - (self.bb_std_dev * std_dev)
+                
+                # 현재가 (마지막 종가)
+                last_close = closing_prices[0]
+                
+                # 매수/매도 신호 판단 (기본 볼린저 밴드 전략)
+                signal = "중립"
+                if last_close <= lower_band:
+                    signal = "매수"
+                elif last_close >= upper_band:
+                    signal = "매도"
+                
+                # %B 계산 (주가가 밴드 내에서 어디에 위치하는지 0~1 사이 값)
+                percent_b = (last_close - lower_band) / (upper_band - lower_band) if (upper_band != lower_band) else 0.5
+                
+                # 밴드폭(Bandwidth) 계산 (밴드의 변동성)
+                bandwidth = (upper_band - lower_band) / sma
+                
+                # 캐시에 저장
+                self.bollinger_cache[symbol] = {
+                    "middleBand": float(sma),
+                    "upperBand": float(upper_band),
+                    "lowerBand": float(lower_band),
+                    "currentPrice": float(last_close),
+                    "percentB": float(percent_b),
+                    "bandwidth": float(bandwidth),
+                    "signal": signal,
+                    "period": used_period,  # 실제 사용된 기간 저장
+                    "lastUpdate": datetime.now().isoformat()
+                }
+                
+                success_count += 1
+                
+            except Exception as e:
+                logger.error(f"종목 {symbol} 볼린저 밴드 지표 계산 오류: {str(e)}")
+        
+        logger.info(f"볼린저 밴드 지표 계산 완료: {success_count}/{len(self.filtered_stockcode_list)}개 성공")
+        return success_count
+    
+    def get_bollinger_bands(self, symbol: str, current_price: float = None):
+        """종목의 볼린저 밴드 지표 조회"""
+        if symbol in self.bollinger_cache:
+            indicators = self.bollinger_cache[symbol].copy()
+            
+            # 실시간 가격 업데이트
+            if current_price is not None:
+                indicators["currentPrice"] = current_price
+                
+                # 신호 업데이트
+                signal = "중립"
+                if current_price <= indicators["lowerBand"]:
+                    signal = "매수"
+                elif current_price >= indicators["upperBand"]:
+                    signal = "매도"
+                
+                # %B 재계산
+                upper_band = indicators["upperBand"]
+                lower_band = indicators["lowerBand"]
+                percent_b = (current_price - lower_band) / (upper_band - lower_band) if (upper_band != lower_band) else 0.5
+                indicators["percentB"] = percent_b
+                indicators["signal"] = signal
+            
+            return indicators
+        
+        return None
+    
     # 현재가 관련 메서드
-    def update_price(self, code: str, price: int):
+    def update_price(self, code: str, price: float):
         """현재가 정보 업데이트"""
         self.price_cache[code] = price
     
-    def get_price(self, code: str) -> Optional[int]:
+    def get_price(self, code: str) -> Optional[float]:
         """캐시된 현재가 조회"""
         return self.price_cache.get(code)

@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from typing import Dict, Optional
+from typing import Dict
 from datetime import datetime, timedelta
 import aiohttp
 
@@ -9,7 +9,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 class AuthClient:
-    """인증 및 토큰 관리를 위한 클라이언트"""
+    """백엔드 서버 인증 처리"""
     
     def __init__(self):
         """인증 클라이언트 초기화"""
@@ -45,8 +45,8 @@ class AuthClient:
                 await self.initialize()
             
             login_data = {
-                "email": "a@a",
-                "password": "a",
+                "email": email,
+                "password": password,
                 "platform": "mobile"
             }
             
@@ -61,13 +61,17 @@ class AuthClient:
                     self.access_token = auth_data.get("accessToken")
                     self.refresh_token = auth_data.get("refreshToken")
                     
+                    # 만료 시간 계산
+                    expires_in = auth_data.get("expiresIn", 3600)  # 기본 1시간
+                    self.access_token_expires_at = datetime.now() + timedelta(seconds=expires_in)
+                    
                     # 세션 헤더에 토큰 추가
                     self.session.headers.update({
                         "Authorization": f"Bearer {self.access_token}"
                     })
                     
                     self.is_authenticated = True
-                    logger.info("백엔드 로그인 성공")
+                    logger.info(f"백엔드 로그인 성공: {email}")
                     
                     # 토큰 갱신 태스크 시작
                     asyncio.create_task(self._token_refresh_loop())
