@@ -31,7 +31,6 @@ const StockList = () => {
         rank: index + 1,
       }));
 
-      console.log(formattedStocks);
       setPrevStocks(stocks);
       setStocks(formattedStocks as StockProps[]);
     } catch (error) {
