@@ -12,12 +12,11 @@ const ChartHeader = ({
   onChartTypeChange,
   selectedChartType,
 }: ChartHeaderProps) => {
-  const formattedPrice = (price: string) => Number(price.slice(1)).toLocaleString();
+  const formattedPrice = (price: string) => Math.abs(Number(price)).toLocaleString();
   const { isInWatchlist } = useWatchlistStore();
   const { toggleWatchlist } = useWatchlistToggle();
 
   const isCurrentInWatchlist = isInWatchlist(stockCode);
-  const isPriceUp = priceChange.startsWith("+");
 
   return (
     <div className="flex justify-between">
@@ -32,11 +31,14 @@ const ChartHeader = ({
             <h1 className="text-xl font-bold text-gray-800">{stockName}</h1>
             <p className="text-gray-600">{stockCode}</p>
           </div>
-          <div className="flex gap-2 text-left text-chart-blue">
+          <div
+            className={`flex gap-2 text-left ${Number(priceChange) > 0 ? "text-chart-red" : Number(priceChange) < 0 ? "text-chart-blue" : "text-gray-800"}`}
+          >
             <p className="text-3xl font-semibold leading-none">{formattedPrice(currentPrice)}</p>
             <div className="flex items-end items-center gap-2">
               <span className="text-lg leading-none">
-                {isPriceUp ? "▲" : "▼"} {formattedPrice(priceChange)}
+                {Number(priceChange) > 0 ? "▲" : Number(priceChange) < 0 ? "▼" : ""}{" "}
+                {formattedPrice(priceChange)}
               </span>
               <span className="leading-none text-opacity-25">({changeRate}%)</span>
             </div>

@@ -87,7 +87,7 @@ const LoginCard = () => {
               className="w-[56px] cursor-pointer fill-current text-primary-400"
               onClick={() => {
                 window.location.href = `${import.meta.env.VITE_BASE_URL}/auth/oauth2/redirect/google?redirectUri=${encodeURIComponent(
-                  "http://localhost:5173/login/redirect",
+                  import.meta.env.VITE_LOGIN_REDIRECT_URI,
                 )}`;
               }}
             />
@@ -97,7 +97,7 @@ const LoginCard = () => {
               className="w-[56px] cursor-pointer fill-current text-primary-400"
               onClick={() => {
                 window.location.href = `${import.meta.env.VITE_BASE_URL}/auth/oauth2/redirect/kakao?redirectUri=${encodeURIComponent(
-                  "http://localhost:5173/login/redirect",
+                  import.meta.env.VITE_LOGIN_REDIRECT_URI,
                 )}`;
               }}
             />
@@ -107,7 +107,7 @@ const LoginCard = () => {
               className="w-[56px] cursor-pointer fill-current text-primary-400"
               onClick={() => {
                 window.location.href = `${import.meta.env.VITE_BASE_URL}/auth/oauth2/redirect/naver?redirectUri=${encodeURIComponent(
-                  "http://localhost:5173/login/redirect",
+                  import.meta.env.VITE_LOGIN_REDIRECT_URI,
                 )}`;
               }}
             />
