@@ -1,5 +1,9 @@
 package realClassOne.chickenStock.member.service;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,28 +26,22 @@ import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 
 import java.util.*;
 
-import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
-import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
+import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.service.StockSubscriptionService;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.time.temporal.TemporalAdjusters;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+
 
 @Slf4j
 @Service
@@ -60,6 +58,7 @@ public class MemberService {
     private final StockSubscriptionService stockSubscriptionService;
     private final PortfolioService portfolioService;
     private final StockDataRepository stockDataRepository;
+    private final KiwoomStockApiService kiwoomStockApiService;
 
     @Transactional(readOnly = true)
     public MemberResponseDto getCurrentUser() {
@@ -114,7 +113,6 @@ public class MemberService {
         return NicknameChangeResponseDTO.of("닉네임이 성공적으로 변경되었습니다.");
     }
 
-    // 사용자의 관심종목 목록과 해당 종목들의 현재가, 변동률 등을 조회합니다.
     @Transactional(readOnly = true)
     public WatchListResponseDTO getWatchList(String authorizationHeader) {
         try {
@@ -128,28 +126,32 @@ public class MemberService {
             // 관심종목 목록 조회
             List<WatchList> watchLists = watchListRepository.findByMember(member);
 
+            if (watchLists.isEmpty()) {
+                return WatchListResponseDTO.builder()
+                        .message("관심종목이 없습니다")
+                        .watchList(new ArrayList<>())
+                        .updatedAt(LocalDateTime.now())
+                        .build();
+            }
+
+            // 키움증권 API 호출을 위해 관심종목 코드를 '|'로 구분하여 문자열 생성
+            String stockCodes = watchLists.stream()
+                    .map(watchList -> watchList.getStockData().getShortCode())
+                    .collect(Collectors.joining("|"));
+
+            // 키움증권 API 호출 - KiwoomStockApiService 활용
+            JsonNode response = kiwoomStockApiService.getWatchListInfo(stockCodes);
+
             // 응답 DTO 생성
             List<WatchListResponseDTO.WatchListItemDTO> watchListItems = new ArrayList<>();
 
-            for (WatchList watchList : watchLists) {
-                StockData stockData = watchList.getStockData();
-                String stockCode = stockData.getShortCode();
+            if (response.has("atn_stk_infr") && response.get("atn_stk_infr").isArray()) {
+                JsonNode stockInfoArray = response.get("atn_stk_infr");
 
-                // 종목 구독 확인 및 필요시 구독 등록
-                if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                    try {
-                        stockSubscriptionService.registerStockForSubscription(stockCode);
-                    } catch (Exception e) {
-                        log.error("종목 구독 실패: {}", stockCode, e);
-                        // 구독 실패해도 계속 진행 (기존 캐시 데이터 사용)
-                    }
+                for (JsonNode stockInfo : stockInfoArray) {
+                    WatchListResponseDTO.WatchListItemDTO itemDTO = parseWatchListItem(stockInfo);
+                    watchListItems.add(itemDTO);
                 }
-
-                // 최신 가격 정보 가져오기
-                JsonNode priceData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
-
-                WatchListResponseDTO.WatchListItemDTO itemDTO = buildWatchListItemDTO(stockData, priceData);
-                watchListItems.add(itemDTO);
             }
 
             return WatchListResponseDTO.builder()
@@ -164,6 +166,93 @@ public class MemberService {
         } catch (Exception e) {
             log.error("관심종목 조회 중 오류 발생", e);
             throw new CustomException(StockErrorCode.STOCK_NOT_FOUND, "관심종목 조회 중 오류가 발생했습니다");
+        }
+    }
+
+    /**
+     * 키움증권 API 응답 데이터에서 관심종목 항목 DTO를 생성합니다.
+     *
+     * @param stockInfo API 응답의 종목 정보
+     * @return 관심종목 항목 DTO
+     */
+    private WatchListResponseDTO.WatchListItemDTO parseWatchListItem(JsonNode stockInfo) {
+        try {
+            String stockCode = stockInfo.get("stk_cd").asText();
+            String stockName = stockInfo.get("stk_nm").asText();
+
+            // 현재가 처리 (앞에 +/- 부호가 있을 경우 처리)
+            String currentPriceStr = stockInfo.get("cur_prc").asText();
+            Long currentPrice = parsePrice(currentPriceStr);
+
+            // 전일대비 변동금액
+            String priceChange = stockInfo.get("pred_pre").asText();
+
+            // 등락률
+            String changeRate = stockInfo.get("flu_rt").asText();
+
+            // 거래량
+            String tradingVolume = stockInfo.get("trde_qty").asText();
+
+            // 체결시간 파싱
+            LocalDateTime timestamp = LocalDateTime.now();
+            if (stockInfo.has("cntr_tm") && stockInfo.has("dt")) {
+                String timeStr = stockInfo.get("cntr_tm").asText();
+                String dateStr = stockInfo.get("dt").asText();
+
+                try {
+                    // 날짜: yyyyMMdd, 시간: HHmmss 형식
+                    LocalDate date = LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyyMMdd"));
+                    LocalTime time = LocalTime.parse(timeStr, DateTimeFormatter.ofPattern("HHmmss"));
+                    timestamp = LocalDateTime.of(date, time);
+                } catch (Exception e) {
+                    log.warn("체결시간 파싱 실패: {}, {}", dateStr, timeStr);
+                }
+            }
+
+            return WatchListResponseDTO.WatchListItemDTO.builder()
+                    .stockCode(stockCode)
+                    .stockName(stockName)
+                    .currentPrice(currentPrice)
+                    .priceChange(priceChange)
+                    .changeRate(changeRate)
+                    .tradingVolume(tradingVolume)
+                    .timestamp(timestamp)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("관심종목 항목 DTO 생성 중 오류", e);
+
+            // 기본 정보라도 반환
+            return WatchListResponseDTO.WatchListItemDTO.builder()
+                    .stockCode(stockInfo.has("stk_cd") ? stockInfo.get("stk_cd").asText() : "")
+                    .stockName(stockInfo.has("stk_nm") ? stockInfo.get("stk_nm").asText() : "")
+                    .currentPrice(0L)
+                    .priceChange("0")
+                    .changeRate("0%")
+                    .tradingVolume("0")
+                    .timestamp(LocalDateTime.now())
+                    .build();
+        }
+    }
+
+    /**
+     * 문자열을 Long으로 변환합니다. 앞에 +/- 부호가 있으면 제거합니다.
+     *
+     * @param value 변환할 문자열
+     * @return 변환된 Long 값, 변환 실패시 0 반환
+     */
+    private Long parsePrice(String value) {
+        if (value == null || value.isEmpty()) {
+            return 0L;
+        }
+
+        try {
+            // +/- 기호 제거, 콤마(,) 제거
+            String cleaned = value.replaceAll("^[+\\-]", "").replace(",", "");
+            return Long.parseLong(cleaned);
+        } catch (NumberFormatException e) {
+            log.warn("가격 변환 실패: {}", value);
+            return 0L;
         }
     }
 
@@ -196,11 +285,7 @@ public class MemberService {
 
             watchListRepository.save(watchList);
 
-            // 종목 실시간 구독 등록
-            if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                stockSubscriptionService.registerStockForSubscription(stockCode);
-            }
-
+            log.info("관심종목 추가 성공: 회원 ID {}, 종목 코드 {}", memberId, stockCode);
         } catch (CustomException ce) {
             log.error("관심종목 추가 실패: {}", ce.getMessage());
             throw ce;
@@ -210,74 +295,61 @@ public class MemberService {
         }
     }
 
+    /**
+     * API를 통해 사용자의 주식 자산 총 평가액을 계산합니다.
+     *
+     * @param positions 사용자의 보유 포지션 목록
+     * @return 주식 자산 총 평가액
+     */
+    private Long calculateStockValuationUsingAPI(List<HoldingPosition> positions) {
+        // 보유 포지션이 없으면 0 반환
+        if (positions == null || positions.isEmpty()) {
+            return 0L;
+        }
 
-    // 주식 데이터와 실시간 가격 정보로 관심종목 항목 DTO를 생성합니다.
-    private WatchListResponseDTO.WatchListItemDTO buildWatchListItemDTO(StockData stockData, JsonNode priceData) {
-        try {
-            String currentPrice = "";
-            String priceChange = "";
-            String changeRate = "";
-            String tradingVolume = "";
-            LocalDateTime timestamp = LocalDateTime.now();
+        // 종목 코드 목록 생성
+        List<String> stockCodes = positions.stream()
+                .map(position -> position.getStockData().getShortCode())
+                .collect(Collectors.toList());
 
-            if (priceData != null) {
-                currentPrice = priceData.has("10") ? priceData.get("10").asText() : "0";
-                priceChange = priceData.has("11") ? priceData.get("11").asText() : "0";
-                changeRate = priceData.has("12") ? priceData.get("12").asText() : "0";
-                tradingVolume = priceData.has("13") ? priceData.get("13").asText() : "0";
+        // 현재가 정보를 담을 맵
+        Map<String, Long> currentPrices = new HashMap<>();
 
-                // 체결시간 필드가 있으면 파싱
-                if (priceData.has("20")) {
-                    String timeStr = priceData.get("20").asText();
-                    // 시간 형식이 "HHmmss"인 경우 변환
-                    try {
-                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HHmmss");
-                        int hour = Integer.parseInt(timeStr.substring(0, 2));
-                        int minute = Integer.parseInt(timeStr.substring(2, 4));
-                        int second = Integer.parseInt(timeStr.substring(4, 6));
-                        timestamp = LocalDateTime.now()
-                                .withHour(hour)
-                                .withMinute(minute)
-                                .withSecond(second)
-                                .withNano(0);
-                    } catch (Exception e) {
-                        log.warn("체결시간 파싱 실패: {}", timeStr);
+        // API를 통해 가격 정보 조회
+        if (!stockCodes.isEmpty()) {
+            try {
+                String stockCodesStr = String.join("|", stockCodes);
+                JsonNode priceData = kiwoomStockApiService.getWatchListInfo(stockCodesStr);
+
+                // API 응답에서 가격 정보 추출
+                if (priceData.has("atn_stk_infr") && priceData.get("atn_stk_infr").isArray()) {
+                    JsonNode stockInfoArray = priceData.get("atn_stk_infr");
+
+                    for (JsonNode stockInfo : stockInfoArray) {
+                        String stockCode = stockInfo.get("stk_cd").asText();
+                        String currentPriceStr = stockInfo.get("cur_prc").asText();
+                        Long currentPrice = parsePrice(currentPriceStr);
+                        currentPrices.put(stockCode, currentPrice);
                     }
                 }
+            } catch (Exception e) {
+                log.error("API를 통한 가격 정보 조회 중 오류 발생", e);
+                // 오류 발생시 평균가격 사용 (아래에서 처리)
             }
-
-            // 숫자 문자열을 Long으로 변환
-            Long currentPriceValue = 0L;
-            try {
-                currentPriceValue = Long.parseLong(currentPrice.replace(",", ""));
-            } catch (NumberFormatException e) {
-                log.warn("현재가 변환 실패: {}", currentPrice);
-            }
-
-            return WatchListResponseDTO.WatchListItemDTO.builder()
-                    .stockCode(stockData.getShortCode())
-                    .stockName(stockData.getShortName())
-                    .currentPrice(currentPriceValue)
-                    .priceChange(priceChange)
-                    .changeRate(changeRate)
-                    .tradingVolume(tradingVolume)
-                    .timestamp(timestamp)
-                    .build();
-
-        } catch (Exception e) {
-            log.error("관심종목 항목 DTO 생성 중 오류", e);
-
-            // 오류 발생 시 기본 정보라도 채워서 반환
-            return WatchListResponseDTO.WatchListItemDTO.builder()
-                    .stockCode(stockData.getShortCode())
-                    .stockName(stockData.getShortName())
-                    .currentPrice(0L)
-                    .priceChange("0")
-                    .changeRate("0%")
-                    .tradingVolume("0")
-                    .timestamp(LocalDateTime.now())
-                    .build();
         }
+
+        // 총 평가액 계산
+        Long totalValuation = 0L;
+        for (HoldingPosition position : positions) {
+            String stockCode = position.getStockData().getShortCode();
+            // 현재가 (API에서 조회된 가격 또는 평균가)
+            Long currentPrice = currentPrices.getOrDefault(stockCode, position.getAveragePrice());
+            // 종목별 평가액 계산 및 합산
+            Long valuation = currentPrice * position.getQuantity();
+            totalValuation += valuation;
+        }
+
+        return totalValuation;
     }
 
     /**
@@ -301,8 +373,8 @@ public class MemberService {
             // 현금 자산
             Long cashAmount = member.getMemberMoney();
 
-            // 주식 자산 계산
-            Long stockValuation = calculateStockValuation(positions);
+            // 주식 자산 계산 - REST API 방식으로 변경된 메서드 사용
+            Long stockValuation = calculateStockValuationUsingAPI(positions);
 
             // 총 자산
             Long totalAsset = cashAmount + stockValuation;
@@ -352,8 +424,60 @@ public class MemberService {
             // 현금 자산
             Long cashAmount = member.getMemberMoney();
 
-            // 주식 자산 계산
-            Long stockValuation = calculateStockValuation(positions);
+            // 주식 종목 코드 목록 생성 (API 호출용)
+            List<String> stockCodes = positions.stream()
+                    .map(position -> position.getStockData().getShortCode())
+                    .collect(Collectors.toList());
+
+            // 실시간 가격 정보 조회 (한 번의 API 호출로 모든 종목 정보 얻기)
+            Map<String, Long> currentPrices = new HashMap<>();
+            if (!stockCodes.isEmpty()) {
+                try {
+                    String stockCodesStr = String.join("|", stockCodes);
+                    JsonNode priceData = kiwoomStockApiService.getWatchListInfo(stockCodesStr);
+
+                    // API 응답에서 가격 정보 추출
+                    if (priceData.has("atn_stk_infr") && priceData.get("atn_stk_infr").isArray()) {
+                        JsonNode stockInfoArray = priceData.get("atn_stk_infr");
+
+                        for (JsonNode stockInfo : stockInfoArray) {
+                            String stockCode = stockInfo.get("stk_cd").asText();
+                            String currentPriceStr = stockInfo.get("cur_prc").asText();
+                            Long currentPrice = parsePrice(currentPriceStr);
+                            currentPrices.put(stockCode, currentPrice);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("API를 통한 가격 정보 조회 중 오류 발생", e);
+                    // 오류 발생시 아래에서 평균가격 사용
+                }
+            }
+
+            // 주식 자산 계산 및 개별 종목 비중 계산
+            Long stockValuation = 0L;
+            List<AssetAllocationResponseDTO.StockAllocationDTO> stockAllocations = new ArrayList<>();
+
+            for (HoldingPosition position : positions) {
+                String stockCode = position.getStockData().getShortCode();
+
+                // 현재가 확인 (API 응답에서 가져온 가격 또는 기본값으로 평균가 사용)
+                Long currentPrice = currentPrices.getOrDefault(stockCode, position.getAveragePrice());
+
+                // 개별 종목 평가금액 및 합산
+                Long valuation = currentPrice * position.getQuantity();
+                stockValuation += valuation;
+
+                // 비중 계산은 최종 총자산 계산 후에 수행하기 위해 일단 데이터만 저장
+                stockAllocations.add(AssetAllocationResponseDTO.StockAllocationDTO.builder()
+                        .stockCode(stockCode)
+                        .stockName(position.getStockData().getShortName())
+                        .currentValuation(valuation)
+                        .allocationRatio(0.0) // 임시값 (나중에 업데이트)
+                        .quantity(position.getQuantity())
+                        .averagePrice(position.getAveragePrice())
+                        .currentPrice(currentPrice)
+                        .build());
+            }
 
             // 총 자산
             Long totalAsset = cashAmount + stockValuation;
@@ -362,49 +486,10 @@ public class MemberService {
             Double cashRatio = totalAsset > 0 ? (cashAmount.doubleValue() / totalAsset) * 100 : 0;
             Double stockRatio = totalAsset > 0 ? (stockValuation.doubleValue() / totalAsset) * 100 : 0;
 
-            // 개별 종목 비중 계산
-            List<AssetAllocationResponseDTO.StockAllocationDTO> stockAllocations = new ArrayList<>();
-
-            for (HoldingPosition position : positions) {
-                String stockCode = position.getStockData().getShortCode();
-
-                // 종목 구독 확인 및 필요시 구독 등록
-                if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                    try {
-                        stockSubscriptionService.registerStockForSubscription(stockCode);
-                    } catch (Exception e) {
-                        log.error("종목 구독 실패: {}", stockCode, e);
-                        // 구독 실패해도 계속 진행 (평균가를 현재가로 대체 사용)
-                    }
-                }
-
-                // 최신 가격 정보 가져오기
-                JsonNode priceData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
-                Long currentPrice = position.getAveragePrice(); // 기본값으로 평균가 사용
-
-                if (priceData != null && priceData.has("10")) {
-                    try {
-                        currentPrice = Long.parseLong(priceData.get("10").asText().replace(",", ""));
-                    } catch (NumberFormatException e) {
-                        log.warn("현재가 변환 실패: {}", priceData.get("10").asText());
-                    }
-                }
-
-                // 개별 종목 평가금액 및 비중 계산
-                Long valuation = currentPrice * position.getQuantity();
-                Double ratio = totalAsset > 0 ? (valuation.doubleValue() / totalAsset) * 100 : 0;
-
-                AssetAllocationResponseDTO.StockAllocationDTO stockDTO = AssetAllocationResponseDTO.StockAllocationDTO.builder()
-                        .stockCode(stockCode)
-                        .stockName(position.getStockData().getShortName())
-                        .currentValuation(valuation)
-                        .allocationRatio(Math.round(ratio * 100) / 100.0) // 소수점 2자리까지 반올림
-                        .quantity(position.getQuantity())
-                        .averagePrice(position.getAveragePrice())
-                        .currentPrice(currentPrice)
-                        .build();
-
-                stockAllocations.add(stockDTO);
+            // 개별 종목 비중 업데이트
+            for (AssetAllocationResponseDTO.StockAllocationDTO stock : stockAllocations) {
+                Double ratio = totalAsset > 0 ? (stock.getCurrentValuation().doubleValue() / totalAsset) * 100 : 0;
+                stock.setAllocationRatio(Math.round(ratio * 100) / 100.0); // 소수점 2자리까지 반올림
             }
 
             // 응답 생성
@@ -425,48 +510,6 @@ public class MemberService {
             log.error("상세 자산 비중 조회 중 오류 발생", e);
             throw new CustomException(StockErrorCode.OPERATION_FAILED, "상세 자산 비중 조회 중 오류가 발생했습니다");
         }
-    }
-
-    /**
-     * 사용자의 주식 자산 총 평가액을 계산합니다.
-     *
-     * @param positions 사용자의 보유 포지션 목록
-     * @return 주식 자산 총 평가액
-     */
-    private Long calculateStockValuation(List<HoldingPosition> positions) {
-        Long totalValuation = 0L;
-
-        for (HoldingPosition position : positions) {
-            String stockCode = position.getStockData().getShortCode();
-
-            // 종목 구독 확인 및 필요시 구독 등록
-            if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                try {
-                    stockSubscriptionService.registerStockForSubscription(stockCode);
-                } catch (Exception e) {
-                    log.error("종목 구독 실패: {}", stockCode, e);
-                    // 구독 실패해도 계속 진행 (평균가를 현재가로 대체 사용)
-                }
-            }
-
-            // 최신 가격 정보 가져오기
-            JsonNode priceData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
-            Long currentPrice = position.getAveragePrice(); // 기본값으로 평균가 사용
-
-            if (priceData != null && priceData.has("10")) {
-                try {
-                    currentPrice = Long.parseLong(priceData.get("10").asText().replace(",", ""));
-                } catch (NumberFormatException e) {
-                    log.warn("현재가 변환 실패: {}", priceData.get("10").asText());
-                }
-            }
-
-            // 종목별 평가액 계산 및 합산
-            Long valuation = currentPrice * position.getQuantity();
-            totalValuation += valuation;
-        }
-
-        return totalValuation;
     }
 
     /**
@@ -698,54 +741,6 @@ public class MemberService {
     }
 
     /**
-     * 특정 시점의 평가액을 추정합니다.
-     * 정확한 과거 데이터가 없는 경우 거래 내역을 기반으로 추정합니다.
-     *
-     * @param memberId       회원 ID
-     * @param targetDateTime 평가액을 계산할 시점
-     * @param histories      해당 시점 이전의 거래 내역
-     * @return 추정된 평가액
-     */
-    private Long estimateHistoricalValuation(Long memberId, LocalDateTime targetDateTime, List<TradeHistory> histories) {
-        // 구현 방법 1: 해당 시점에 가장 가까운 거래 내역을 기준으로 추정
-        if (histories.isEmpty()) {
-            // 거래 내역이 없는 경우 (즉, 투자 시작 전)
-            return 0L;
-        }
-
-        // 가장 가까운 시점의 거래 찾기 (정렬된 상태 가정)
-        TradeHistory closestTrade = histories.get(0);
-        for (TradeHistory history : histories) {
-            if (history.getTradedAt().isBefore(targetDateTime) &&
-                    history.getTradedAt().isAfter(closestTrade.getTradedAt())) {
-                closestTrade = history;
-            }
-        }
-
-        // 해당 시점의 포트폴리오 상태 추정 (거래 이후 변동 고려)
-        // 이 예제에서는 단순히 해당 시점 이전의 모든 매수/매도 금액을 합산하여 추정
-        Long buyTotal = 0L;
-        Long sellTotal = 0L;
-
-        for (TradeHistory history : histories) {
-            if (history.getTradedAt().isBefore(targetDateTime)) {
-                if (history.getTradeType() == TradeHistory.TradeType.BUY) {
-                    buyTotal += history.getTotalPrice();
-                } else {
-                    sellTotal += history.getTotalPrice();
-                }
-            }
-        }
-
-        // 순 투자금 계산
-        Long netInvestment = buyTotal - sellTotal;
-
-        // 정확한 수익률 계산이 어려우므로, 최소한 순 투자금은 반환
-        // 실제 애플리케이션에서는 더 정교한 방법으로 과거 시점의 평가액 추정 필요
-        return Math.max(netInvestment, 0);
-    }
-
-    /**
      * 사용자의 관심종목에서 특정 종목을 삭제합니다.
      *
      * @param authorizationHeader 인증 헤더
@@ -773,6 +768,7 @@ public class MemberService {
             // 관심종목 삭제
             watchListRepository.deleteByMemberAndStockData(member, stockData);
 
+            log.info("관심종목 삭제 성공: 회원 ID {}, 종목 코드 {}", memberId, stockCode);
         } catch (CustomException ce) {
             log.error("관심종목 삭제 실패: {}", ce.getMessage());
             throw ce;
