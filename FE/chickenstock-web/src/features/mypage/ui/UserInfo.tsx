@@ -38,7 +38,7 @@ const UserInfo = ({ simpleProfile }: { simpleProfile: SimpleProfile }) => {
               <div className="flex items-center">
                 <DollarSign className="mr-2 size-4 text-muted-foreground" />
                 <span className="text-lg font-semibold">
-                  {simpleProfile.memberMoney.toLocaleString()}원
+                  {Number(simpleProfile.memberMoney).toLocaleString()}원
                 </span>
               </div>
             </div>
@@ -46,11 +46,14 @@ const UserInfo = ({ simpleProfile }: { simpleProfile: SimpleProfile }) => {
               <div className="mb-1 text-sm font-medium text-muted-foreground">총 수익률</div>
               <div className="flex items-center">
                 <TrendingUp className="mr-2 size-4 text-green-500" />
-                <span className="text-lg font-semibold text-green-500">
-                  +{Number(simpleProfile.returnRate).toFixed(2)}%
+                <span
+                  className={`text-lg font-semibold ${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
+                >
+                  {Number(simpleProfile?.returnRate) > 0 ? "+" : ""}
+                  {Number(simpleProfile?.returnRate).toFixed(2)}%
                 </span>
                 <span className="ml-2 text-muted-foreground">
-                  (+{simpleProfile.memberMoney.toLocaleString()}원)
+                  (+{Number(simpleProfile.memberMoney).toLocaleString()}원)
                 </span>
               </div>
             </div>

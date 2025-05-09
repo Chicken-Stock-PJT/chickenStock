@@ -21,7 +21,10 @@ const StockListItem = (props: StockProps) => {
       case "tradeAmount":
         return (
           <>
-            <div className="w-1/6 text-right">{Number(props.tradeAmount).toLocaleString()}</div>
+            <div className="w-1/6 text-right">
+              <span>{Number(props.tradeAmount).toLocaleString()}</span>
+              <span className="text-sm text-gray-500">백만</span>
+            </div>
             <div className="w-1/6 text-right">
               {Number(props.currentTradeVolume).toLocaleString()}
             </div>
@@ -32,11 +35,7 @@ const StockListItem = (props: StockProps) => {
           <>
             <div className="w-1/6 text-right">{Number(props.tradeVolume).toLocaleString()}</div>
             <div className="w-1/6 text-right">
-              <span
-                className={props.fluctuationRate.startsWith("+") ? "text-red-500" : "text-blue-500"}
-              >
-                {props.previousRatio}%
-              </span>
+              <span>{props.previousRatio}%</span>
             </div>
           </>
         );
@@ -79,14 +78,16 @@ const StockListItem = (props: StockProps) => {
           </div>
         </div>
       </div>
-      <div className="w-1/6 text-right">{Number(props.currentPrice).toLocaleString()}</div>
+      <div className="w-1/6 text-right">
+        {Math.abs(Number(props.currentPrice)).toLocaleString()}
+      </div>
       <div className="w-1/6 text-right">
         <span
           className={
             props.fluctuationRate.startsWith("+")
-              ? "text-red-500"
+              ? "text-chart-red"
               : props.fluctuationRate.startsWith("-")
-                ? "text-blue-500"
+                ? "text-chart-blue"
                 : ""
           }
         >
@@ -98,9 +99,9 @@ const StockListItem = (props: StockProps) => {
         <span
           className={
             props.fluctuationRate.startsWith("+")
-              ? "text-red-500"
+              ? "text-chart-red"
               : props.fluctuationRate.startsWith("-")
-                ? "text-blue-500"
+                ? "text-chart-blue"
                 : ""
           }
         >

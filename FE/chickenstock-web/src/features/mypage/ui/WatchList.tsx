@@ -92,7 +92,7 @@ const WatchList = () => {
                             : ""
                       }`}
                     >
-                      {stock.priceChange}원
+                      {Number(stock.priceChange).toLocaleString()}원
                     </div>
                     <div
                       className={`flex items-center justify-end text-right ${
@@ -105,7 +105,7 @@ const WatchList = () => {
                     >
                       {stock.changeRate}%
                     </div>
-                    <div className="text-right">{stock.tradingVolume}</div>
+                    <div className="text-right">{Number(stock.tradingVolume).toLocaleString()}</div>
                   </div>
                 </div>
               ))

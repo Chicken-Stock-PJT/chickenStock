@@ -31,11 +31,11 @@ const ChartHeader = ({
             <h1 className="text-xl font-bold text-gray-800">{stockName}</h1>
             <p className="text-gray-600">{stockCode}</p>
           </div>
-          <div
-            className={`flex gap-2 text-left ${Number(priceChange) > 0 ? "text-chart-red" : Number(priceChange) < 0 ? "text-chart-blue" : "text-gray-800"}`}
-          >
+          <div className={`flex gap-2 text-left`}>
             <p className="text-3xl font-semibold leading-none">{formattedPrice(currentPrice)}</p>
-            <div className="flex items-end items-center gap-2">
+            <div
+              className={`flex items-end items-center gap-2 ${Number(priceChange) > 0 ? "text-chart-red" : Number(priceChange) < 0 ? "text-chart-blue" : "text-gray-800"}`}
+            >
               <span className="text-lg leading-none">
                 {Number(priceChange) > 0 ? "▲" : Number(priceChange) < 0 ? "▼" : ""}{" "}
                 {formattedPrice(priceChange)}
