@@ -2,16 +2,7 @@ import { useMutation, useQuery, useInfiniteQuery, InfiniteData } from "@tanstack
 import { useAuthStore } from "@/shared/store/auth";
 import { getDailyProfitRate, getPortfolio, getTransactions, updateNickname } from "../api";
 import { AxiosError, AxiosResponse } from "axios";
-import { DailyProfitRateResponse, TransactionResponse } from "./types";
-
-interface ErrorResponse {
-  status: number;
-  code: string;
-  error: string;
-  message: string;
-  path: string;
-  timestamp: string;
-}
+import { ErrorResponse, DailyProfitRateResponse, TransactionResponse } from "./types";
 
 export const useUpdateNickname = () => {
   //   const queryClient = useQueryClient();

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   DropdownMenuContent,
   DropdownMenuSeparator,
@@ -13,13 +14,15 @@ import { useAuthStore } from "@/shared/store/auth";
 import { LogOut } from "lucide-react";
 
 const HeaderDropdown = ({ nickname }: { nickname: string }) => {
+  const [open, setOpen] = useState(false);
   const dropdownMenu = SIDEBAR_CONFIG;
   const logout = useAuthStore((state) => state.logout);
+
   return (
     <div>
-      <DropdownMenu>
-        <DropdownMenuTrigger className="focus:none bg-white font-semibold hover:text-primary-400">
-          {nickname} <span className="font-normal">님</span>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger className="bg-white font-semibold hover:text-primary-400">
+          {nickname} <span>님</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuLabel>
@@ -29,7 +32,7 @@ const HeaderDropdown = ({ nickname }: { nickname: string }) => {
             <DropdownMenuGroup key={menu.group}>
               <DropdownMenuSeparator />
               {menu.menus.map((menu) => (
-                <DropdownMenuItem key={menu.title}>
+                <DropdownMenuItem key={menu.title} onClick={() => setOpen(false)}>
                   <Link to={menu.url}>
                     <span className="flex items-center">
                       <menu.icon className="mr-2 size-4" /> {menu.title}
@@ -41,7 +44,10 @@ const HeaderDropdown = ({ nickname }: { nickname: string }) => {
           ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={() => void logout()}
+            onClick={() => {
+              void logout();
+              setOpen(false);
+            }}
             className="cursor-pointer hover:text-primary-400"
           >
             <LogOut className="size-4" />
