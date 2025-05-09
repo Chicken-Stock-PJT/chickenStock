@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 import {
@@ -8,6 +8,7 @@ import {
   useSellMarketOrder,
 } from "@/features/stocks/trade/model/mutations";
 import checkAvailableTime from "../model/checkAvailableTime";
+import { isNxtStock } from "../model/nxtStocks";
 
 const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: string }) => {
   const [isNxt, setIsNxt] = useState<boolean>(false);
@@ -18,6 +19,14 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   const [tempPrice, setTempPrice] = useState<string>(""); // 임시 가격을 저장할 상태 추가
   const quantityInputRef = useRef<HTMLInputElement>(null); // 수량 input ref
   const priceInputRef = useRef<HTMLInputElement>(null); // 가격 input ref
+
+  useEffect(() => {
+    const fetchIsNxt = async () => {
+      const isNxt = await isNxtStock(stockCode);
+      setIsNxt(isNxt);
+    };
+    void fetchIsNxt();
+  }, [stockCode]);
 
   const { mutate: buyLimitOrder } = useBuyLimitOrder({
     stockCode,
@@ -121,7 +130,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   };
 
   const handleBuyOrder = () => {
-    const { available, message } = checkAvailableTime(false, isLimitOrder);
+    const { available, message } = checkAvailableTime(isNxt, isLimitOrder);
     if (!available) {
       alert(message);
       return;
@@ -138,7 +147,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   };
 
   const handleSellOrder = () => {
-    const { available, message } = checkAvailableTime(false, isLimitOrder);
+    const { available, message } = checkAvailableTime(isNxt, isLimitOrder);
     if (!available) {
       alert(message);
       return;
