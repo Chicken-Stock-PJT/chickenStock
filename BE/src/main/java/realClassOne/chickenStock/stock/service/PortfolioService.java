@@ -1,15 +1,11 @@
 package realClassOne.chickenStock.stock.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
@@ -39,10 +35,8 @@ public class PortfolioService {
     private final MemberRepository memberRepository;
     private final HoldingPositionRepository holdingPositionRepository;
     private final KiwoomWebSocketClient kiwoomWebSocketClient;
-    private final StockSubscriptionService stockSubscriptionService;
     private final JwtTokenProvider jwtTokenProvider;
-    private final KiwoomAuthService authService;
-    private final ObjectMapper objectMapper;
+    private final KiwoomStockApiService kiwoomStockApiService;
 
     // 캐시를 추가하여 API 호출 횟수 감소
     private final Map<Long, Map<String, JsonNode>> memberStockCache = new ConcurrentHashMap<>();
@@ -226,6 +220,10 @@ public class PortfolioService {
      * 회원과 보유 종목 정보로 포트폴리오 응답 DTO를 생성합니다.
      * 관심종목정보요청(ka10095) API를 활용하여 한 번에 여러 종목 정보를 가져옵니다.
      */
+    /**
+     * 회원과 보유 종목 정보로 포트폴리오 응답 DTO를 생성합니다.
+     * 관심종목정보요청(ka10095) API를 활용하여 한 번에 여러 종목 정보를 가져옵니다.
+     */
     private PortfolioResponseDTO buildPortfolioResponseDTO(Member member, List<HoldingPosition> positions) {
         List<PortfolioResponseDTO.StockPositionDTO> positionDTOs = new ArrayList<>();
         Long totalInvestment = 0L;
@@ -252,72 +250,11 @@ public class PortfolioService {
                     .build();
         }
 
-        // 종목 코드 문자열 생성 (여러 종목 코드를 | 로 구분)
-        String stockCodeParam = String.join("|", stockCodes);
+        // KiwoomStockApiService를 통해 관심종목 정보 가져오기
+        Map<String, JsonNode> stockDataMap = kiwoomStockApiService.getWatchListInfoMap(stockCodes);
 
-        // API 호출을 위한 파라미터 설정
-        Map<String, JsonNode> stockDataMap = new HashMap<>();
-
-        try {
-            // 관심종목정보요청(ka10095) API 호출
-            String endpoint = "/api/dostk/stkinfo";
-            String url = apiUrl + endpoint;
-
-            WebClient webClient = WebClient.builder()
-                    .baseUrl(url)
-                    .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                    .defaultHeader("authorization", "Bearer " + authService.getAccessToken())
-                    .defaultHeader("api-id", "ka10095") // 관심종목정보요청 TR 코드
-                    .defaultHeader("cont-yn", "N")
-                    .defaultHeader("next-key", "")
-                    .build();
-
-            // 요청 본문 생성
-            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCodeParam);
-
-            // API 호출
-            String responseBody = webClient.post()
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            // 응답 파싱
-            JsonNode responseJson = objectMapper.readTree(responseBody);
-
-            // 응답 코드 확인
-            if (responseJson.has("return_code") && responseJson.get("return_code").asInt() == 0) {
-                // 관심종목정보 리스트 조회
-                JsonNode stockInfoList = responseJson.get("atn_stk_infr");
-                if (stockInfoList != null && stockInfoList.isArray()) {
-                    // 종목별 데이터 맵 생성
-                    for (JsonNode stockInfo : stockInfoList) {
-                        String stockCode = stockInfo.get("stk_cd").asText();
-                        stockDataMap.put(stockCode, stockInfo);
-                    }
-
-                    // 종목 데이터 캐시 업데이트
-                    memberStockCache.put(member.getMemberId(), stockDataMap);
-
-                    log.info("관심종목정보요청 API 호출 성공: {} 종목", stockDataMap.size());
-                }
-            } else {
-                String errorMsg = responseJson.has("return_msg") ?
-                        responseJson.get("return_msg").asText() : "API 호출 실패";
-                log.error("관심종목정보요청 API 호출 실패: {}", errorMsg);
-
-                // API 호출 실패 시 웹소켓 데이터로 대체
-                stockCodes.forEach(stockCode -> {
-                    JsonNode websocketData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
-                    if (websocketData != null) {
-                        stockDataMap.put(stockCode, websocketData);
-                    }
-                });
-            }
-        } catch (Exception e) {
-            log.error("종목 정보 API 호출 중 오류 발생", e);
-
-            // API 호출 실패 시 웹소켓 데이터로 대체
+        // API 호출 실패 시 웹소켓 데이터로 대체
+        if (stockDataMap.isEmpty()) {
             stockCodes.forEach(stockCode -> {
                 JsonNode websocketData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
                 if (websocketData != null) {
@@ -325,6 +262,9 @@ public class PortfolioService {
                 }
             });
         }
+
+        // 종목 데이터 캐시 업데이트
+        memberStockCache.put(member.getMemberId(), stockDataMap);
 
         // 각 포지션에 대한 정보 구성
         for (HoldingPosition position : positions) {
