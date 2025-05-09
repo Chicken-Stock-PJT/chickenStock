@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 import {
@@ -7,8 +7,11 @@ import {
   useSellLimitOrder,
   useSellMarketOrder,
 } from "@/features/stocks/trade/model/mutations";
+import checkAvailableTime from "../model/checkAvailableTime";
+import { isNxtStock } from "../model/nxtStocks";
 
 const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: string }) => {
+  const [isNxt, setIsNxt] = useState<boolean>(false);
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
   const [quantity, setQuantity] = useState<number>(1); // 수량
   const lowPrice = 50000; // 최저 가격 (예시로 50000으로 설정, 실제로는 API에서 받아와야 함)
@@ -16,6 +19,14 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   const [tempPrice, setTempPrice] = useState<string>(""); // 임시 가격을 저장할 상태 추가
   const quantityInputRef = useRef<HTMLInputElement>(null); // 수량 input ref
   const priceInputRef = useRef<HTMLInputElement>(null); // 가격 input ref
+
+  useEffect(() => {
+    const fetchIsNxt = async () => {
+      const isNxt = await isNxtStock(stockCode);
+      setIsNxt(isNxt);
+    };
+    void fetchIsNxt();
+  }, [stockCode]);
 
   const { mutate: buyLimitOrder } = useBuyLimitOrder({
     stockCode,
@@ -40,11 +51,10 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   });
 
   const handlePriceType = (toLimitOrder: boolean) => {
-    if (toLimitOrder) {
-      alert("지정가로 주문할 수 없는 주식입니다.");
+    if (!checkAvailableTime(false, toLimitOrder)) {
+      alert("현재 시간에는 지정가 주문만 가능합니다.");
       return;
     }
-
     setIsLimitOrder(toLimitOrder ? true : false);
     if (!toLimitOrder) {
       setPrice(currentPrice); // 시장가 주문 시 현재 가격으로 설정
@@ -120,18 +130,34 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   };
 
   const handleBuyOrder = () => {
+    const { available, message } = checkAvailableTime(isNxt, isLimitOrder);
+    if (!available) {
+      alert(message);
+      return;
+    }
     if (isLimitOrder) {
+      // 지정가 주문
       buyLimitOrder();
+      alert("지정가 주문이 완료되었습니다.");
     } else {
+      // 시장가 주문
       buyMarketOrder();
+      alert("거래가 체결되었습니다.");
     }
   };
 
   const handleSellOrder = () => {
+    const { available, message } = checkAvailableTime(isNxt, isLimitOrder);
+    if (!available) {
+      alert(message);
+      return;
+    }
     if (isLimitOrder) {
       sellLimitOrder();
+      alert("지정가 주문이 완료되었습니다.");
     } else {
       sellMarketOrder();
+      alert("거래가 체결되었습니다.");
     }
   };
 
