@@ -7,3 +7,7 @@ interface ImportMetaEnv {
 interface ImportMetaEnv {
   readonly VITE_WS_BASE_URL: string;
 }
+
+interface ImportMetaEnv {
+  readonly VITE_LOGIN_REDIRECT_URI: string;
+}

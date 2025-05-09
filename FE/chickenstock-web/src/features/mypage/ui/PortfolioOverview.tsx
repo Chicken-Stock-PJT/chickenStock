@@ -40,7 +40,7 @@ const PortfolioOverview = ({
           <div className="text-2xl font-bold">{totalAsset.toLocaleString()}원</div>
           <div className="mt-2 flex items-center">
             <div
-              className={`flex items-center ${totalProfitLoss >= 0 ? "text-green-500" : "text-red-500"}`}
+              className={`flex items-center ${totalProfitLoss > 0 ? "text-chart-red" : totalProfitLoss < 0 ? "text-chart-blue" : ""}`}
             >
               {totalProfitLoss >= 0 ? "+" : ""}
               {totalProfitLoss.toLocaleString()}원 ({totalProfitLoss >= 0 ? "+" : ""}
@@ -58,7 +58,7 @@ const PortfolioOverview = ({
           {dailyProfitRate?.periodReturns.daily ? (
             <>
               <div
-                className={`text-2xl font-bold ${dailyProfitRate.periodReturns.daily.profitLoss >= 0 ? "text-green-500" : "text-red-500"}`}
+                className={`text-2xl font-bold ${dailyProfitRate.periodReturns.daily.profitLoss > 0 ? "text-chart-red" : dailyProfitRate.periodReturns.daily.profitLoss < 0 ? "text-chart-blue" : ""}`}
               >
                 {dailyProfitRate.periodReturns.daily.profitLoss >= 0 ? "+" : ""}
                 {dailyProfitRate.periodReturns.daily.profitLoss.toLocaleString()}원
