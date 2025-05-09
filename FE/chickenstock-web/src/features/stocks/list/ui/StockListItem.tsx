@@ -32,11 +32,7 @@ const StockListItem = (props: StockProps) => {
           <>
             <div className="w-1/6 text-right">{Number(props.tradeVolume).toLocaleString()}</div>
             <div className="w-1/6 text-right">
-              <span
-                className={props.fluctuationRate.startsWith("+") ? "text-red-500" : "text-blue-500"}
-              >
-                {props.previousRatio}%
-              </span>
+              <span>{props.previousRatio}%</span>
             </div>
           </>
         );
@@ -79,14 +75,16 @@ const StockListItem = (props: StockProps) => {
           </div>
         </div>
       </div>
-      <div className="w-1/6 text-right">{Number(props.currentPrice).toLocaleString()}</div>
+      <div className="w-1/6 text-right">
+        {Math.abs(Number(props.currentPrice)).toLocaleString()}
+      </div>
       <div className="w-1/6 text-right">
         <span
           className={
             props.fluctuationRate.startsWith("+")
-              ? "text-red-500"
+              ? "text-chart-red"
               : props.fluctuationRate.startsWith("-")
-                ? "text-blue-500"
+                ? "text-chart-blue"
                 : ""
           }
         >
@@ -98,9 +96,9 @@ const StockListItem = (props: StockProps) => {
         <span
           className={
             props.fluctuationRate.startsWith("+")
-              ? "text-red-500"
+              ? "text-chart-red"
               : props.fluctuationRate.startsWith("-")
-                ? "text-blue-500"
+                ? "text-chart-blue"
                 : ""
           }
         >

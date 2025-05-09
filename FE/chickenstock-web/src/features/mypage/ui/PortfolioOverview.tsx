@@ -65,7 +65,7 @@ const PortfolioOverview = ({
               </div>
               <div className="mt-2 flex items-center">
                 <div
-                  className={`flex items-center ${dailyProfitRate.periodReturns.daily.returnRate >= 0 ? "text-green-500" : "text-red-500"}`}
+                  className={`flex items-center ${dailyProfitRate.periodReturns.daily.returnRate > 0 ? "text-chart-red" : dailyProfitRate.periodReturns.daily.returnRate < 0 ? "text-chart-blue" : ""}`}
                 >
                   {dailyProfitRate.periodReturns.daily.returnRate >= 0 ? (
                     <ArrowUpIcon className="mr-1 size-4" />
@@ -81,9 +81,9 @@ const PortfolioOverview = ({
             </>
           ) : (
             <>
-              <div className={`text-2xl font-bold text-green-500`}>0원</div>
+              <div className={`text-2xl font-bold`}>0원</div>
               <div className="mt-2 flex items-center">
-                <div className={`flex items-center text-green-500`}>
+                <div className={`flex items-center`}>
                   <span>0.0%</span>
                 </div>
               </div>
