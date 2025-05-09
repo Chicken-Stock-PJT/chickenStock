@@ -79,9 +79,6 @@ public class MemberController {
         return ResponseEntity.ok(portfolioDTO);
     }
 
-    /*
-        아래 내용 수정 필요
-     */
     // 관심종목 조회 API
     @GetMapping("/watchlist")
     public ResponseEntity<WatchListResponseDTO> getWatchList(
