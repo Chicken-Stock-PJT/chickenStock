@@ -18,6 +18,19 @@ import ProtectedRoute from "./ProtectedRoute";
 
 const router = createBrowserRouter([
   {
+    path: "login",
+    children: [
+      {
+        path: "",
+        element: <LoginPage />,
+      },
+      {
+        path: "redirect",
+        element: <LoginRedirect />,
+      },
+    ],
+  },
+  {
     path: "/",
     element: <Layout />,
     errorElement: <ErrorPage />,
@@ -26,10 +39,7 @@ const router = createBrowserRouter([
         path: "",
         element: <HomePage />,
       },
-      {
-        path: "login",
-        element: <LoginPage />,
-      },
+
       {
         path: "signup",
         element: <SignupPage />,
@@ -91,10 +101,6 @@ const router = createBrowserRouter([
             element: <StockPage />,
           },
         ],
-      },
-      {
-        path: "login/redirect",
-        element: <LoginRedirect />,
       },
     ],
   },

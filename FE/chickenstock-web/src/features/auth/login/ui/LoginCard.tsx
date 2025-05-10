@@ -8,6 +8,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuthStore } from "@/shared/store/auth";
 import { useGetWatchlist } from "@/features/watchlist/model/queries";
+import { AxiosError } from "axios";
+import { Alert, AlertDescription } from "@/shared/libs/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 const LoginCard = () => {
   const navigate = useNavigate();
@@ -15,6 +18,8 @@ const LoginCard = () => {
     email: "",
     password: "",
   });
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
 
   const { refetch: refetchWatchlist } = useGetWatchlist();
 
@@ -24,6 +29,8 @@ const LoginCard = () => {
       ...prev,
       [id]: value,
     }));
+    // 입력 시작하면 알림 숨기기
+    if (showAlert) setShowAlert(false);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -37,33 +44,51 @@ const LoginCard = () => {
       localStorage.removeItem("redirectUrl");
     } catch (err) {
       console.error(err);
-      alert("로그인에 실패했습니다.");
+      if (err instanceof AxiosError && err.response?.data?.code === "AUTH-E004") {
+        setAlertMessage("이메일 또는 비밀번호가 일치하지 않습니다.");
+        setShowAlert(true);
+      } else {
+        // 기타 오류 처리
+        setAlertMessage("로그인 중 오류가 발생했습니다. 다시 시도해주세요.");
+        setShowAlert(true);
+      }
     }
   };
 
   return (
-    <Card className="mx-auto w-[480px]">
+    <Card className="mx-auto w-[400px]">
       <CardHeader>
         <CardTitle className="text-2xl">로그인</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={(e) => void handleSubmit(e)}>
+        {/* 로그인 실패 시 Alert 표시 */}
+        {showAlert && (
+          <Alert variant="destructive">
+            <div className="flex gap-2">
+              <AlertCircle className="h-4 w-4 my-auto" />
+              <AlertDescription className="text-left">{alertMessage}</AlertDescription>
+            </div>
+          </Alert>
+        )}
+        <form onSubmit={handleSubmit}>
           <div className="mt-6 flex flex-col gap-2">
             <Input
               id="email"
               type="email"
               placeholder="이메일"
-              required
               value={formData.email}
               onChange={handleInputChange}
+              required
+              onFocus={() => setShowAlert(false)}
             />
             <Input
               id="password"
               type="password"
               placeholder="비밀번호"
-              required
               value={formData.password}
               onChange={handleInputChange}
+              required
+              onFocus={() => setShowAlert(false)}
             />
           </div>
           <div className="mt-4 flex justify-end underline">
@@ -71,17 +96,24 @@ const LoginCard = () => {
               비밀번호 찾기
             </Link>
           </div>
+
           <div className="mb-6 mt-8">
-            <Button className="w-full" type="submit">
+            <Button type="submit" className="w-full">
               이메일로 로그인
             </Button>
           </div>
         </form>
-        <hr />
+        <div className="flex items-center">
+          <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+          <span className="flex-shrink mx-4 text-gray-400 dark:text-gray-200 text-sm">
+            소셜 로그인
+          </span>
+          <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+        </div>
       </CardContent>
       <CardFooter>
-        <div className="mx-20  w-full space-y-8">
-          <div className="flex justify-between gap-4">
+        <div className="w-full space-y-8">
+          <div className="mx-12 flex justify-between gap-4">
             <img
               src={googleLogin}
               alt="구글 로그인"
