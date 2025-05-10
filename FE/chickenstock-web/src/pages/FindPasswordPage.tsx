@@ -11,19 +11,27 @@ import { Button } from "@/shared/libs/ui/button";
 import { useState } from "react";
 import { findPassword } from "@/features/auth/find/api";
 import { Link, useNavigate } from "react-router-dom";
+import MyAlertDialog from "@/widgets/alert/MyAlertDialog";
 
 const FindPasswordPage = () => {
   const [email, setEmail] = useState("");
+  const [isAlertOpen, setIsAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertAction, setAlertAction] = useState<() => void>(() => void 0);
+
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       const res = await findPassword(email);
-      alert(res.message);
+      setIsAlertOpen(true);
+      setAlertMessage(res.message);
+      setAlertAction(() => () => void navigate("/login"));
       void navigate("/login");
     } catch (error) {
-      alert(error);
+      setIsAlertOpen(true);
+      setAlertMessage(error instanceof Error ? error.message : "오류가 발생했습니다.");
     }
   };
 
@@ -58,6 +66,16 @@ const FindPasswordPage = () => {
           </div>
         </CardFooter>
       </Card>
+
+      {/* Alert 컴포넌트 */}
+      <MyAlertDialog
+        isOpen={isAlertOpen}
+        setIsOpen={setIsAlertOpen}
+        title={null}
+        description={alertMessage}
+        action={alertAction}
+        actionText="확인"
+      />
     </div>
   );
 };

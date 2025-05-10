@@ -6,6 +6,7 @@ import { useGetWatchlist } from "@/features/watchlist/model/queries";
 const LoginRedirect = () => {
   const [searchParams] = useSearchParams();
   const code = searchParams.get("oneTimeCode");
+  console.log(code);
   const navigate = useNavigate();
   const { refetch: refetchWatchlist } = useGetWatchlist();
 
@@ -29,7 +30,7 @@ const LoginRedirect = () => {
   }, [code, navigate, refetchWatchlist]);
   return (
     <div>
-      <h1>로그인 중...</h1>
+      <h3>로그인 중...</h3>
     </div>
   );
 };

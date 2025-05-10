@@ -1,25 +1,7 @@
-import { useMutation, useQuery, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
-import { useAuthStore } from "@/shared/store/auth";
-import { getDailyProfitRate, getPortfolio, getTransactions, updateNickname } from "../api";
-import { AxiosError, AxiosResponse } from "axios";
+import { useQuery, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
+import { getDailyProfitRate, getPortfolio, getTransactions } from "../api";
+import { AxiosResponse } from "axios";
 import { ErrorResponse, DailyProfitRateResponse, TransactionResponse } from "./types";
-
-export const useUpdateNickname = () => {
-  //   const queryClient = useQueryClient();
-  const { mutateAsync } = useMutation({
-    mutationFn: (nickname: string) => updateNickname(nickname),
-    onSuccess: (_, nickname) => {
-      // 쿼리 무효화
-      //   void queryClient.invalidateQueries({ queryKey: ["profile"] });
-      useAuthStore.getState().setSimpleProfile({ nickname });
-    },
-    onError: (error: AxiosError<ErrorResponse>) => {
-      const errorMessage = error.response?.data.message ?? "닉네임 수정에 실패했습니다.";
-      alert(errorMessage);
-    },
-  });
-  return { mutateAsync };
-};
 
 export const useGetPortfolio = () => {
   const { data, isLoading, error } = useQuery({

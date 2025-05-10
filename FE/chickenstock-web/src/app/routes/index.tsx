@@ -28,7 +28,16 @@ const router = createBrowserRouter([
       },
       {
         path: "login",
-        element: <LoginPage />,
+        children: [
+          {
+            path: "",
+            element: <LoginPage />,
+          },
+          {
+            path: "redirect",
+            element: <LoginRedirect />,
+          },
+        ],
       },
       {
         path: "signup",
@@ -91,10 +100,6 @@ const router = createBrowserRouter([
             element: <StockPage />,
           },
         ],
-      },
-      {
-        path: "login/redirect",
-        element: <LoginRedirect />,
       },
     ],
   },

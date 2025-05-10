@@ -13,6 +13,7 @@ import { UpdateNicknameError } from "../model/types";
 import { ErrorResponse } from "react-router-dom";
 import axios, { AxiosError } from "axios";
 import { useAuthStore } from "@/shared/store/auth";
+import { toast } from "@/shared/libs/hooks/use-toast";
 
 export const getUserInfo = async () => {
   try {
@@ -50,13 +51,19 @@ export const updatePassword = async (
         ...passwordParams,
       },
     );
-    alert("비밀번호가 변경되었습니다.");
+    toast({
+      description: "비밀번호가 변경되었습니다.",
+    });
     return response.data;
   } catch (error) {
     console.log(error);
     if (error instanceof AxiosError) {
-      alert(error.response?.data.message);
-      return error.response?.data as UpdatePasswordError;
+      const errorData = error.response?.data as UpdatePasswordError;
+      toast({
+        variant: "destructive",
+        description: errorData.message ?? "비밀번호 변경에 실패했습니다.",
+      });
+      return errorData;
     }
     throw error;
   }

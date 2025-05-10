@@ -93,6 +93,7 @@ export const authApi = {
       return response.data;
     } catch (err) {
       console.error("인증 실패:", err);
+      throw err;
     }
   },
 
