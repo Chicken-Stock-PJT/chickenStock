@@ -17,7 +17,9 @@ const LoginRedirect = () => {
           useAuthStore.getState().setAccessToken(response.accessToken);
           await useAuthStore.getState().getSimpleProfile();
           await refetchWatchlist();
-          void navigate("/");
+
+          void navigate(localStorage.getItem("redirectUrl") ?? "/");
+          localStorage.removeItem("redirectUrl");
         } catch (error) {
           console.error(error);
         }

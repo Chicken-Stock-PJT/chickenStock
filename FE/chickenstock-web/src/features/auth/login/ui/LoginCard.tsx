@@ -33,7 +33,8 @@ const LoginCard = () => {
       useAuthStore.getState().setAccessToken(response.accessToken);
       await useAuthStore.getState().getSimpleProfile();
       await refetchWatchlist();
-      void navigate("/");
+      void navigate(localStorage.getItem("redirectUrl") ?? "/");
+      localStorage.removeItem("redirectUrl");
     } catch (err) {
       console.error(err);
       alert("로그인에 실패했습니다.");
