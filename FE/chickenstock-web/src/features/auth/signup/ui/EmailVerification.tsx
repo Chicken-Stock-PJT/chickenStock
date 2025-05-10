@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
 import { Input } from "@/shared/libs/ui/input";
 import { Label } from "@/shared/libs/ui/label";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { authApi } from "../api";
 import { toast } from "@/shared/libs/hooks/use-toast";
 
