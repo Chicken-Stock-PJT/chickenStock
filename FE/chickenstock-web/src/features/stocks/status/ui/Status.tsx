@@ -13,6 +13,10 @@ const Status = ({ stockCode }: { stockCode: string }) => {
   const { data: filledTrades } = useGetStatus(stockCode);
   const { data: pendingOrders } = useGetPendingOrders(stockCode);
 
+  const toLogin = () => {
+    localStorage.setItem("redirectUrl", window.location.pathname);
+    void navigate("/login");
+  };
   return (
     <div className="flex h-full flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
       <Tabs defaultValue="filled" className="flex h-full flex-col">
@@ -58,7 +62,7 @@ const Status = ({ stockCode }: { stockCode: string }) => {
             <div className="mb-2 text-sm text-gray-500">
               로그인 후 체결내역 및 미체결내역을 확인할 수 있습니다.
             </div>
-            <Button onClick={() => void navigate("/login")}>로그인</Button>
+            <Button onClick={toLogin}>로그인</Button>
           </div>
         )}
       </Tabs>
