@@ -24,7 +24,6 @@ const EditInfo = () => {
     setIsSubmitting(true);
     try {
       await updateNickname(nickname);
-      alert("프로필이 업데이트되었습니다.");
     } catch (error) {
       // 에러는 useUpdateNickname 훅에서 처리됨
     } finally {
