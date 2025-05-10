@@ -15,7 +15,8 @@ export const useAuthStore = create<AuthState>()(
     persist(
       (set, get) => ({
         accessToken: null,
-        setAccessToken: (token) => {
+        isLoggedIn: false,
+        setAccessToken: (token: string) => {
           set({
             accessToken: token,
             isLoggedIn: !!token,
@@ -29,9 +30,18 @@ export const useAuthStore = create<AuthState>()(
 
         simpleProfile: null,
         getSimpleProfile: async () => {
-          const response = await apiClient.get<SimpleProfile>(`/members/simple-profile`);
-          set({ simpleProfile: response.data });
-          return response.data;
+          try {
+            const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
+            set({ simpleProfile: response.data });
+            return response.data;
+          } catch (error) {
+            if (error instanceof Error) {
+              alert(`프로필 정보 조회 실패 ${error.message}`);
+            } else {
+              alert("프로필 정보 조회 실패");
+            }
+            throw error;
+          }
         },
         setSimpleProfile: (profile) =>
           set((state) => ({
@@ -39,8 +49,6 @@ export const useAuthStore = create<AuthState>()(
               ? { ...state.simpleProfile, ...profile }
               : (profile as SimpleProfile),
           })),
-
-        isLoggedIn: false,
         login: async (email: string, password: string) => {
           const response = await apiClient.post<LoginResponse>(`${baseURL}/auth/login`, {
             email,
