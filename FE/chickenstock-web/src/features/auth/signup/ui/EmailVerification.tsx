@@ -2,8 +2,9 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/shared/libs/ui/button";
 import { Input } from "@/shared/libs/ui/input";
 import { Label } from "@/shared/libs/ui/label";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { authApi } from "../api";
+import { toast } from "@/shared/libs/hooks/use-toast";
 
 interface VerificationStepProps {
   email: string;
@@ -15,7 +16,11 @@ const initialSendCode = async (email: string) => {
     await authApi.sendCode(email);
   } catch (err) {
     console.log(err);
-    alert("인증코드 전송에 실패했습니다.");
+    toast({
+      variant: "destructive",
+      title: "인증코드 전송에 실패했습니다.",
+      description: "다시 시도해주세요.",
+    });
   }
 };
 
@@ -45,8 +50,19 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
         onSubmit();
       }
     } catch (err) {
-      setError("인증에 실패했습니다. 코드를 다시 확인해주세요.");
       console.log(err);
+      toast({
+        variant: "destructive",
+        title: "인증 실패",
+        // title: (
+        //   <div className="flex items-center gap-2">
+        //     <AlertCircle className="size-5" />
+        //     <span>인증 실패</span>
+        //   </div>
+        // ),
+        description: "인증코드를 다시 확인해주세요.",
+        duration: 3000, // 3초 동안 표시
+      });
     } finally {
       setIsVerifying(false);
     }
@@ -56,9 +72,16 @@ export default function EmailVerification({ email, onSubmit }: VerificationStepP
     try {
       setIsResending(true);
       await initialSendCode(email);
-      alert("인증코드가 재발송되었습니다.");
+      toast({
+        title: "인증코드 재발송 완료",
+        description: "인증코드를 확인해주세요.",
+      });
     } catch (err) {
-      setError("인증코드 재발송에 실패했습니다.");
+      toast({
+        variant: "destructive",
+        title: "인증코드 재발송에 실패했습니다.",
+        description: "다시 시도해주세요.",
+      });
       console.log(err);
     } finally {
       setIsResending(false);

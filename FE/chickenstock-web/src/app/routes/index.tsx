@@ -18,19 +18,6 @@ import ProtectedRoute from "./ProtectedRoute";
 
 const router = createBrowserRouter([
   {
-    path: "login",
-    children: [
-      {
-        path: "",
-        element: <LoginPage />,
-      },
-      {
-        path: "redirect",
-        element: <LoginRedirect />,
-      },
-    ],
-  },
-  {
     path: "/",
     element: <Layout />,
     errorElement: <ErrorPage />,
@@ -39,7 +26,19 @@ const router = createBrowserRouter([
         path: "",
         element: <HomePage />,
       },
-
+      {
+        path: "login",
+        children: [
+          {
+            path: "",
+            element: <LoginPage />,
+          },
+          {
+            path: "redirect",
+            element: <LoginRedirect />,
+          },
+        ],
+      },
       {
         path: "signup",
         element: <SignupPage />,
