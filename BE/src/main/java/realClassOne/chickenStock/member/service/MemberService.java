@@ -796,29 +796,43 @@ public class MemberService {
 
 
     public SimpleMemberProfileResponseDTO getSimpleProfile(String authorizationHeader) {
-        String token = jwtTokenProvider.resolveToken(authorizationHeader);
-        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+        try {
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        List<HoldingPosition> holdingPositions = holdingPositionRepository.findAllByMember_MemberId(memberId);
+            // 기본값 설정
+            String totalAsset = "0";
+            String returnRate = "0.0";
 
-        // 수익률 평균 계산
-        double averageReturnRate = 0.0;
-        if (holdingPositions != null && !holdingPositions.isEmpty()) {
-            averageReturnRate = holdingPositions.stream()
-                    .mapToDouble(HoldingPosition::getReturnRate)
-                    .average()
-                    .orElse(0.0);
+            try {
+                // 포트폴리오 서비스에서 전체 포트폴리오 정보를 가져옴
+                var portfolio = portfolioService.getPortfolioById(memberId);
+
+                // totalAsset(총 자산 = 현금 + 주식평가금액)을 사용
+                totalAsset = portfolio.getTotalAsset().toString();
+                returnRate = String.format("%.2f", portfolio.getTotalReturnRate());
+
+            } catch (Exception e) {
+                log.warn("포트폴리오 정보 조회 중 오류 발생: {}", e.getMessage());
+
+                // 포트폴리오 조회 실패 시 최소한 현금 금액이라도 표시
+                if (member.getMemberMoney() != null) {
+                    totalAsset = member.getMemberMoney().toString();
+                    log.info("포트폴리오 조회 실패, 현금만 표시: {}", totalAsset);
+                }
+            }
+
+            String nickname = member.getNickname();
+            String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
+
+            return SimpleMemberProfileResponseDTO.of(nickname, totalAsset, returnRate, isOauth);
+        } catch (Exception e) {
+            log.error("간단 회원 정보 조회 중 오류 발생", e);
+            throw new CustomException(MemberErrorCode.MEMBER_NOT_FOUND, "회원 정보를 불러올 수 없습니다");
         }
-
-        String nickname = member.getNickname();
-        String memberMoney = member.getMemberMoney() != null ? member.getMemberMoney().toString() : "0";
-        String returnRate = String.valueOf(averageReturnRate);
-        String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
-
-        return SimpleMemberProfileResponseDTO.of(nickname, memberMoney, returnRate, isOauth);
     }
 
     // 특정 종목에 대한 거래내역을 조회합니다.
