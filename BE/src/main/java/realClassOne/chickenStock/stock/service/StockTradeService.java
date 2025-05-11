@@ -34,6 +34,7 @@ import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 import realClassOne.chickenStock.stock.websocket.handler.PortfolioWebSocketHandler;
+import realClassOne.chickenStock.stock.websocket.handler.StockWebSocketHandler;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -60,6 +61,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     private final StockSubscriptionService stockSubscriptionService;
     private final JwtTokenProvider jwtTokenProvider;
     private final PortfolioWebSocketHandler portfolioWebSocketHandler;
+    private final StockWebSocketHandler stockWebSocketHandler;
 
 
     // 동시성 제어를 위한 락 추가
@@ -212,6 +214,26 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 }
 
                 successfulTrades.incrementAndGet();
+
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "BUY",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+//                    log.info("시장가 매수 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+//                            stock.getShortCode(), currentPrice, request.getQuantity());
+                } catch (Exception e) {
+                    log.warn("시장가 매수 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
+
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
                 log.error("매수 주문 처리 중 오류 발생", e);
@@ -278,7 +300,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                         LocalDateTime.now()
                 );
                 tradeHistoryRepository.save(tradeHistory);
-;
+                ;
 
                 // 비활성화된 기존 포지션 확인 (같은 종목 재매수 확인)
                 Optional<HoldingPosition> existingPosition = holdingPositionRepository
@@ -338,6 +360,25 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 }
 
                 successfulTrades.incrementAndGet();
+
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "BUY",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+//                    log.info("시장가 매수 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+//                            stock.getShortCode(), currentPrice, request.getQuantity());
+                } catch (Exception e) {
+                    log.warn("시장가 매수 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
 
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
@@ -452,6 +493,25 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 // 추가: 트랜잭션을 즉시 플러시하여 DB에 반영
                 holdingPositionRepository.flush();
                 memberRepository.flush();
+
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "SELL",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+//                    log.info("시장가 매도 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+//                            stock.getShortCode(), currentPrice, request.getQuantity());
+                } catch (Exception e) {
+                    log.warn("시장가 매도 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
 
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
@@ -575,6 +635,24 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 holdingPositionRepository.flush();
                 memberRepository.flush();
 
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "SELL",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+//                    log.info("시장가 매도 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+//                            stock.getShortCode(), currentPrice, request.getQuantity());
+                } catch (Exception e) {
+                    log.warn("시장가 매도 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
 
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
@@ -1373,6 +1451,25 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 log.warn("포트폴리오 업데이트 알림 실패: {}", e.getMessage());
             }
 
+            // 추가: 체결 정보 WebSocket 전송
+            try {
+                // 시간 포맷 변환 (HHmmss 형식으로)
+                String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                stockWebSocketHandler.broadcastTradeExecution(
+                        stockCode,
+                        "BUY",
+                        order.getQuantity(),
+                        currentPrice,
+                        totalAmount,
+                        timestamp
+                );
+                log.info("지정가 매수 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+                        stockCode, currentPrice, order.getQuantity());
+            } catch (Exception e) {
+                log.warn("지정가 매수 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+            }
+
             successfulTrades.incrementAndGet();
         } catch (Exception e) {
             handleOrderExecutionFailure(order, "매수", e);
@@ -1443,13 +1540,31 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 log.warn("포트폴리오 업데이트 알림 실패: {}", e.getMessage());
             }
 
+            // 추가: 체결 정보 WebSocket 전송
+            try {
+                // 시간 포맷 변환 (HHmmss 형식으로)
+                String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                stockWebSocketHandler.broadcastTradeExecution(
+                        stockCode,
+                        "SELL",
+                        order.getQuantity(),
+                        currentPrice,
+                        totalAmount,
+                        timestamp
+                );
+                log.info("지정가 매도 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+                        stockCode, currentPrice, order.getQuantity());
+            } catch (Exception e) {
+                log.warn("지정가 매도 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+            }
+
             successfulTrades.incrementAndGet();
         } catch (Exception e) {
             handleOrderExecutionFailure(order, "매도", e);
         }
     }
 
-    // 주문 실패 처리 공통 메서드
     // 주문 실패 처리 공통 메서드
     private void handleOrderExecutionFailure(PendingOrder order, String orderType, Exception e) {
         log.error("지정가 {} 주문 체결 중 오류 발생: {}", orderType, e.getMessage(), e);
