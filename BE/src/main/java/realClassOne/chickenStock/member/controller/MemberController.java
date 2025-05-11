@@ -60,7 +60,6 @@ public class MemberController {
         return ResponseEntity.ok(responseDTO);
     }
 
-
     // 회원 기본금 초기화 API (1억)
     @PostMapping("/initialize-money")
     public ResponseEntity<Object> initializeMemberMoney(
