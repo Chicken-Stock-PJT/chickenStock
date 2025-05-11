@@ -53,9 +53,7 @@ public class MemberService {
     private final JwtTokenProvider jwtTokenProvider;
     private final HoldingPositionRepository holdingPositionRepository;
     private final WatchListRepository watchListRepository;
-    private final KiwoomWebSocketClient kiwoomWebSocketClient;
     private final TradeHistoryRepository tradeHistoryRepository;
-    private final StockSubscriptionService stockSubscriptionService;
     private final PortfolioService portfolioService;
     private final StockDataRepository stockDataRepository;
     private final KiwoomStockApiService kiwoomStockApiService;
