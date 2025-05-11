@@ -601,6 +601,32 @@ public class KiwoomWebSocketClient {
         }
     }
 
+    // 포트폴리오용 연결 재시작시 구독 종목 재등록 (주식체결만 구독)
+    public void reregisterPortfolioStocks(String purpose) {
+        subscriptionLock.readLock().lock();
+        try {
+            // 해당 목적에 맞는 종목만 필터링
+            Set<String> stockCodes = getStocksWithPurpose(purpose);
+
+            if (stockCodes.isEmpty()) {
+                log.info("목적 '{}' 에 해당하는 구독 종목이 없습니다.", purpose);
+                return;
+            }
+
+            List<String> stockCodesList = new ArrayList<>(stockCodes);
+            log.info("포트폴리오 구독 종목 재등록: {} 종목", stockCodesList.size());
+
+            // 최대 100개씩 나누어 등록 (API 한계 고려)
+            int batchSize = 100;
+            for (int i = 0; i < stockCodesList.size(); i += batchSize) {
+                List<String> batch = stockCodesList.subList(i, Math.min(i + batchSize, stockCodesList.size()));
+                registerRealTimeDataAsync("0B", batch, null); // 주식체결만 구독
+            }
+        } finally {
+            subscriptionLock.readLock().unlock();
+        }
+    }
+
     // 데이터 처리 메서드 (스레드 생성 제거)
     private void processRealTimeData(JsonNode response) {
         try {
@@ -1067,4 +1093,89 @@ public class KiwoomWebSocketClient {
 
         log.info("구독자 수 상태 점검 완료");
     }
+
+    /**
+     * 여러 종목을 동시에 구독하는 메서드
+     * @param stockCodes 구독할 종목 코드 목록
+     * @param purpose 구독 목적 (예: "PORTFOLIO")
+     * @return 구독 성공 여부
+     */
+    public boolean subscribeStocksWithPurpose(List<String> stockCodes, String purpose) {
+        if (stockCodes == null || stockCodes.isEmpty()) {
+            log.error("구독할 종목 코드가 없습니다.");
+            return false;
+        }
+
+        subscriptionLock.writeLock().lock();
+        try {
+            log.info("일괄 종목 구독 시작: {} 종목, 목적: {}", stockCodes.size(), purpose);
+
+            // 구독할 새로운 종목들만 필터링
+            List<String> newStockCodes = new ArrayList<>();
+
+            // 각 종목에 목적 추가 및 구독자 수 증가
+            for (String stockCode : stockCodes) {
+                String normalizedCode = normalizeStockCode(stockCode);
+
+                // 목적 추가
+                Set<String> purposes = stockSubscriptionPurposes.computeIfAbsent(normalizedCode, k -> ConcurrentHashMap.newKeySet());
+                boolean purposeAdded = purposes.add(purpose);
+
+                // 구독자 수 증가
+                int prevCount = stockCodeSubscriberCount.getOrDefault(normalizedCode, 0);
+                stockCodeSubscriberCount.put(normalizedCode, prevCount + 1);
+
+                // 내부 구독 목록에 추가
+                subscribedStockCodes.add(normalizedCode);
+
+                // 신규 구독인 경우에만 API 요청 목록에 추가
+                if (prevCount == 0) {
+                    newStockCodes.add(normalizedCode);
+                    log.info("종목 {} 신규 구독 등록 예정", normalizedCode);
+                } else {
+                    log.info("종목 {} 이미 구독 중, 구독자 수만 증가: {} -> {}", normalizedCode, prevCount, prevCount + 1);
+                }
+            }
+
+            // 실제 API 구독 요청 (신규 종목들만)
+            boolean success = true;
+            if (!newStockCodes.isEmpty() && isConnected()) {
+                // 일괄 실시간 데이터 등록 요청 - 주식체결(0B)만 구독
+                CompletableFuture<Boolean> future = new CompletableFuture<>();
+
+                // 배치 처리 (일반적으로 API는 한 번에 처리할 수 있는 종목 수에 제한이 있음)
+                int batchSize = 100; // 최대 배치 크기 - 실제 API 제한에 맞게 조정 필요
+
+                List<List<String>> batches = new ArrayList<>();
+                for (int i = 0; i < newStockCodes.size(); i += batchSize) {
+                    batches.add(newStockCodes.subList(i, Math.min(i + batchSize, newStockCodes.size())));
+                }
+
+                for (List<String> batch : batches) {
+                    try {
+                        // 주식체결(0B) 등록만 수행
+                        registerRealTimeDataAsync("0B", batch, future);
+                        boolean batchResult = future.get(API_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                        success &= batchResult;
+
+                        log.info("신규 종목 배치 구독 완료 (체결 데이터): {} 종목", batch.size());
+                    } catch (Exception e) {
+                        log.error("신규 종목 배치 구독 중 오류: {} 종목", batch.size(), e);
+                        success = false;
+                    }
+                }
+
+                if (success) {
+                    log.info("모든 신규 종목 일괄 구독 성공: {} 종목", newStockCodes.size());
+                } else {
+                    log.warn("일부 신규 종목 구독에 실패: {} 종목", newStockCodes.size());
+                }
+            }
+
+            return success;
+        } finally {
+            subscriptionLock.writeLock().unlock();
+        }
+    }
+
 }
