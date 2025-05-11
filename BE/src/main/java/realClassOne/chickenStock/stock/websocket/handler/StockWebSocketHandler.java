@@ -357,6 +357,7 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
         }
     }
 
+    // 기존 onStockPriceUpdate 메서드를 확장하여 0B(주식체결) 트랜잭션에서 체결 정보 추출
     @Override
     public void onStockPriceUpdate(String stockCode, JsonNode data) {
         try {
@@ -374,8 +375,51 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
             String message = objectMapper.writeValueAsString(messageNode);
 
-            // 해당 종목을 구독 중인 세션에만 전송 (원본 종목 코드 사용)
+            // 해당 종목을 구독 중인 세션에만 전송
             broadcastToSubscribers(originalStockCode, message);
+
+            // 추가: 체결 정보가 있을 경우 체결 데이터 추출 및 전송
+            if (data.has("15") && !data.get("15").asText().isEmpty()) {
+                String volume = data.get("15").asText();
+                String tradeType = "UNKNOWN";
+                int quantity = 0;
+
+                // 키움 API는 거래량 필드에 +는 매수체결, -는 매도체결로 표시
+                if (volume.startsWith("+")) {
+                    tradeType = "BUY";
+                    quantity = Integer.parseInt(volume.substring(1));
+                } else if (volume.startsWith("-")) {
+                    tradeType = "SELL";
+                    quantity = Integer.parseInt(volume.substring(1));
+                } else {
+                    // 부호가 없는 경우 숫자만 있다면 파싱 시도
+                    try {
+                        quantity = Integer.parseInt(volume);
+                    } catch (NumberFormatException e) {
+                        log.warn("거래량 파싱 실패: {}", volume);
+                    }
+                }
+
+                // 유효한 체결량이 있는 경우에만 체결 정보 전송
+                if (quantity > 0) {
+                    // 현재가 파싱
+                    String priceStr = data.get("10").asText().replace(",", "").replace("+", "").replace("-", "").trim();
+                    Long price = null;
+                    try {
+                        price = Long.parseLong(priceStr);
+                    } catch (NumberFormatException e) {
+                        log.warn("현재가 파싱 실패: {}", priceStr);
+                    }
+
+                    if (price != null) {
+                        Long totalAmount = price * quantity;
+                        String timestamp = data.get("20").asText();
+
+                        // 체결 정보 전송
+                        broadcastTradeExecution(originalStockCode, tradeType, quantity, price, totalAmount, timestamp);
+                    }
+                }
+            }
         } catch (Exception e) {
             log.error("주식체결 데이터 처리 중 오류 발생", e);
         }
@@ -702,4 +746,30 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             log.debug("연결이 끊어진 세션 정리 완료: 제거할 세션 없음");
         }
     }
+
+    // 체결 정보 전송 메서드
+    public void broadcastTradeExecution(String stockCode, String tradeType, int quantity,
+                                        Long price, Long totalAmount, String timestamp) {
+        try {
+            ObjectNode messageNode = objectMapper.createObjectNode();
+            messageNode.put("type", "tradeExecution");
+            messageNode.put("stockCode", stockCode);
+            messageNode.put("tradeType", tradeType);  // "BUY" 또는 "SELL"
+            messageNode.put("quantity", quantity);
+            messageNode.put("price", price);
+            messageNode.put("totalAmount", totalAmount);
+            messageNode.put("timestamp", timestamp);
+
+            String message = objectMapper.writeValueAsString(messageNode);
+
+            // 해당 종목을 구독 중인 세션에만 전송
+            broadcastToSubscribers(stockCode, message);
+
+            log.info("체결 정보 전송: 종목={}, 타입={}, 수량={}, 가격={}",
+                    stockCode, tradeType, quantity, price);
+        } catch (Exception e) {
+            log.error("체결 정보 메시지 생성 중 오류 발생", e);
+        }
+    }
+
 }
