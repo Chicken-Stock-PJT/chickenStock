@@ -17,9 +17,11 @@ import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -211,15 +213,16 @@ public class KiwoomStockApiService {
     // 주식 종목코드로 현재가 정보를 조회합니다.
     public StockInfoResponseDTO getStockInfo(String stockCode) {
         try {
-            log.info("종목 코드 {}의 정보 조회 시작", stockCode);
 
             // 데이터베이스에서 해당 종목 기본 정보 조회
             StockData stockData = stockDataRepository.findByShortCode(stockCode)
                     .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND,
                             "종목 코드 " + stockCode + "에 해당하는 종목을 찾을 수 없습니다."));
 
-            // 키움증권 API 호출을 위한 요청 본문 생성
-            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCode);
+            // 키움증권 API 호출을 위한 요청 본문 생성 - SOR 방식 사용을 위해 _AL 추가
+            String stockCodeForAPI = convertStockCode(stockCode); // _AL 붙이는 함수 사용
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCodeForAPI);
+
 
             // API 응답 받아오기
             String endpoint = "/api/dostk/stkinfo";
@@ -265,9 +268,6 @@ public class KiwoomStockApiService {
                     .changeRate(changeRate)
                     .build();
 
-            log.info("종목 {} 정보 조회 성공: 현재가={}, 등락률={}",
-                    stockCode, responseDTO.getCurrentPrice(), responseDTO.getChangeRate());
-
             return responseDTO;
 
         } catch (CustomException ce) {
@@ -287,7 +287,6 @@ public class KiwoomStockApiService {
      */
     public JsonNode getWatchListInfo(String stockCodes) {
         try {
-            log.info("키움증권 API를 통해 관심종목 정보 조회: {}", stockCodes);
 
             String endpoint = "/api/dostk/stkinfo";
             String url = apiUrl + endpoint;
@@ -299,8 +298,14 @@ public class KiwoomStockApiService {
                     .defaultHeader("api-id", "ka10095") // 관심종목정보요청 TR
                     .build();
 
+            // 각 종목코드에 _AL을 붙이는 처리 추가
+            String formattedStockCodes = Arrays.stream(stockCodes.split("\\|"))
+                    .map(this::convertStockCode)  // _AL을 붙이는 함수 사용
+                    .collect(Collectors.joining("|"));
+
+
             // 요청 본문 생성
-            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCodes);
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", formattedStockCodes);
 
             // API 호출 및 응답 처리
             String response = webClient.post()
@@ -313,7 +318,6 @@ public class KiwoomStockApiService {
 
             // 응답 코드 확인
             if (jsonNode.has("return_code") && jsonNode.get("return_code").asInt() == 0) {
-                log.info("키움증권 관심종목 정보 조회 성공: {} 종목", stockCodes.split("\\|").length);
                 return jsonNode;
             } else {
                 String errorMsg = jsonNode.has("return_msg") ?
