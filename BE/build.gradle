@@ -73,6 +73,9 @@ dependencies {
 
 	implementation 'com.opencsv:opencsv:5.9'
 
+	// 예외 발생 시 자동으로 재시도가능하게 하는 Spring Retry 라이브러리
+	implementation 'org.springframework.retry:spring-retry'
+
 	// 테스트용
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 

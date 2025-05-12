@@ -23,6 +23,8 @@ public class TradeResponseDTO {
     private Integer quantity;       // 거래 수량
     private Long unitPrice;         // 단가
     private Long totalPrice;        // 총 거래 금액
+    private Long fee;               // 수수료
+    private Long tax;               // 세금
     private LocalDateTime tradedAt; // 거래 시간
     private String status;          // 거래 상태 (COMPLETED, PENDING)
     private String message;         // 응답 메시지
@@ -36,6 +38,8 @@ public class TradeResponseDTO {
                 .quantity(history.getQuantity())
                 .unitPrice(history.getUnitPrice())
                 .totalPrice(history.getTotalPrice())
+                .fee(history.getFee())
+                .tax(history.getTax())
                 .tradedAt(history.getTradedAt())
                 .status("COMPLETED")
                 .build();
