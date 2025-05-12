@@ -165,7 +165,7 @@ public class StockRankingService {
      */
     public void updateFluctuationRateRankingForParams(String marketType, String sortType) {
         try {
-            StockRankingRequestDTO request = StockRankingRequestDTO.builder()
+            StockRankingRequestDTO.StockRankingRequestDTOBuilder builder = StockRankingRequestDTO.builder()
                     .rankingType("FLUCTUATION_RATE")
                     .marketType(marketType)
                     .sortType(sortType)
@@ -175,10 +175,17 @@ public class StockRankingService {
                     .includeUpDownLimit("1") // 상하한가 포함
                     .priceCondition("0") // 전체조회
                     .tradeAmountCondition("0") // 전체조회
-                    .exchangeType(DEFAULT_EXCHANGE_TYPE) // 통합
-                    .build();
+                    .exchangeType(DEFAULT_EXCHANGE_TYPE); // 통합
 
+            // 하락률 또는 하락폭일 경우 추가 파라미터 설정
+            if ("3".equals(sortType) || "4".equals(sortType)) {
+                // 필요한 경우 여기에 하락률/하락폭에 특화된 추가 파라미터 설정
+                // 예: builder.additionalParam("value");
+            }
+
+            StockRankingRequestDTO request = builder.build();
             StockRankingResponseDTO response = fetchStockRanking(request);
+
             if (response.getCode() == 0) {
                 String cacheKey = buildFluctuationRateCacheKey(marketType, sortType);
                 cacheResponse(cacheKey, response);

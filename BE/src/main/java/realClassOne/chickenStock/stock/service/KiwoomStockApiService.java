@@ -17,6 +17,12 @@ import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -207,15 +213,16 @@ public class KiwoomStockApiService {
     // 주식 종목코드로 현재가 정보를 조회합니다.
     public StockInfoResponseDTO getStockInfo(String stockCode) {
         try {
-            log.info("종목 코드 {}의 정보 조회 시작", stockCode);
 
             // 데이터베이스에서 해당 종목 기본 정보 조회
             StockData stockData = stockDataRepository.findByShortCode(stockCode)
                     .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND,
                             "종목 코드 " + stockCode + "에 해당하는 종목을 찾을 수 없습니다."));
 
-            // 키움증권 API 호출을 위한 요청 본문 생성
-            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCode);
+            // 키움증권 API 호출을 위한 요청 본문 생성 - SOR 방식 사용을 위해 _AL 추가
+            String stockCodeForAPI = convertStockCode(stockCode); // _AL 붙이는 함수 사용
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCodeForAPI);
+
 
             // API 응답 받아오기
             String endpoint = "/api/dostk/stkinfo";
@@ -261,9 +268,6 @@ public class KiwoomStockApiService {
                     .changeRate(changeRate)
                     .build();
 
-            log.info("종목 {} 정보 조회 성공: 현재가={}, 등락률={}",
-                    stockCode, responseDTO.getCurrentPrice(), responseDTO.getChangeRate());
-
             return responseDTO;
 
         } catch (CustomException ce) {
@@ -274,4 +278,100 @@ public class KiwoomStockApiService {
                     "종목 정보 조회 중 오류가 발생했습니다: " + e.getMessage());
         }
     }
+
+    /**
+     * 키움증권 API를 통해 관심종목 정보를 조회합니다.
+     *
+     * @param stockCodes '|'로 구분된 종목 코드 문자열
+     * @return API 응답 JsonNode
+     */
+    public JsonNode getWatchListInfo(String stockCodes) {
+        try {
+
+            String endpoint = "/api/dostk/stkinfo";
+            String url = apiUrl + endpoint;
+
+            WebClient webClient = WebClient.builder()
+                    .baseUrl(url)
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .defaultHeader("authorization", "Bearer " + authService.getAccessToken())
+                    .defaultHeader("api-id", "ka10095") // 관심종목정보요청 TR
+                    .build();
+
+            // 각 종목코드에 _AL을 붙이는 처리 추가
+            String formattedStockCodes = Arrays.stream(stockCodes.split("\\|"))
+                    .map(this::convertStockCode)  // _AL을 붙이는 함수 사용
+                    .collect(Collectors.joining("|"));
+
+
+            // 요청 본문 생성
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", formattedStockCodes);
+
+            // API 호출 및 응답 처리
+            String response = webClient.post()
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            JsonNode jsonNode = objectMapper.readTree(response);
+
+            // 응답 코드 확인
+            if (jsonNode.has("return_code") && jsonNode.get("return_code").asInt() == 0) {
+                return jsonNode;
+            } else {
+                String errorMsg = jsonNode.has("return_msg") ?
+                        jsonNode.get("return_msg").asText() : "API 요청 실패";
+                log.error("키움증권 관심종목 정보 조회 실패: {}", errorMsg);
+                throw new CustomException(StockErrorCode.API_REQUEST_FAILED, errorMsg);
+            }
+        } catch (CustomException ce) {
+            throw ce;
+        } catch (Exception e) {
+            log.error("키움증권 관심종목 정보 조회 중 예외 발생: {}", stockCodes, e);
+            throw new CustomException(StockErrorCode.API_REQUEST_FAILED,
+                    "키움증권 API 요청 중 오류가 발생했습니다: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 관심종목 정보를 조회합니다.
+     * @param stockCodes '|'로 구분된 종목 코드 문자열
+     * @return 관심종목 정보 맵 (종목코드 -> JsonNode)
+     */
+    public Map<String, JsonNode> getWatchListInfoMap(List<String> stockCodes) {
+        if (stockCodes.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        // 종목 코드 문자열 생성 (여러 종목 코드를 | 로 구분)
+        String stockCodeParam = String.join("|", stockCodes);
+
+        // API 호출 결과를 저장할 맵
+        Map<String, JsonNode> stockDataMap = new HashMap<>();
+
+        try {
+            // 기존의 getWatchListInfo 메서드 활용
+            JsonNode responseJson = getWatchListInfo(stockCodeParam);
+
+            // 관심종목정보 리스트 조회
+            if (responseJson.has("atn_stk_infr") && responseJson.get("atn_stk_infr").isArray()) {
+                JsonNode stockInfoList = responseJson.get("atn_stk_infr");
+
+                // 종목별 데이터 맵 생성
+                for (JsonNode stockInfo : stockInfoList) {
+                    String stockCode = stockInfo.get("stk_cd").asText();
+                    stockDataMap.put(stockCode, stockInfo);
+                }
+
+                log.info("관심종목정보요청 API 호출 성공: {} 종목", stockDataMap.size());
+            }
+
+            return stockDataMap;
+        } catch (Exception e) {
+            log.error("관심종목 정보 조회 중 오류 발생", e);
+            return new HashMap<>();
+        }
+    }
+
 }

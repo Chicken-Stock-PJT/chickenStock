@@ -1,499 +1,329 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Form, Button, Card, Spinner, Alert, Pagination } from 'react-bootstrap';
 
-// Envelope 지표 모니터링 컴포넌트
-const EnvelopeIndicators = ({ apiBaseUrl }) => {
+function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
   const [indicators, setIndicators] = useState({});
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(15); // 페이지당 항목 수
-  const [sortBy, setSortBy] = useState('symbol');
+  const [search, setSearch] = useState('');
+  const [symbolFilter, setSymbolFilter] = useState('');
+  const [sortField, setSortField] = useState('symbol');
   const [sortDirection, setSortDirection] = useState('asc');
-  const [selectedSymbols, setSelectedSymbols] = useState([]);
-  const [stockInfoMap, setStockInfoMap] = useState({});  // 종목코드 -> 종목명 매핑
+  const [filterSignal, setFilterSignal] = useState('all');
 
-  // 종목 정보 로드
-  const loadStockInfo = async () => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/symbols`);
-      
-      if (!response.ok) {
-        throw new Error(`종목 정보 API 요청 실패: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // 종목 정보를 매핑 형태로 저장
-      const stockMap = {};
-      
-      // KOSPI 종목 처리
-      if (data.kospi) {
-        data.kospi.forEach(symbol => {
-          if (symbol.code && symbol.name) {
-            stockMap[symbol.code] = symbol.name;
-          }
-        });
-      }
-      
-      // KOSDAQ 종목 처리
-      if (data.kosdaq) {
-        data.kosdaq.forEach(symbol => {
-          if (symbol.code && symbol.name) {
-            stockMap[symbol.code] = symbol.name;
-          }
-        });
-      }
-      
-      setStockInfoMap(stockMap);
-    } catch (err) {
-      console.error('종목 정보 로드 오류:', err);
-      // 오류가 발생해도 진행 (종목명이 없어도 코드로 표시 가능)
-    }
-  };
-
-  // 지표 데이터 로드
-  const loadIndicators = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      let url = `${apiBaseUrl}/indicators`;
-      
-      // 특정 종목코드가 선택된 경우
-      if (selectedSymbols.length > 0) {
-        url += `?symbols=${selectedSymbols.join(',')}`;
-      }
-
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`API 요청 실패: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // 응답 형식에 따라 적절히 처리
-      if (data.indicators) {
-        setIndicators(data.indicators);
-      } else {
-        setIndicators(data);
-      }
-      
-      console.log('Loaded indicators data:', data); // 디버깅용 로그 추가
-    } catch (err) {
-      setError(err.message);
-      console.error('지표 데이터 로드 오류:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 컴포넌트 마운트 시 종목 정보와 지표 데이터 로드
   useEffect(() => {
-    loadStockInfo();
-    loadIndicators();
-    
-    // 30초마다 데이터 새로고침
-    const interval = setInterval(() => {
-      loadIndicators();
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, [apiBaseUrl, selectedSymbols]);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
 
-  // 데이터를 표시 가능한 배열로 변환 (수정된 부분)
-  const getIndicatorArray = () => {
-    return Object.entries(indicators).map(([symbol, data]) => ({
-      symbol,
-      shortName: data.stockName || stockInfoMap[symbol] || '(이름 없음)', // API에서 제공하는 stockName 우선 사용
-      ...data
-    }));
+        // 봇 엔드포인트를 사용하는 경우와 기존 엔드포인트를 사용하는 경우 구분
+        let endpoint = `${apiBaseUrl}/indicators`;
+        if (useBotEndpoint && botEmail) {
+          endpoint = `${apiBaseUrl}/indicators/${botEmail}`;
+        }
+
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+          throw new Error('데이터를 가져오는데 실패했습니다.');
+        }
+
+        const data = await response.json();
+        
+        // 응답 형식에 따라 데이터 추출
+        let indicatorsData = {};
+        if (data.indicators) {
+          indicatorsData = data.indicators;
+        } else if (Object.keys(data).length > 0 && typeof data.total_count === 'undefined') {
+          indicatorsData = data;
+        }
+
+        setIndicators(indicatorsData);
+        setError(null);
+      } catch (err) {
+        setError(err.message);
+        console.error('데이터 가져오기 오류:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+    
+    // 1분마다 데이터 자동 갱신
+    const intervalId = setInterval(fetchData, 60000);
+    
+    return () => clearInterval(intervalId);
+  }, [apiBaseUrl, botEmail, useBotEndpoint]);
+
+  // 검색어 변경 핸들러
+  const handleSearchChange = (e) => {
+    setSearch(e.target.value);
   };
 
-  // 검색 필터링 (종목코드 또는 종목명으로 검색 가능)
-  const filteredData = getIndicatorArray().filter(item => 
-    item.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.shortName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // 종목코드 필터 변경 핸들러
+  const handleSymbolFilterChange = (e) => {
+    setSymbolFilter(e.target.value);
+  };
 
-  // 정렬 함수
-  const sortedData = [...filteredData].sort((a, b) => {
-    let comparison = 0;
-    
-    switch (sortBy) {
-      case 'symbol':
-        comparison = a.symbol.localeCompare(b.symbol);
-        break;
-      case 'shortName':
-        comparison = a.shortName.localeCompare(b.shortName);
-        break;
-      case 'MA20':
-      case 'upperBand':
-      case 'lowerBand':
-      case 'currentPrice':
-        comparison = a[sortBy] - b[sortBy];
-        break;
-      default:
-        comparison = 0;
-    }
-    
-    return sortDirection === 'asc' ? comparison : -comparison;
-  });
-
-  // 페이지네이션
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = sortedData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(sortedData.length / itemsPerPage);
-
-  // 정렬 변경 핸들러
-  const handleSort = (column) => {
-    if (sortBy === column) {
+  // 정렬 필드 변경 핸들러
+  const handleSortChange = (field) => {
+    if (sortField === field) {
+      // 같은 필드를 다시 클릭하면 정렬 방향 변경
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
-      setSortBy(column);
+      // 다른 필드를 클릭하면 해당 필드로 정렬 필드 변경 (기본은 오름차순)
+      setSortField(field);
       setSortDirection('asc');
     }
   };
 
-  // 종목 검색 및 추가 핸들러
-  const handleAddSymbol = (e) => {
-    e.preventDefault();
-    if (searchTerm && !selectedSymbols.includes(searchTerm)) {
-      setSelectedSymbols([...selectedSymbols, searchTerm]);
-      setSearchTerm('');
-    }
+  // 신호 필터 변경 핸들러
+  const handleSignalFilterChange = (e) => {
+    setFilterSignal(e.target.value);
   };
 
-  // 선택된 종목 제거 핸들러
-  const handleRemoveSymbol = (symbol) => {
-    setSelectedSymbols(selectedSymbols.filter(s => s !== symbol));
-  };
+  // 지표 데이터 필터링 및 정렬
+  const filteredAndSortedIndicators = Object.entries(indicators)
+    .filter(([symbol, data]) => {
+      // 종목코드 또는 종목명으로 검색
+      const searchMatch = 
+        symbol.toLowerCase().includes(search.toLowerCase()) || 
+        (data.stockName && data.stockName.toLowerCase().includes(search.toLowerCase()));
+      
+      // 종목코드 필터 (특정 종목코드만 보기)
+      const symbolMatch = 
+        symbolFilter === '' || symbol === symbolFilter;
+      
+      // 신호 필터 (매수, 매도, 중립)
+      const signalMatch = 
+        filterSignal === 'all' || 
+        (filterSignal === 'buy' && data.signal === '매수') ||
+        (filterSignal === 'sell' && data.signal === '매도') ||
+        (filterSignal === 'neutral' && data.signal === '중립');
+      
+      return searchMatch && symbolMatch && signalMatch;
+    })
+    .sort(([symbolA, dataA], [symbolB, dataB]) => {
+      // 정렬 로직
+      let comparison = 0;
+      
+      if (sortField === 'symbol') {
+        comparison = symbolA.localeCompare(symbolB);
+      } else if (sortField === 'stockName') {
+        comparison = (dataA.stockName || '').localeCompare(dataB.stockName || '');
+      } else if (sortField === 'currentPrice') {
+        comparison = (dataA.currentPrice || 0) - (dataB.currentPrice || 0);
+      } else if (sortField === 'signal') {
+        comparison = (dataA.signal || '').localeCompare(dataB.signal || '');
+      } else if (sortField === 'ratio') {
+        // 현재가와 밴드 중간값의 비율 (상대적 위치)
+        const ratioA = (dataA.currentPrice || 0) / (dataA.middleBand || 1) - 1;
+        const ratioB = (dataB.currentPrice || 0) / (dataB.middleBand || 1) - 1;
+        comparison = ratioA - ratioB;
+      }
+      
+      // 정렬 방향 적용
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
 
-  // 모든 종목 표시로 전환
-  const handleShowAll = () => {
-    setSelectedSymbols([]);
-  };
+  // 저장할 총 데이터 개수
+  const totalCount = filteredAndSortedIndicators.length;
 
-  // 매수/매도 신호 확인 (현재가와 Envelope 밴드 비교)
-  const getSignal = (item) => {
-    const currentPrice = item.currentPrice || 0;
-    const upperBand = item.upperBand || 0;
-    const lowerBand = item.lowerBand || 0;
+  // 엔벨로프 신호에 따른 행 색상 클래스 지정
+  const getRowColorClass = (data) => {
+    if (!data) return '';
     
-    if (currentPrice >= upperBand) {
-      return { type: 'sell', text: '매도', className: 'text-danger' };
-    } else if (currentPrice <= lowerBand) {
-      return { type: 'buy', text: '매수', className: 'text-success' };
-    }
-    return { type: 'neutral', text: '중립', className: 'text-secondary' };
+    if (data.signal === '매수') return 'table-success';
+    if (data.signal === '매도') return 'table-danger';
+    
+    // 또는 상대적 위치에 따른 색상
+    const ratio = (data.currentPrice || 0) / (data.middleBand || 1) - 1;
+    if (ratio <= -0.15) return 'table-success'; // 강한 매수
+    if (ratio >= 0.15) return 'table-danger';  // 강한 매도
+    if (ratio <= -0.1) return 'table-warning'; // 약한 매수
+    if (ratio >= 0.1) return 'table-warning';  // 약한 매도
+    
+    return '';
   };
 
-  // Envelope 지표 진행률 표시
-  const getPercentInEnvelope = (item) => {
-    const currentPrice = item.currentPrice || 0;
-    const upperBand = item.upperBand || 0;
-    const lowerBand = item.lowerBand || 0;
-    
-    if (currentPrice <= lowerBand) return 0;
-    if (currentPrice >= upperBand) return 100;
-    
-    return ((currentPrice - lowerBand) / (upperBand - lowerBand)) * 100 || 0;
+  // 신호에 따른 뱃지 색상 클래스 지정
+  const getSignalBadgeClass = (signal) => {
+    if (signal === '매수') return 'bg-success';
+    if (signal === '매도') return 'bg-danger';
+    return 'bg-secondary';
   };
 
-  // 페이지 변경 핸들러
-  const handlePageChange = (pageNumber) => {
-    setCurrentPage(pageNumber);
+  // 상대적 위치 계산 (중앙값 대비 현재가 비율)
+  const calculateRatio = (data) => {
+    if (!data || !data.currentPrice || !data.middleBand) return 0;
+    return ((data.currentPrice / data.middleBand) - 1) * 100;
   };
 
-  // 페이지네이션 컴포넌트
-  const renderPagination = () => {
-    if (totalPages <= 1) return null;
-    
-    const pageItems = [];
-    
-    // 처음 페이지로
-    pageItems.push(
-      <Pagination.First 
-        key="first" 
-        onClick={() => handlePageChange(1)} 
-        disabled={currentPage === 1} 
-      />
+  // 정렬 화살표 표시
+  const renderSortArrow = (field) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' ? '↑' : '↓';
+  };
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div className="card-header bg-primary text-white">
+          <h5 className="mb-0">Envelope 지표</h5>
+        </div>
+        <div className="card-body text-center py-5">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">로딩 중...</span>
+          </div>
+          <p className="mt-3">Envelope 지표 데이터를 불러오는 중입니다...</p>
+        </div>
+      </div>
     );
-    
-    // 이전 페이지로
-    pageItems.push(
-      <Pagination.Prev 
-        key="prev" 
-        onClick={() => handlePageChange(currentPage - 1)} 
-        disabled={currentPage === 1} 
-      />
+  }
+
+  if (error) {
+    return (
+      <div className="card">
+        <div className="card-header bg-primary text-white">
+          <h5 className="mb-0">Envelope 지표</h5>
+        </div>
+        <div className="card-body text-center py-5">
+          <div className="alert alert-danger">
+            <i className="bi bi-exclamation-triangle-fill me-2"></i>
+            {error}
+          </div>
+          <p>Envelope 지표를 가져오는 중 오류가 발생했습니다. 나중에 다시 시도해주세요.</p>
+        </div>
+      </div>
     );
-    
-    // 페이지 번호
-    for (let number = Math.max(1, currentPage - 2); number <= Math.min(totalPages, currentPage + 2); number++) {
-      pageItems.push(
-        <Pagination.Item 
-          key={number} 
-          active={number === currentPage}
-          onClick={() => handlePageChange(number)}
-        >
-          {number}
-        </Pagination.Item>
-      );
-    }
-    
-    // 다음 페이지로
-    pageItems.push(
-      <Pagination.Next 
-        key="next" 
-        onClick={() => handlePageChange(currentPage + 1)} 
-        disabled={currentPage === totalPages} 
-      />
-    );
-    
-    // 마지막 페이지로
-    pageItems.push(
-      <Pagination.Last 
-        key="last" 
-        onClick={() => handlePageChange(totalPages)} 
-        disabled={currentPage === totalPages} 
-      />
-    );
-    
-    return <Pagination>{pageItems}</Pagination>;
-  };
+  }
 
   return (
-    <Card className="mb-4">
-      <Card.Header className="d-flex justify-content-between align-items-center">
-        <h5 className="mb-0">Envelope 지표 모니터링</h5>
+    <div className="card">
+      <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 className="mb-0">Envelope 지표</h5>
         <div>
-          <Button 
-            variant="outline-primary" 
-            size="sm"
-            onClick={loadIndicators}
-            disabled={isLoading}
-            className="me-2"
-          >
-            {isLoading ? (
-              <>
-                <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" />
-                <span className="ms-1">로딩 중...</span>
-              </>
-            ) : '새로고침'}
-          </Button>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={handleShowAll}
-            disabled={selectedSymbols.length === 0}
-          >
-            전체 종목 보기
-          </Button>
+          {botEmail && <span className="badge bg-light text-dark me-2">{botEmail}</span>}
+          <span className="badge bg-light text-dark">{totalCount}개 종목</span>
         </div>
-      </Card.Header>
-      <Card.Body>
-        {error && (
-          <Alert variant="danger" onClose={() => setError(null)} dismissible>
-            {error}
-          </Alert>
-        )}
-        
-        {/* 종목 검색 및 추가 */}
-        <Form onSubmit={handleAddSymbol} className="mb-3">
-          <div className="d-flex">
-            <Form.Control
+      </div>
+      <div className="card-body">
+        <div className="row mb-3">
+          <div className="col-md-4">
+            <input
               type="text"
+              className="form-control"
               placeholder="종목코드 또는 종목명 검색..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="me-2"
+              value={search}
+              onChange={handleSearchChange}
             />
-            <Button type="submit" variant="primary" disabled={!searchTerm}>
-              종목 추가
-            </Button>
           </div>
-        </Form>
+          <div className="col-md-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="특정 종목코드 입력"
+              value={symbolFilter}
+              onChange={handleSymbolFilterChange}
+            />
+          </div>
+          <div className="col-md-3">
+            <select
+              className="form-select"
+              value={filterSignal}
+              onChange={handleSignalFilterChange}
+            >
+              <option value="all">모든 신호</option>
+              <option value="buy">매수 신호</option>
+              <option value="sell">매도 신호</option>
+              <option value="neutral">중립 신호</option>
+            </select>
+          </div>
+          <div className="col-md-2">
+            <button 
+              className="btn btn-outline-secondary w-100"
+              onClick={() => {
+                setSearch('');
+                setSymbolFilter('');
+                setFilterSignal('all');
+              }}
+            >
+              필터 초기화
+            </button>
+          </div>
+        </div>
         
-        {/* 선택된 종목 태그 */}
-        {selectedSymbols.length > 0 && (
-          <div className="mb-3">
-            <strong>선택된 종목:</strong>
-            <div className="d-flex flex-wrap mt-2">
-              {selectedSymbols.map(symbol => (
-                <span 
-                  key={symbol} 
-                  className="badge bg-primary me-2 mb-2 d-flex align-items-center"
-                >
-                  {symbol} {stockInfoMap[symbol] ? `(${stockInfoMap[symbol]})` : ''}
-                  <button 
-                    type="button" 
-                    className="btn-close btn-close-white ms-2" 
-                    style={{ fontSize: '0.5rem' }}
-                    onClick={() => handleRemoveSymbol(symbol)}
-                    aria-label="Remove"
-                  ></button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="table-responsive">
+          <table className="table table-striped table-bordered table-hover">
+            <thead className="table-light">
+              <tr>
+                <th onClick={() => handleSortChange('symbol')} style={{ cursor: 'pointer' }}>
+                  종목코드 {renderSortArrow('symbol')}
+                </th>
+                <th onClick={() => handleSortChange('stockName')} style={{ cursor: 'pointer' }}>
+                  종목명 {renderSortArrow('stockName')}
+                </th>
+                <th onClick={() => handleSortChange('currentPrice')} style={{ cursor: 'pointer' }}>
+                  현재가 {renderSortArrow('currentPrice')}
+                </th>
+                <th onClick={() => handleSortChange('ratio')} style={{ cursor: 'pointer' }}>
+                  상대위치(%) {renderSortArrow('ratio')}
+                </th>
+                <th>Envelope 밴드</th>
+                <th onClick={() => handleSortChange('signal')} style={{ cursor: 'pointer' }}>
+                  신호 {renderSortArrow('signal')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAndSortedIndicators.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="text-center py-3">
+                    표시할 데이터가 없거나 필터 조건에 맞는 데이터가 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedIndicators.map(([symbol, data]) => (
+                  <tr key={symbol} className={getRowColorClass(data)}>
+                    <td>{symbol}</td>
+                    <td>{data.stockName || '-'}</td>
+                    <td className="text-end">{data.currentPrice?.toLocaleString() || '-'}</td>
+                    <td className="text-end">{calculateRatio(data).toFixed(2)}%</td>
+                    <td className="text-end">
+                      <small>
+                        상한: {data.upperBand?.toLocaleString() || '-'}<br />
+                        중앙: {data.middleBand?.toLocaleString() || '-'}<br />
+                        하한: {data.lowerBand?.toLocaleString() || '-'}
+                      </small>
+                    </td>
+                    <td>
+                      <span className={`badge ${getSignalBadgeClass(data.signal)}`}>
+                        {data.signal || '중립'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
         
-        {/* 지표 테이블 */}
-        {isLoading && Object.keys(indicators).length === 0 ? (
-          <div className="text-center my-5">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2">지표 데이터를 로드하는 중...</p>
-          </div>
-        ) : (
-          <>
-            {currentItems.length === 0 ? (
-              <div className="text-center my-3">
-                <p>표시할 지표 데이터가 없습니다.</p>
-              </div>
-            ) : (
-              <>
-                <div className="table-responsive">
-                  <Table striped bordered hover>
-                    <thead>
-                      <tr>
-                        <th 
-                          onClick={() => handleSort('symbol')}
-                          className="sortable-header"
-                        >
-                          종목코드
-                          {sortBy === 'symbol' && (
-                            <span className="ms-1">
-                              {sortDirection === 'asc' ? '▲' : '▼'}
-                            </span>
-                          )}
-                        </th>
-                        <th 
-                          onClick={() => handleSort('name')}
-                          className="sortable-header"
-                        >
-                          종목명
-                          {sortBy === 'name' && (
-                            <span className="ms-1">
-                              {sortDirection === 'asc' ? '▲' : '▼'}
-                            </span>
-                          )}
-                        </th>
-                        <th 
-                          onClick={() => handleSort('MA20')}
-                          className="sortable-header"
-                        >
-                          MA20
-                          {sortBy === 'MA20' && (
-                            <span className="ms-1">
-                              {sortDirection === 'asc' ? '▲' : '▼'}
-                            </span>
-                          )}
-                        </th>
-                        <th 
-                          onClick={() => handleSort('lowerBand')}
-                          className="sortable-header"
-                        >
-                          하한선
-                          {sortBy === 'lowerBand' && (
-                            <span className="ms-1">
-                              {sortDirection === 'asc' ? '▲' : '▼'}
-                            </span>
-                          )}
-                        </th>
-                        <th 
-                          onClick={() => handleSort('upperBand')}
-                          className="sortable-header"
-                        >
-                          상한선
-                          {sortBy === 'upperBand' && (
-                            <span className="ms-1">
-                              {sortDirection === 'asc' ? '▲' : '▼'}
-                            </span>
-                          )}
-                        </th>
-                        <th 
-                          onClick={() => handleSort('currentPrice')}
-                          className="sortable-header"
-                        >
-                          현재가
-                          {sortBy === 'currentPrice' && (
-                            <span className="ms-1">
-                              {sortDirection === 'asc' ? '▲' : '▼'}
-                            </span>
-                          )}
-                        </th>
-                        <th>현재 위치</th>
-                        <th>신호</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {currentItems.map(item => {
-                        const signal = getSignal(item);
-                        const percentInEnvelope = getPercentInEnvelope(item);
-                        
-                        return (
-                          <tr key={item.symbol}>
-                            <td>{item.symbol}</td>
-                            <td>{item.shortName}</td>
-                            <td>{item.MA20?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                            <td>{item.lowerBand?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                            <td>{item.upperBand?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                            <td className={
-                              item.currentPrice > item.MA20 ? 'text-success' : 
-                              item.currentPrice < item.MA20 ? 'text-danger' : ''
-                            }>
-                              {item.currentPrice?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </td>
-                            <td>
-                              <div className="progress" style={{ height: '20px' }}>
-                                <div 
-                                  className={`progress-bar ${
-                                    percentInEnvelope < 50 ? 'bg-danger' : 
-                                    percentInEnvelope > 50 ? 'bg-success' : 'bg-warning'
-                                  }`}
-                                  role="progressbar" 
-                                  style={{ width: `${percentInEnvelope}%` }}
-                                  aria-valuenow={percentInEnvelope} 
-                                  aria-valuemin="0" 
-                                  aria-valuemax="100"
-                                >
-                                  {percentInEnvelope.toFixed(0)}%
-                                </div>
-                              </div>
-                            </td>
-                            <td>
-                              <span className={`badge ${
-                                signal.type === 'buy' ? 'bg-success' : 
-                                signal.type === 'sell' ? 'bg-danger' : 'bg-secondary'
-                              }`}>
-                                {signal.text}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </Table>
-                </div>
-                
-                {/* 페이지네이션 */}
-                <div className="d-flex justify-content-between align-items-center">
-                  <div>
-                    전체 {sortedData.length}개 중 {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, sortedData.length)}
-                  </div>
-                  {renderPagination()}
-                </div>
-              </>
-            )}
-          </>
-        )}
-      </Card.Body>
-    </Card>
+        <div className="mt-3">
+          <h6>Envelope 지표 설명:</h6>
+          <p className="small">
+            <strong>Envelope:</strong> 이동평균선(중앙선)을 기준으로 상하로 일정 비율(20%)만큼 밴드를 형성합니다.<br />
+            <strong>상대위치:</strong> 현재가가 중앙선(MA20)으로부터 얼마나 떨어져 있는지 나타내는 백분율입니다.<br />
+            <strong>신호:</strong> 밴드 위치에 따라 다음과 같이 매매 신호가 생성됩니다:<br />
+            - <span className="badge bg-success">매수</span>: 현재가가 하한선 아래에 있을 때 (과매도 상태)<br />
+            - <span className="badge bg-danger">매도</span>: 현재가가 상한선 위에 있을 때 (과매수 상태)<br />
+            - <span className="badge bg-secondary">중립</span>: 현재가가 밴드 내에 있을 때
+          </p>
+        </div>
+      </div>
+      <div className="card-footer text-muted text-end">
+        마지막 업데이트: {new Date().toLocaleString()}
+      </div>
+    </div>
   );
-};
+}
 
 export default EnvelopeIndicators;

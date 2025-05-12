@@ -39,6 +39,12 @@ public class TradeHistory {
     @Column(name = "total_price", nullable = false)
     private Long totalPrice;
 
+    @Column(name = "fee", nullable = false)
+    private Long fee = 0L;
+
+    @Column(name = "tax", nullable = false)
+    private Long tax = 0L;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "DATETIME(0)")
     private LocalDateTime createdAt;
 
@@ -46,19 +52,25 @@ public class TradeHistory {
     private LocalDateTime tradedAt;
 
     private TradeHistory(Member member, StockData stockData, TradeType tradeType,
-                         Integer quantity, Long unitPrice, Long totalPrice, LocalDateTime tradedAt) {
+                         Integer quantity, Long unitPrice, Long totalPrice,
+                         Long fee, Long tax, LocalDateTime tradedAt) {
         this.member = member;
         this.stockData = stockData;
         this.tradeType = tradeType;
         this.quantity = quantity;
         this.unitPrice = unitPrice;
         this.totalPrice = totalPrice;
+        this.fee = fee;
+        this.tax = tax;
         this.tradedAt = tradedAt;
     }
 
+    // 팩토리 메서드 수정
     public static TradeHistory of(Member member, StockData stockData, TradeType tradeType,
-                                  Integer quantity, Long unitPrice, Long totalPrice, LocalDateTime tradedAt) {
-        return new TradeHistory(member, stockData, tradeType, quantity, unitPrice, totalPrice, tradedAt);
+                                  Integer quantity, Long unitPrice, Long totalPrice,
+                                  Long fee, Long tax, LocalDateTime tradedAt) {
+        return new TradeHistory(member, stockData, tradeType, quantity, unitPrice,
+                totalPrice, fee, tax, tradedAt);
     }
 
     @PrePersist
