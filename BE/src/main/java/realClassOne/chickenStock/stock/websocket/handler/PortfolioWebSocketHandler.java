@@ -21,10 +21,7 @@ import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -212,21 +209,20 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
 
         log.info("포트폴리오 웹소켓 인증 성공: 세션={}, 회원ID={}", session.getId(), memberId);
 
-        // 사용자가 보유한 종목 구독 등록
+        // 사용자가 보유한 종목 목록 조회
         List<String> stockCodes = portfolioService.getMemberStockCodes(memberId);
-        for (String stockCode : stockCodes) {
-            // 종목별 구독자 목록에 회원 추가
-            stockSubscribers.computeIfAbsent(stockCode, k -> ConcurrentHashMap.newKeySet()).add(memberId);
 
-            // 새로운 구독이면 키움 클라이언트에 등록
-            if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                kiwoomWebSocketClient.subscribeStockWithPurpose(stockCode, "PORTFOLIO");
-                log.info("회원 {} 보유 종목 {} 구독 등록", memberId, stockCode);
-            } else {
-                // 이미 구독 중이더라도 목적은 추가
-                kiwoomWebSocketClient.subscribeStockWithPurpose(stockCode, "PORTFOLIO");
-                log.info("회원 {} 보유 종목 {} 목적 추가 (이미 구독 중)", memberId, stockCode);
+        if (!stockCodes.isEmpty()) {
+            // 종목별 구독자 목록에 회원 추가 (내부 맵 업데이트)
+            for (String stockCode : stockCodes) {
+                stockSubscribers.computeIfAbsent(stockCode, k -> ConcurrentHashMap.newKeySet()).add(memberId);
             }
+
+            // 일괄 구독 요청 (최적화된 새 메서드 사용)
+            boolean subscribeResult = kiwoomWebSocketClient.subscribeStocksWithPurpose(stockCodes, "PORTFOLIO");
+            log.info("회원 {} 보유 종목 일괄 구독 요청 결과: {} (총 {}개 종목)", memberId, subscribeResult, stockCodes.size());
+        } else {
+            log.info("회원 {} 보유 종목이 없습니다.", memberId);
         }
 
         // 인증 성공 메시지 전송
@@ -250,28 +246,46 @@ public class PortfolioWebSocketHandler extends TextWebSocketHandler implements K
                 return;
             }
 
-            Long currentPrice = Long.parseLong(data.get("10").asText()
+            String priceStr = data.get("10").asText()
                     .replace(",", "")
                     .replace("+", "")
                     .replace("-", "")
-                    .trim());
+                    .trim();
 
-            // 해당 종목을 보유한 회원들에게 업데이트 전송
-            for (Map.Entry<Long, WebSocketSession> entry : memberSessionMap.entrySet()) {
-                Long memberId = entry.getKey();
-                WebSocketSession session = entry.getValue();
+            Long currentPrice = Long.parseLong(priceStr);
 
-                // JOIN FETCH를 사용하여 N+1 문제 해결 및 LazyInitializationException 방지
+            // _AL 접미사 제거
+            String normalizedStockCode = stockCode.replace("_AL", "");
+
+            // 해당 종목의 구독자(회원) 목록 조회
+            Set<Long> subscribedMembers = stockSubscribers.getOrDefault(normalizedStockCode, Collections.emptySet());
+
+            if (subscribedMembers.isEmpty()) {
+                // 구독자가 없으면 처리 중단
+                return;
+            }
+
+            log.debug("종목 {} 가격 변동 - 현재가: {}, 구독자 수: {}", normalizedStockCode, currentPrice, subscribedMembers.size());
+
+            // 각 구독자(회원)에게 업데이트 전송
+            for (Long memberId : subscribedMembers) {
+                WebSocketSession session = memberSessionMap.get(memberId);
+                if (session == null || !session.isOpen()) {
+                    continue; // 세션이 없거나 닫혀있으면 스킵
+                }
+
+                // 해당 회원의 이 종목 포지션 조회
                 List<HoldingPosition> positions = holdingPositionRepository
-                        .findWithStockDataByMemberIdAndStockCode(memberId, stockCode);
+                        .findWithStockDataByMemberIdAndStockCode(memberId, normalizedStockCode);
 
                 for (HoldingPosition position : positions) {
-                    // 이제 position.getStockData().getShortCode()가 안전하게 호출됨
-                    sendRealtimeStockUpdate(session, memberId, stockCode, currentPrice, position);
+                    if (position.getActive()) { // 활성 상태인 포지션만 처리
+                        sendRealtimeStockUpdate(session, memberId, normalizedStockCode, currentPrice, position);
+                    }
                 }
             }
         } catch (Exception e) {
-            log.error("주식 가격 업데이트 처리 중 오류 발생", e);
+            log.error("주식 가격 업데이트 처리 중 오류 발생: {}", e.getMessage(), e);
         }
     }
 

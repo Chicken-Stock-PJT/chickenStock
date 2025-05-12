@@ -21,7 +21,7 @@ public class StockSubscriptionService {
 
     /**
      * 종목 코드를 등록하여 실시간 데이터 구독을 시작합니다.
-     * 실패 시 CustomException 예외 발생
+     * 실패 시 CustomExcepbroadcastToSubscribers tion 예외 발생
      *
      * @param stockCode 종목 코드 (예: 005930)
      */
