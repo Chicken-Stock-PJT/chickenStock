@@ -148,4 +148,12 @@ public class MemberController {
         return ResponseEntity.ok(response);
     }
 
+    // 보유 중인 주식 조회 API
+    @GetMapping("/holding-stocks")
+    public ResponseEntity<HoldingStocksResponseDTO> getHoldingStocks(
+            @RequestHeader("Authorization") String authorizationHeader) {
+
+        HoldingStocksResponseDTO response = memberService.getHoldingStocks(authorizationHeader);
+        return ResponseEntity.ok(response);
+    }
 }
