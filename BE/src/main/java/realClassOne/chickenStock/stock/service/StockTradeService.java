@@ -6,12 +6,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.member.entity.InvestmentSummary;
 import realClassOne.chickenStock.member.entity.Member;
@@ -35,6 +32,7 @@ import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 import realClassOne.chickenStock.stock.websocket.handler.PortfolioWebSocketHandler;
 import realClassOne.chickenStock.stock.websocket.handler.StockWebSocketHandler;
+import realClassOne.chickenStock.notification.service.NotificationService;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -63,6 +61,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     private final PortfolioWebSocketHandler portfolioWebSocketHandler;
     private final StockWebSocketHandler stockWebSocketHandler;
     private final FeeTaxService feeTaxService;
+    private final NotificationService notificationService;
 
 
     // 동시성 제어를 위한 락 추가
@@ -1542,6 +1541,15 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             order.complete();
             pendingOrderRepository.save(order);
 
+            // 알림 전송 추가
+            notificationService.createTradeNotification(
+                    member.getMemberId(),
+                    stock.getShortName(),
+                    "BUY",
+                    order.getQuantity(),
+                    currentPrice
+            );
+
             // 구독 여부 확인 및 포트폴리오 업데이트
             if (!isStockNeededElsewhere(stockCode)) {
                 unsubscribeStockAfterTrade(stockCode);
@@ -1641,6 +1649,15 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             // 주문 상태 업데이트
             order.complete();
             pendingOrderRepository.save(order);
+
+            // 알림 전송 추가
+            notificationService.createTradeNotification(
+                    member.getMemberId(),
+                    stock.getShortName(),
+                    "SELL",
+                    order.getQuantity(),
+                    currentPrice
+            );
 
             // 구독 여부 확인 및 포트폴리오 업데이트
             if (!isStockNeededElsewhere(stockCode)) {

@@ -17,6 +17,7 @@ import realClassOne.chickenStock.community.repository.StockCommentRepository;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
+import realClassOne.chickenStock.notification.service.NotificationService;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
@@ -34,7 +35,7 @@ public class CommentService {
     private final StockCommentRepository commentRepository;
     private final StockDataRepository stockDataRepository;
     private final JwtTokenProvider jwtTokenProvider;
-
+    private final NotificationService notificationService;
 
     public List<CommentResponseDTO> getCommentsByStock(String shortCode) {
         StockData stock = stockDataRepository.findByShortCode(shortCode)
@@ -94,6 +95,16 @@ public class CommentService {
         // 대댓글 생성 (parent 포함)
         StockComment reply = StockComment.of(stock, member, dto.getContent(), parent);
         commentRepository.save(reply);
+
+        // 부모 댓글 작성자에게 알림 (본인이 아닌 경우)
+        if (!parent.getMember().getMemberId().equals(memberId)) {
+            notificationService.createCommentNotification(
+                    parent.getMember().getMemberId(),
+                    stock.getShortName(),
+                    member.getNickname(),
+                    reply.getId()
+            );
+        }
 
         // 대댓글 응답 반환
         return CommentReplyResponseDTO.from(reply);

@@ -12,6 +12,7 @@ import realClassOne.chickenStock.community.repository.StockCommentRepository;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
+import realClassOne.chickenStock.notification.service.NotificationService;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 
 import java.util.Optional;
@@ -24,7 +25,7 @@ public class CommentLikeService {
     private final StockCommentLikeRepository stockCommentLikeRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final MemberRepository memberRepository;
-
+    private final NotificationService notificationService;
 
     @Transactional
     public boolean toggleLike(String shortCode, Long commentId, String authorizationHeader) {
@@ -48,6 +49,16 @@ public class CommentLikeService {
             return false; // 좋아요 취소됨
         } else {
             stockCommentLikeRepository.save(StockCommentLike.of(member, comment));
+
+            // 댓글 작성자에게 알림 보내기 (본인이 아닌 경우)
+            if (!comment.getMember().getMemberId().equals(memberId)) {
+                notificationService.createLikeNotification(
+                        comment.getMember().getMemberId(),
+                        comment.getStockData().getShortName(),
+                        member.getNickname(),
+                        comment.getId()
+                );
+            }
             return true; // 좋아요 등록됨
         }
     }
