@@ -107,7 +107,8 @@ class MainActivity : ComponentActivity() {
                             tokenManager.saveTokens(
                                 newTokens.accessToken,
                                 newTokens.refreshToken,
-                                3600000L // 1시간
+                                3600000L, // 액세스 토큰 1시간
+                                30 * 24 * 60 * 60 * 1000L // 리프레시 토큰 30일
                             )
                             Log.d("TokenInfo", "토큰 갱신 성공")
                         } else {
@@ -466,7 +467,8 @@ fun MainScreen(
         topBar = {
             if (!currentRoute.startsWith("login") && 
                 !currentRoute.startsWith("signup") && 
-                !currentRoute.startsWith("findpw")) {
+                !currentRoute.startsWith("findpw") &&
+                !currentRoute.startsWith("stock_detail")) {
                 SearchTopAppBar(
                     isSearchExpanded = isSearchExpanded,
                     searchText = searchText,

@@ -805,7 +805,7 @@ fun HomeScreen(
                                         onClick = { 
                                             navController.navigate(Screen.Login.route)
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFEB3B)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFDD141)),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(50.dp),
@@ -833,7 +833,7 @@ fun HomeScreen(
                                 .background(Color.White)
                                 .padding(vertical = 24.dp, horizontal = 32.dp)
                         ) {
-                            Text("실시간 종목 랭킹", fontSize = 20.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily)
+                            Text("실시간 종목 랭킹", fontSize = 18.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily)
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // 정렬 기준 선택

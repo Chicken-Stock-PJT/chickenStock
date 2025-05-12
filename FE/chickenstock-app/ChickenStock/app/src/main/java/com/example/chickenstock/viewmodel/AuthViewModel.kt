@@ -93,7 +93,8 @@ class AuthViewModel(private val context: Context) : ViewModel() {
                     tokenManager.saveTokens(
                         newTokens.accessToken,
                         newTokens.refreshToken,
-                        3600000L // 1시간
+                        newTokens.accessTokenExpiresIn - System.currentTimeMillis(), // 서버에서 받은 만료 시간 사용
+                        30 * 24 * 60 * 60 * 1000L // 리프레시 토큰 30일
                     )
                 } else {
                     Log.e(TAG, "토큰 재발급 실패: ${response.code()}")
@@ -133,7 +134,8 @@ class AuthViewModel(private val context: Context) : ViewModel() {
                     tokenManager.saveTokens(
                         newTokens.accessToken,
                         newTokens.refreshToken,
-                        3600000L // 1시간
+                        newTokens.accessTokenExpiresIn - System.currentTimeMillis(), // 서버에서 받은 만료 시간 사용
+                        30 * 24 * 60 * 60 * 1000L // 리프레시 토큰 30일
                     )
                 } else {
                     Log.e(TAG, "토큰 재발급 실패 (재시도: $attempt): ${response.code()}")

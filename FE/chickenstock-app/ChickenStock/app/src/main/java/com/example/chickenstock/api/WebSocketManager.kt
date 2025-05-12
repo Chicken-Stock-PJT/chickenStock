@@ -35,6 +35,10 @@ class WebSocketManager private constructor() {
     private val _stockBidAsk = MutableStateFlow<StockBidAsk?>(null)
     val stockBidAsk: StateFlow<StockBidAsk?> = _stockBidAsk.asStateFlow()
     
+    // 실시간 체결 정보 상태
+    private val _tradeExecution = MutableStateFlow<TradeExecution?>(null)
+    val tradeExecution: StateFlow<TradeExecution?> = _tradeExecution.asStateFlow()
+    
     private var client: OkHttpClient? = null
     private var webSocket: WebSocket? = null
     private var currentStockCode: String? = null
@@ -109,6 +113,7 @@ class WebSocketManager private constructor() {
         // 상태 초기화
         _stockPrice.value = null
         _stockBidAsk.value = null
+        _tradeExecution.value = null
     }
     
     /**
@@ -223,6 +228,21 @@ class WebSocketManager private constructor() {
                             }
                         }
                         
+                        // 실시간 체결 정보
+                        messageType == "tradeExecution" -> {
+                            Log.d(TAG, "체결 정보 메시지: $text")
+                            val tradeExecution = TradeExecution(
+                                type = messageType,
+                                stockCode = json.optString("stockCode", currentStockCode ?: ""),
+                                tradeType = json.optString("tradeType", ""),
+                                quantity = json.optInt("quantity", 0),
+                                price = json.optInt("price", 0),
+                                totalAmount = json.optInt("totalAmount", 0),
+                                timestamp = json.optString("timestamp", "")
+                            )
+                            _tradeExecution.value = tradeExecution
+                        }
+                        
                         // 기타 알 수 없는 메시지
                         else -> {
                             Log.d(TAG, "미처리 메시지 타입: ${if (messageType.isEmpty()) "없음" else messageType}, 내용: $text")
@@ -288,4 +308,14 @@ class WebSocketManager private constructor() {
             }
         }
     }
-} 
+}
+
+data class TradeExecution(
+    val type: String,
+    val stockCode: String,
+    val tradeType: String,
+    val quantity: Int,
+    val price: Int,
+    val totalAmount: Int,
+    val timestamp: String
+) 

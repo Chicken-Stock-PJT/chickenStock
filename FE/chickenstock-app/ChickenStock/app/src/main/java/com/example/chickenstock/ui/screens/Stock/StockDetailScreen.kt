@@ -130,6 +130,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.Calendar
+import com.example.chickenstock.api.TradeExecution
 
 class CustomMarkerView(
     context: Context,
@@ -271,6 +272,18 @@ fun StockDetailScreen(
     val webSocketManager = remember { WebSocketManager.getInstance() }
     val stockPrice = webSocketManager.stockPrice.collectAsState().value
     val stockBidAsk = webSocketManager.stockBidAsk.collectAsState().value
+
+    // 실시간 체결 정보 리스트 상태 (최신 10개만 유지)
+    val tradeExecutions = remember { mutableStateListOf<TradeExecution>() }
+    val tradeExecutionFlow = webSocketManager.tradeExecution.collectAsState().value
+    LaunchedEffect(tradeExecutionFlow) {
+        tradeExecutionFlow?.let {
+            if (it.stockCode == stock.stockCode) {
+                tradeExecutions.add(0, it)
+                if (tradeExecutions.size > 10) tradeExecutions.removeLast()
+            }
+        }
+    }
 
     // API 데이터 상태
     var apiStockPrice by remember { mutableStateOf<StockDetailResponse?>(null) }
@@ -2209,7 +2222,164 @@ fun StockDetailScreen(
                     }
                 }
             }
+
+            // 실시간 체결 내역
+            if (tradeExecutions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "실시간 체결 내역",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SCDreamFontFamily,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .padding(8.dp)
+                ) {
+                    tradeExecutions.forEach { exec ->
+                        RealTimeTradeItem(exec)
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                }
+            }
         }
     }
 }
+
+// 실시간 체결 내역 아이템 (마이페이지 거래 기록 스타일 참고)
+@Composable
+fun RealTimeTradeItem(exec: TradeExecution) {
+    val isSell = exec.tradeType == "SELL"
+    val time = if (exec.timestamp.length == 6) {
+        "${exec.timestamp.substring(0,2)}:${exec.timestamp.substring(2,4)}:${exec.timestamp.substring(4,6)}"
+    } else exec.timestamp
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        if (isSell) {
+            // 매도(SELL) - 오른쪽 컬러 박스
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color(0xFFF5F5F5))
+                            .height(40.dp)
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${exec.price.toFormattedString()}원",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.W700,
+                            fontFamily = SCDreamFontFamily
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${exec.quantity}주",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.W700,
+                            fontFamily = SCDreamFontFamily
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFFFF6B6B))
+                            .padding(horizontal = 12.dp)
+                            .clip(RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "매도",
+                            fontSize = 10.sp,
+                            color = Color.White,
+                            fontFamily = SCDreamFontFamily,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(70.dp)) {
+                Text(text = time, fontSize = 10.sp, color = Color.Gray, fontFamily = SCDreamFontFamily)
+            }
+        } else {
+            // 매수(BUY) - 왼쪽 컬러 박스
+            Column(horizontalAlignment = Alignment.Start, modifier = Modifier.width(70.dp)) {
+                Text(text = time, fontSize = 10.sp, color = Color.Gray, fontFamily = SCDreamFontFamily)
+            }
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier.weight(1f).padding(start = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFF4DABF7))
+                            .height(40.dp)
+                            .padding(horizontal = 12.dp)
+                            .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "매수",
+                            fontSize = 10.sp,
+                            color = Color.White,
+                            fontFamily = SCDreamFontFamily,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color(0xFFF5F5F5))
+                            .height(40.dp)
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Text(
+                            text = "${exec.price.toFormattedString()}원",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.W700,
+                            fontFamily = SCDreamFontFamily
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${exec.quantity}주",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.W700,
+                            fontFamily = SCDreamFontFamily
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun Int.toFormattedString(): String = String.format("%,d", this)
 

@@ -55,7 +55,8 @@ data class TokenRefreshRequest(
 
 data class TokenResponse(
     val accessToken: String,
-    val refreshToken: String
+    val refreshToken: String,
+    val accessTokenExpiresIn: Long
 )
 
 data class SignupRequest(
