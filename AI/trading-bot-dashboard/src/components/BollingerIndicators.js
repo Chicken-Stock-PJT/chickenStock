@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
+function BollingerIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
   const [indicators, setIndicators] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [symbolFilter, setSymbolFilter] = useState('');
-  const [sortField, setSortField] = useState('symbol');
+  const [sortField, setSortField] = useState('percentB');
   const [sortDirection, setSortDirection] = useState('asc');
   const [filterSignal, setFilterSignal] = useState('all');
 
@@ -110,15 +110,14 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
         comparison = symbolA.localeCompare(symbolB);
       } else if (sortField === 'stockName') {
         comparison = (dataA.stockName || '').localeCompare(dataB.stockName || '');
+      } else if (sortField === 'percentB') {
+        comparison = (dataA.percentB || 0) - (dataB.percentB || 0);
+      } else if (sortField === 'bandwidth') {
+        comparison = (dataA.bandwidth || 0) - (dataB.bandwidth || 0);
       } else if (sortField === 'currentPrice') {
         comparison = (dataA.currentPrice || 0) - (dataB.currentPrice || 0);
       } else if (sortField === 'signal') {
         comparison = (dataA.signal || '').localeCompare(dataB.signal || '');
-      } else if (sortField === 'ratio') {
-        // 현재가와 밴드 중간값의 비율 (상대적 위치)
-        const ratioA = (dataA.currentPrice || 0) / (dataA.middleBand || 1) - 1;
-        const ratioB = (dataB.currentPrice || 0) / (dataB.middleBand || 1) - 1;
-        comparison = ratioA - ratioB;
       }
       
       // 정렬 방향 적용
@@ -128,20 +127,12 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
   // 저장할 총 데이터 개수
   const totalCount = filteredAndSortedIndicators.length;
 
-  // 엔벨로프 신호에 따른 행 색상 클래스 지정
-  const getRowColorClass = (data) => {
-    if (!data) return '';
-    
-    if (data.signal === '매수') return 'table-success';
-    if (data.signal === '매도') return 'table-danger';
-    
-    // 또는 상대적 위치에 따른 색상
-    const ratio = (data.currentPrice || 0) / (data.middleBand || 1) - 1;
-    if (ratio <= -0.15) return 'table-success'; // 강한 매수
-    if (ratio >= 0.15) return 'table-danger';  // 강한 매도
-    if (ratio <= -0.1) return 'table-warning'; // 약한 매수
-    if (ratio >= 0.1) return 'table-warning';  // 약한 매도
-    
+  // 볼린저 밴드 %B에 따른 행 색상 클래스 지정
+  const getRowColorClass = (percentB) => {
+    if (percentB <= 0.05) return 'table-danger'; // 매수 신호 (강함)
+    if (percentB <= 0.2) return 'table-warning'; // 매수 신호 (약함)
+    if (percentB >= 0.95) return 'table-danger'; // 매도 신호 (강함)
+    if (percentB >= 0.8) return 'table-warning'; // 매도 신호 (약함)
     return '';
   };
 
@@ -152,10 +143,9 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
     return 'bg-secondary';
   };
 
-  // 상대적 위치 계산 (중앙값 대비 현재가 비율)
-  const calculateRatio = (data) => {
-    if (!data || !data.currentPrice || !data.middleBand) return 0;
-    return ((data.currentPrice / data.middleBand) - 1) * 100;
+  // %B 값을 백분율로 표시
+  const formatPercentB = (value) => {
+    return (value * 100).toFixed(2) + '%';
   };
 
   // 정렬 화살표 표시
@@ -168,13 +158,13 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
     return (
       <div className="card">
         <div className="card-header bg-primary text-white">
-          <h5 className="mb-0">Envelope 지표</h5>
+          <h5 className="mb-0">볼린저 밴드 지표</h5>
         </div>
         <div className="card-body text-center py-5">
           <div className="spinner-border text-primary" role="status">
             <span className="visually-hidden">로딩 중...</span>
           </div>
-          <p className="mt-3">Envelope 지표 데이터를 불러오는 중입니다...</p>
+          <p className="mt-3">볼린저 밴드 지표 데이터를 불러오는 중입니다...</p>
         </div>
       </div>
     );
@@ -184,14 +174,14 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
     return (
       <div className="card">
         <div className="card-header bg-primary text-white">
-          <h5 className="mb-0">Envelope 지표</h5>
+          <h5 className="mb-0">볼린저 밴드 지표</h5>
         </div>
         <div className="card-body text-center py-5">
           <div className="alert alert-danger">
             <i className="bi bi-exclamation-triangle-fill me-2"></i>
             {error}
           </div>
-          <p>Envelope 지표를 가져오는 중 오류가 발생했습니다. 나중에 다시 시도해주세요.</p>
+          <p>볼린저 밴드 지표를 가져오는 중 오류가 발생했습니다. 나중에 다시 시도해주세요.</p>
         </div>
       </div>
     );
@@ -200,7 +190,7 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
   return (
     <div className="card">
       <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 className="mb-0">Envelope 지표</h5>
+        <h5 className="mb-0">볼린저 밴드 지표</h5>
         <div>
           {botEmail && <span className="badge bg-light text-dark me-2">{botEmail}</span>}
           <span className="badge bg-light text-dark">{totalCount}개 종목</span>
@@ -265,10 +255,13 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
                 <th onClick={() => handleSortChange('currentPrice')} style={{ cursor: 'pointer' }}>
                   현재가 {renderSortArrow('currentPrice')}
                 </th>
-                <th onClick={() => handleSortChange('ratio')} style={{ cursor: 'pointer' }}>
-                  상대위치(%) {renderSortArrow('ratio')}
+                <th onClick={() => handleSortChange('percentB')} style={{ cursor: 'pointer' }}>
+                  %B {renderSortArrow('percentB')}
                 </th>
-                <th>Envelope 밴드</th>
+                <th onClick={() => handleSortChange('bandwidth')} style={{ cursor: 'pointer' }}>
+                  밴드폭 {renderSortArrow('bandwidth')}
+                </th>
+                <th>밴드 정보</th>
                 <th onClick={() => handleSortChange('signal')} style={{ cursor: 'pointer' }}>
                   신호 {renderSortArrow('signal')}
                 </th>
@@ -277,17 +270,18 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
             <tbody>
               {filteredAndSortedIndicators.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-3">
+                  <td colSpan="7" className="text-center py-3">
                     표시할 데이터가 없거나 필터 조건에 맞는 데이터가 없습니다.
                   </td>
                 </tr>
               ) : (
                 filteredAndSortedIndicators.map(([symbol, data]) => (
-                  <tr key={symbol} className={getRowColorClass(data)}>
+                  <tr key={symbol} className={getRowColorClass(data.percentB || 0.5)}>
                     <td>{symbol}</td>
                     <td>{data.stockName || '-'}</td>
                     <td className="text-end">{data.currentPrice?.toLocaleString() || '-'}</td>
-                    <td className="text-end">{calculateRatio(data).toFixed(2)}%</td>
+                    <td className="text-end">{formatPercentB(data.percentB || 0)}</td>
+                    <td className="text-end">{(data.bandwidth || 0).toFixed(4)}</td>
                     <td className="text-end">
                       <small>
                         상한: {data.upperBand?.toLocaleString() || '-'}<br />
@@ -308,14 +302,14 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
         </div>
         
         <div className="mt-3">
-          <h6>Envelope 지표 설명:</h6>
+          <h6>볼린저 밴드 지표 설명:</h6>
           <p className="small">
-            <strong>Envelope:</strong> 이동평균선(중앙선)을 기준으로 상하로 일정 비율(20%)만큼 밴드를 형성합니다.<br />
-            <strong>상대위치:</strong> 현재가가 중앙선(MA20)으로부터 얼마나 떨어져 있는지 나타내는 백분율입니다.<br />
-            <strong>신호:</strong> 밴드 위치에 따라 다음과 같이 매매 신호가 생성됩니다:<br />
-            - <span className="badge bg-success">매수</span>: 현재가가 하한선 아래에 있을 때 (과매도 상태)<br />
-            - <span className="badge bg-danger">매도</span>: 현재가가 상한선 위에 있을 때 (과매수 상태)<br />
-            - <span className="badge bg-secondary">중립</span>: 현재가가 밴드 내에 있을 때
+            <strong>%B:</strong> 가격이 밴드 내에서 위치한 상대적 위치를 나타냅니다. 0은 하한선, 1은 상한선을 의미합니다.<br />
+            <strong>밴드폭:</strong> 변동성을 나타내는 지표로, 상한선과 하한선의 차이를 중앙선으로 나눈 값입니다.<br />
+            <strong>신호:</strong> %B 값에 따라 다음과 같이 매매 신호가 생성됩니다:<br />
+            - <span className="badge bg-success">매수</span>: %B가 0.1 이하일 때 (과매도 상태)<br />
+            - <span className="badge bg-danger">매도</span>: %B가 0.9 이상일 때 (과매수 상태)<br />
+            - <span className="badge bg-secondary">중립</span>: 그 외 정상 범위 내에 있을 때
           </p>
         </div>
       </div>
@@ -326,4 +320,4 @@ function EnvelopeIndicators({ apiBaseUrl, botEmail, useBotEndpoint = false }) {
   );
 }
 
-export default EnvelopeIndicators;
+export default BollingerIndicators;
