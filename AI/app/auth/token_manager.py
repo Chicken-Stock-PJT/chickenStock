@@ -1,5 +1,8 @@
+"""
+키움 API 토큰 관리
+"""
 import logging
-import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -28,3 +31,10 @@ class TokenManager:
         self.token_type = token_type
         self.expires_dt = expires_dt
         logger.info(f"토큰 업데이트 완료: 만료 시간 {expires_dt.isoformat()}")
+    
+    async def close(self):
+        """리소스 정리"""
+        self.token = None
+        self.token_type = None
+        self.expires_dt = None
+        logger.info("토큰 관리자 종료")

@@ -1,28 +1,32 @@
 import logging
 import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from datetime import datetime
+from app.strategies.base import BaseTradingModel
 
 logger = logging.getLogger(__name__)
 
-class TradingModel:
-    """Envelope 전략 기반 AI 트레이딩 모델"""
+class BollingerBandTradingModel(BaseTradingModel):
+    """볼린저 밴드 전략 기반 AI 트레이딩 모델"""
     
     def __init__(self, kiwoom_api):
-        """Envelope 전략 트레이딩 모델 초기화"""
-        self.kiwoom_api = kiwoom_api
-        self.backend_client = None
+        """볼린저 밴드 전략 트레이딩 모델 초기화"""
+        super().__init__(kiwoom_api)
         
         # 매매 관련 설정
-        self.max_positions = 20  # 최대 보유 종목 수
-        self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (500만원)
+        self.max_positions = 15  # 최대 보유 종목 수 (Envelope 모델보다 적게 설정)
+        self.trade_amount_per_stock = 6000000  # 종목당 매매 금액 (600만원)
         self.min_holding_period = 1  # 최소 보유 기간 (일)
+        
+        # 볼린저 밴드 설정 (StockCache와 동일하게 유지)
+        self.bb_period = 26  # 기간 (26일)
+        self.bb_std_dev = 2.0  # 표준편차 승수 (2)
         
         # 실행 상태
         self.is_running = False
         
         # 매매 신호 저장 딕셔너리
-        self.trading_signals = {}  # {symbol: {"signal": "lower", "price": price, "timestamp": datetime}}
+        self.trading_signals = {}  # {symbol: {"signal": "buy", "price": price, "timestamp": datetime}}
         
         # 거래 이력 저장
         self.trade_history = {}  # {symbol: {"last_trade": datetime, "last_action": "buy"}}
@@ -33,7 +37,7 @@ class TradingModel:
         self.min_price_change_pct = 0.1  # 최소 가격 변동 비율 (0.1%)
         self.min_process_interval = 5    # 최소 처리 간격 (초)
         
-        logger.info("AI 트레이딩 모델 초기화 완료")
+        logger.info("볼린저 밴드 트레이딩 모델 초기화 완료")
     
     def set_backend_client(self, backend_client):
         """백엔드 클라이언트 설정"""
@@ -42,11 +46,11 @@ class TradingModel:
     async def start(self):
         """트레이딩 모델 시작"""
         if self.is_running:
-            logger.warning("트레이딩 모델이 이미 실행 중입니다.")
+            logger.warning("볼린저 밴드 트레이딩 모델이 이미 실행 중입니다.")
             return
         
         self.is_running = True
-        logger.info("트레이딩 모델 시작")
+        logger.info("볼린저 밴드 트레이딩 모델 시작")
         
         # 계좌 정보 초기 동기화
         if self.backend_client:
@@ -61,7 +65,7 @@ class TradingModel:
     async def stop(self):
         """트레이딩 모델 중지"""
         self.is_running = False
-        logger.info("트레이딩 모델 중지")
+        logger.info("볼린저 밴드 트레이딩 모델 중지")
     
     def _should_process_price_update(self, symbol: str, price: float) -> bool:
         """가격 업데이트를 처리해야 하는지 판단 (중복 메시지 필터링)"""
@@ -90,7 +94,7 @@ class TradingModel:
         return True
     
     async def handle_realtime_price(self, symbol, price):
-        """실시간 가격 데이터 처리 - 보유 종목에 대해서만 매도 신호 발생"""
+        """실시간 가격 데이터 처리"""
         if not self.is_running:
             return
         
@@ -102,17 +106,25 @@ class TradingModel:
             # StockCache의 현재가 업데이트
             self.kiwoom_api.stock_cache.update_price(symbol, price)
             
-            # Envelope 지표 가져오기 (현재가 업데이트)
-            envelope = self.kiwoom_api.stock_cache.get_envelope_indicators(symbol, price)
+            # 볼린저 밴드 지표 가져오기 (현재가 업데이트)
+            bb_indicators = self.kiwoom_api.stock_cache.get_bollinger_bands(symbol, price)
             
-            if not envelope:
-                logger.warning(f"종목 {symbol}에 대한 Envelope 지표가 없습니다")
+            if not bb_indicators:
+                logger.warning(f"종목 {symbol}에 대한 볼린저 밴드 지표가 없습니다")
                 return
             
             # 밴드 정보 확인
-            upper_band = envelope.get("upperBand", 0)
-            middle_band = envelope.get("middleBand", 0)
-            lower_band = envelope.get("lowerBand", 0)
+            upper_band = bb_indicators.get("upperBand", 0)
+            middle_band = bb_indicators.get("middleBand", 0)
+            lower_band = bb_indicators.get("lowerBand", 0)
+            percent_b = bb_indicators.get("percentB", 0.5)
+            used_period = bb_indicators.get("period", 0)
+            
+            # 충분한 데이터로 계산된 지표인지 검증 (최소 기간의 70% 이상 확보되었는지)
+            if used_period < (self.bb_period * 0.7):
+                logger.warning(f"종목 {symbol}의 볼린저 밴드 지표 데이터 부족: {used_period}/{self.bb_period}일 (70% 미만)")
+                # 데이터가 충분하지 않으면 신호 생성하지 않음
+                return
             
             # 현재 시간
             now = datetime.now()
@@ -126,81 +138,82 @@ class TradingModel:
             min_holding_passed = True
             if last_trade_time:
                 seconds_passed = (now - last_trade_time).total_seconds()
-                # 최소 보유 기간: 1일 = 86400초 (기본값), self.min_holding_period로 설정 가능
                 min_holding_passed = seconds_passed >= (self.min_holding_period * 86400)
             
-            # 계좌 정보에서 보유 종목 확인 - 매도 신호는 보유 종목에 대해서만 발생
-            positions = self.kiwoom_api.account_info.get("positions", {})
+            # 계좌 정보에서 보유 종목 확인
+            positions = self.kiwoom_api.get_positions()
             is_holding = symbol in positions
             
-            # 동일 가격 구간에서의 중복 신호 방지 로직
-            # 상한선 (전량 매도 신호) - 보유 종목인 경우에만
-            if price >= upper_band and is_holding:
-                # 이미 상한선에서 전량 매도한 종목이면 신호 무시
-                if last_action == "sell_all" and not min_holding_passed:
-                    logger.debug(f"이미 상한선에서 매도한 종목: {symbol}, 신호 무시")
-                    return
-                
-                self.trading_signals[symbol] = {
-                    "signal": "upper",
-                    "price": price,
-                    "timestamp": now,
-                    "bands": {
-                        "upper": upper_band,
-                        "middle": middle_band,
-                        "lower": lower_band
-                    }
-                }
-                logger.info(f"상한선 신호 발생 (보유 종목): {symbol}, 현재가: {price:.2f}, 상한선: {upper_band:.2f}")
-            
-            # 중앙선 (절반 매도 신호) - 이동평균선, 보유 종목인 경우에만
-            elif price >= middle_band and price < upper_band and is_holding:
-                # 이미 중앙선에서 절반 매도한 종목이거나 상한선에서 전량 매도한 종목이면 신호 무시
-                if (last_action == "sell_half" or last_action == "sell_all") and not min_holding_passed:
-                    logger.debug(f"이미 중앙선 또는 상한선에서 매도한 종목: {symbol}, 신호 무시")
-                    return
-                
-                self.trading_signals[symbol] = {
-                    "signal": "middle",
-                    "price": price,
-                    "timestamp": now,
-                    "bands": {
-                        "upper": upper_band,
-                        "middle": middle_band,
-                        "lower": lower_band
-                    }
-                }
-                logger.info(f"중앙선(이동평균선) 신호 발생 (보유 종목): {symbol}, 현재가: {price:.2f}, 중앙선: {middle_band:.2f}")
-            
-            # 하한선 (매수 신호) - 보유 여부 상관없음
-            elif price <= lower_band:
-                # 이미 보유 중인지 체크 - 중복 매수 방지
-                if is_holding:
-                    logger.debug(f"이미 보유 중인 종목: {symbol}, 매수 신호 무시")
-                    return
-                    
-                # 이미 하한선에서 매수한 종목이면 신호 무시
+            # 볼린저 밴드 기반 매매 신호 로직
+            # 1. 매수 신호: %B가 0.1 이하 (하단 밴드 아래거나 근처)
+            if percent_b <= 0.1 and not is_holding:
+                # 이미 매수한 종목이면 신호 무시
                 if last_action == "buy" and not min_holding_passed:
-                    logger.debug(f"이미 하한선에서 매수한 종목: {symbol}, 신호 무시")
+                    logger.debug(f"이미 매수한 종목: {symbol}, 신호 무시")
                     return
                 
                 self.trading_signals[symbol] = {
-                    "signal": "lower",
+                    "signal": "buy",
                     "price": price,
                     "timestamp": now,
                     "bands": {
                         "upper": upper_band,
                         "middle": middle_band,
-                        "lower": lower_band
+                        "lower": lower_band,
+                        "percentB": percent_b
                     }
                 }
-                logger.info(f"하한선 신호 발생: {symbol}, 현재가: {price:.2f}, 하한선: {lower_band:.2f}")
+                logger.info(f"볼린저 밴드 매수 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}")
+            
+            # 2. 매도 신호: %B가 0.9 이상 (상단 밴드 위거나 근처)
+            elif percent_b >= 0.9 and is_holding:
+                # 이미 매도한 종목이면 신호 무시
+                if last_action == "sell" and not min_holding_passed:
+                    logger.debug(f"이미 매도한 종목: {symbol}, 신호 무시")
+                    return
+                
+                self.trading_signals[symbol] = {
+                    "signal": "sell",
+                    "price": price,
+                    "timestamp": now,
+                    "bands": {
+                        "upper": upper_band,
+                        "middle": middle_band,
+                        "lower": lower_band,
+                        "percentB": percent_b
+                    }
+                }
+                logger.info(f"볼린저 밴드 매도 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}")
+            
+            # 3. 손절 신호: 보유 중인 종목이 이동평균 아래로 15% 이상 하락
+            elif is_holding and price < middle_band * 0.85:
+                # 손절 신호는 최소 보유 기간과 상관없이 항상 발생
+                position = positions[symbol]
+                avg_price = position.get("avgPrice", 0)
+                
+                # 매수가 대비 10% 이상 손실인 경우에만 손절
+                if avg_price > 0 and price < avg_price * 0.9:
+                    self.trading_signals[symbol] = {
+                        "signal": "stop_loss",
+                        "price": price,
+                        "timestamp": now,
+                        "bands": {
+                            "upper": upper_band,
+                            "middle": middle_band,
+                            "lower": lower_band,
+                            "percentB": percent_b
+                        }
+                    }
+                    logger.info(f"볼린저 밴드 손절 신호 발생: {symbol}, 현재가: {price:.2f}, 매수가: {avg_price:.2f}")
+        
         except Exception as e:
             logger.error(f"실시간 가격 처리 중 오류: {str(e)}", exc_info=True)
     
     async def monitor_signals(self):
         """매매 신호 주기적 모니터링 및 처리"""
-        logger.info("매매 신호 모니터링 시작")
+        logger.info("볼린저 밴드 매매 신호 모니터링 시작")
+        
+        last_recalc_time = datetime.now()
         
         while self.is_running:
             try:
@@ -214,24 +227,25 @@ class TradingModel:
                         self.kiwoom_api.update_account_info(account_info)
                         logger.debug("계좌 정보 정기 동기화 완료")
                 
-                # 계좌 정보 확인
-                if not self.kiwoom_api.account_info:
-                    logger.warning("계좌 정보가 없습니다.")
-                    continue
+                # 1시간마다 볼린저 밴드 지표 재계산
+                now = datetime.now()
+                if (now - last_recalc_time).total_seconds() >= 3600:  # 1시간마다
+                    logger.info("볼린저 밴드 지표 정기 재계산 시작")
+                    self.kiwoom_api.stock_cache.calculate_bollinger_bands()
+                    last_recalc_time = now
                 
                 # 매매 신호 로깅
                 if self.trading_signals:
                     signal_counts = {
-                        "lower": sum(1 for v in self.trading_signals.values() if v["signal"] == "lower"),
-                        "middle": sum(1 for v in self.trading_signals.values() if v["signal"] == "middle"),
-                        "upper": sum(1 for v in self.trading_signals.values() if v["signal"] == "upper")
+                        "buy": sum(1 for v in self.trading_signals.values() if v["signal"] == "buy"),
+                        "sell": sum(1 for v in self.trading_signals.values() if v["signal"] == "sell"),
+                        "stop_loss": sum(1 for v in self.trading_signals.values() if v["signal"] == "stop_loss")
                     }
-                    logger.info(f"현재 매매 신호: 하한선(매수)={signal_counts['lower']}개, " +
-                              f"중앙선(절반매도)={signal_counts['middle']}개, " +
-                              f"상한선(전량매도)={signal_counts['upper']}개")
+                    logger.info(f"현재 볼린저 밴드 매매 신호: 매수={signal_counts['buy']}개, " +
+                              f"매도={signal_counts['sell']}개, " +
+                              f"손절={signal_counts['stop_loss']}개")
                 
                 # 오래된 신호 제거 (10분 이상 경과)
-                now = datetime.now()
                 for symbol, signal_info in list(self.trading_signals.items()):
                     timestamp = signal_info["timestamp"]
                     if (now - timestamp).total_seconds() > 600:
@@ -245,12 +259,12 @@ class TradingModel:
     async def get_trade_decisions(self) -> List[Dict[str, Any]]:
         """매매 의사결정 목록 반환"""
         if not self.is_running:
-            logger.warning("트레이딩 모델이 실행 중이지 않습니다.")
+            logger.warning("볼린저 밴드 트레이딩 모델이 실행 중이지 않습니다.")
             return []
         
         decisions = []
         try:
-            # 계좌 정보 최신화 (백엔드에서 가져옴)
+            # 계좌 정보 최신화
             if self.backend_client:
                 account_info = await self.backend_client.request_account_info()
                 if account_info:
@@ -261,8 +275,8 @@ class TradingModel:
                 logger.warning("계좌 정보가 없습니다.")
                 return []
             
-            cash_balance = self.kiwoom_api.account_info.get("cash_balance", 0)
-            positions = self.kiwoom_api.account_info.get("positions", {})
+            cash_balance = self.kiwoom_api.get_cash_balance()
+            positions = self.kiwoom_api.get_positions()
             
             # 현재 시간
             now = datetime.now()
@@ -280,8 +294,8 @@ class TradingModel:
                     logger.debug(f"종목 {symbol}의 오래된 신호 제거 (10분 경과)")
                     continue
                 
-                # 1. 하한선 매수 신호 처리
-                if signal == "lower":
+                # 1. 매수 신호 처리
+                if signal == "buy":
                     # 현재 보유 종목 수 확인
                     if len(positions) >= self.max_positions:
                         logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
@@ -292,17 +306,15 @@ class TradingModel:
                         logger.debug(f"현금 부족({cash_balance}), 매수 보류: {symbol}")
                         continue
                     
-                    # 이미 보유 중인지 확인 (이중 체크)
+                    # 이미 보유 중인지 확인
                     if symbol in positions:
                         logger.debug(f"이미 보유 중인 종목 매수 신호 무시: {symbol}")
                         del self.trading_signals[symbol]
                         continue
                     
-                    # 매수 수량 계산 (종목당 비중에 맞게)
-                    current_price = price  # 직접 신호의 가격 사용
-                    
+                    # 매수 수량 계산
+                    current_price = price
                     if not current_price or current_price <= 0:
-                        # 백업으로 캐시에서 가격 조회
                         current_price = self.kiwoom_api.stock_cache.get_price(symbol)
                         if not current_price or current_price <= 0:
                             logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
@@ -319,7 +331,7 @@ class TradingModel:
                         "action": "buy",
                         "quantity": quantity,
                         "price": current_price,
-                        "reason": "Envelope 하한선 터치 - 매수",
+                        "reason": "볼린저 밴드 하단 터치 - 매수",
                         "timestamp": now.isoformat()
                     }
                     decisions.append(decision)
@@ -334,57 +346,9 @@ class TradingModel:
                     del self.trading_signals[symbol]
                     logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}")
                 
-                # 2. 중앙선 절반 매도 신호 처리
-                elif signal == "middle":
-                    # 보유 중인 종목인지 확인 (이중 체크)
-                    if symbol not in positions:
-                        logger.debug(f"미보유 종목 매도 신호 무시: {symbol}")
-                        del self.trading_signals[symbol]
-                        continue
-                    
-                    position = positions[symbol]
-                    total_quantity = position.get("quantity", 0)
-                    
-                    # 절반 수량 계산 (최소 1주)
-                    sell_quantity = max(1, int(total_quantity / 2))
-                    
-                    if sell_quantity <= 0:
-                        logger.warning(f"종목 {symbol}의 매도 수량이 0, 매도 보류")
-                        continue
-                    
-                    # 매도 결정 추가
-                    current_price = price  # 직접 신호의 가격 사용
-                    
-                    if not current_price or current_price <= 0:
-                        # 백업으로 캐시에서 가격 조회
-                        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
-                        if not current_price or current_price <= 0:
-                            logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
-                            continue
-                            
-                    decision = {
-                        "symbol": symbol,
-                        "action": "sell",
-                        "quantity": sell_quantity,
-                        "price": current_price,
-                        "reason": "Envelope 중앙선 터치 - 절반 매도",
-                        "timestamp": now.isoformat()
-                    }
-                    decisions.append(decision)
-                    
-                    # 거래 이력 업데이트
-                    self.trade_history[symbol] = {
-                        "last_trade": now,
-                        "last_action": "sell_half"
-                    }
-                    
-                    # 신호 제거
-                    del self.trading_signals[symbol]
-                    logger.info(f"절반 매도 결정: {symbol}, {sell_quantity}주, 가격: {current_price:.2f}")
-                
-                # 3. 상한선 전량 매도 신호 처리
-                elif signal == "upper":
-                    # 보유 중인 종목인지 확인 (이중 체크)
+                # 2. 매도 신호 처리
+                elif signal in ["sell", "stop_loss"]:
+                    # 보유 중인 종목인지 확인
                     if symbol not in positions:
                         logger.debug(f"미보유 종목 매도 신호 무시: {symbol}")
                         del self.trading_signals[symbol]
@@ -398,21 +362,21 @@ class TradingModel:
                         continue
                     
                     # 매도 결정 추가 (전량)
-                    current_price = price  # 직접 신호의 가격 사용
-                    
+                    current_price = price
                     if not current_price or current_price <= 0:
-                        # 백업으로 캐시에서 가격 조회
                         current_price = self.kiwoom_api.stock_cache.get_price(symbol)
                         if not current_price or current_price <= 0:
                             logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
                             continue
-                            
+                    
+                    reason = "볼린저 밴드 상단 터치 - 매도" if signal == "sell" else "손절 매도"
+                    
                     decision = {
                         "symbol": symbol,
                         "action": "sell",
                         "quantity": total_quantity,
                         "price": current_price,
-                        "reason": "Envelope 상한선 터치 - 전량 매도",
+                        "reason": reason,
                         "timestamp": now.isoformat()
                     }
                     decisions.append(decision)
@@ -420,12 +384,12 @@ class TradingModel:
                     # 거래 이력 업데이트
                     self.trade_history[symbol] = {
                         "last_trade": now,
-                        "last_action": "sell_all"
+                        "last_action": "sell"
                     }
                     
                     # 신호 제거
                     del self.trading_signals[symbol]
-                    logger.info(f"전량 매도 결정: {symbol}, {total_quantity}주, 가격: {current_price:.2f}")
+                    logger.info(f"매도 결정: {symbol}, {total_quantity}주, 가격: {current_price:.2f}, 이유: {reason}")
             
             return decisions
         

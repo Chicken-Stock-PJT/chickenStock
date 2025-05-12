@@ -1,3 +1,6 @@
+"""
+종목 정보 및 지표 캐시
+"""
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -6,7 +9,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 class StockCache:
-    """종목 정보, 차트 데이터 및 지표를 캐싱하는 통합 클래스"""
+    """종목 정보, 차트 데이터 및 지표를 캐싱하는 통합 클래스 (메모리 전용)"""
     
     def __init__(self):
         """캐시 초기화"""
@@ -39,7 +42,7 @@ class StockCache:
         # 구독 관리
         self.subscribed_symbols = set()
         
-        logger.info("StockCache 초기화 완료")
+        logger.info("메모리 전용 StockCache 초기화 완료")
     
     # 구독 관리 메서드
     def add_subscribed_symbol(self, code: str):
@@ -165,9 +168,12 @@ class StockCache:
                 elif last_close <= lower_band:
                     signal = "매수"
                 
-                # 캐시에 저장
+                # 디버깅 로그 추가
+                logger.debug(f"종목 {symbol} Envelope 계산: MA20={ma20:.2f}, 상한={upper_band:.2f}, 하한={lower_band:.2f}, 현재가={last_close:.2f}")
+                
+                # 캐시에 저장 - middleBand를 명시적으로 설정
                 self.envelope_cache[symbol] = {
-                    "middleBand": float(ma20),
+                    "middleBand": float(ma20),  # 이동평균선을 중앙선으로 설정
                     "upperBand": float(upper_band),
                     "lowerBand": float(lower_band),
                     "currentPrice": float(last_close),
@@ -216,7 +222,7 @@ class StockCache:
         # 모든 필터링된 종목에 대해 계산
         for symbol in self.filtered_stockcode_list:
             try:
-                # 차트 데이터 접근
+                # 차트 데이터 접근 (캐시 활용)
                 chart_data = self.get_chart_data(symbol)
                 
                 # 차트 데이터가 없으면 건너뛰기
@@ -229,6 +235,8 @@ class StockCache:
                 if actual_period < 10:  # 최소 10일 데이터는 필요
                     logger.warning(f"종목 {symbol} 차트 데이터 부족: {len(chart_data)}개 (최소 10일 필요)")
                     continue
+                
+                logger.debug(f"종목 {symbol} 볼린저 밴드 계산: {actual_period}일 기간으로 계산 (요청 기간: {self.bb_period}일)")
                 
                 # 종가 추출
                 closing_prices = []
@@ -271,6 +279,8 @@ class StockCache:
                 
                 # 밴드폭(Bandwidth) 계산 (밴드의 변동성)
                 bandwidth = (upper_band - lower_band) / sma
+                
+                logger.debug(f"종목 {symbol} 볼린저 밴드 계산: SMA={sma:.2f}, 상한={upper_band:.2f}, 하한={lower_band:.2f}, 현재가={last_close:.2f}")
                 
                 # 캐시에 저장
                 self.bollinger_cache[symbol] = {

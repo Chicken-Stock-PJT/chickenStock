@@ -1,9 +1,11 @@
+"""
+백엔드 서버 인증 처리
+"""
 import logging
 import asyncio
+import aiohttp
 from typing import Dict
 from datetime import datetime, timedelta
-import aiohttp
-
 from app.config import settings
 
 logger = logging.getLogger(__name__)

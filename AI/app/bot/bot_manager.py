@@ -1,16 +1,12 @@
 import logging
 import asyncio
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from typing import Dict, Optional, Any
 
-from app.kiwoom_api import KiwoomAPI
-from app.auth_client import AuthClient
-from app.backend_client import BackendClient
-from app.envelope_trading import TradingModel as EnvelopeTradingModel
-from app.bollinger_band_trading import BollingerBandTradingModel
-from app.bot_instance import BotInstance, TradingStrategy
+from app.models.trade_models import TradingStrategy
+from app.bot.bot_instance import BotInstance
 
 logger = logging.getLogger(__name__)
+
 
 class BotManager:
     """여러 봇 인스턴스를 관리하는 클래스"""
@@ -187,44 +183,3 @@ class BotManager:
         self.bots.clear()
         
         logger.info("모든 봇 정리 완료")
-    
-    def get_bot_count(self) -> Dict[str, int]:
-        """봇 수 통계 조회"""
-        running_count = sum(1 for bot in self.bots.values() if bot.is_running)
-        
-        return {
-            "total": len(self.bots),
-            "running": running_count,
-            "stopped": len(self.bots) - running_count
-        }
-    
-    async def get_bot_status_summary(self) -> Dict[str, Any]:
-        """모든 봇의 상태 요약 정보"""
-        summary = {
-            "total_bots": len(self.bots),
-            "running_bots": 0,
-            "strategies": {
-                TradingStrategy.ENVELOPE.value: 0,
-                TradingStrategy.BOLLINGER.value: 0
-            },
-            "total_asset_value": 0,
-            "bots": []
-        }
-        
-        for email, bot in self.bots.items():
-            # 봇 상태 정보 추가
-            bot_status = bot.get_status()
-            summary["bots"].append(bot_status)
-            
-            # 실행 중인 봇 카운트
-            if bot.is_running:
-                summary["running_bots"] += 1
-            
-            # 전략별 카운트
-            summary["strategies"][bot.strategy.value] += 1
-            
-            # 자산 가치 합산 (키움 API가 초기화된 경우만)
-            if bot.kiwoom_api and "total_asset_value" in bot.kiwoom_api.account_info:
-                summary["total_asset_value"] += bot.kiwoom_api.account_info["total_asset_value"]
-        
-        return summary

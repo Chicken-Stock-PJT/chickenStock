@@ -1,17 +1,19 @@
+"""
+백엔드 API 클라이언트
+"""
 import logging
 import asyncio
-from typing import Dict, Any, Optional, List
+from typing import Dict, List, Optional, Any
 import aiohttp
-
+from app.auth.auth_client import AuthClient
 from app.config import settings
-from app.auth_client import AuthClient
 
 logger = logging.getLogger(__name__)
 
 class BackendClient:
     """백엔드 API와 통신하는 클라이언트"""
     
-    def __init__(self, auth_client: AuthClient):
+    def __init__(self, auth_client: Optional[AuthClient] = None):
         """클라이언트 초기화"""
         # 인증 클라이언트
         self.auth_client = auth_client
@@ -27,6 +29,10 @@ class BackendClient:
         
         # 클라이언트 상태
         self.running = False
+    
+    def set_auth_client(self, auth_client: AuthClient):
+        """인증 클라이언트 설정"""
+        self.auth_client = auth_client
     
     def set_trading_model(self, trading_model):
         """트레이딩 모델 설정 (순환 참조 해결)"""
@@ -64,7 +70,7 @@ class BackendClient:
                 await self.start()
                 
             # 인증 상태 확인
-            if not self.auth_client.is_authenticated:
+            if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 계좌 정보를 요청할 수 없습니다.")
                 return None
                 
@@ -94,7 +100,7 @@ class BackendClient:
                                 "code": code,
                                 "name": position.get("stockName", ""),
                                 "quantity": position.get("quantity", 0),
-                                "purchase_price": position.get("averagePrice", 0),
+                                "avgPrice": position.get("averagePrice", 0),
                                 "current_price": position.get("currentPrice", 0),
                                 "eval_profit_loss": position.get("profitLoss", 0),
                                 "earning_rate": position.get("returnRate", 0.0)
@@ -117,7 +123,7 @@ class BackendClient:
                 await self.start()
                 
             # 인증 상태 확인
-            if not self.auth_client.is_authenticated:
+            if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 종목 정보를 요청할 수 없습니다.")
                 return None
                 
@@ -148,7 +154,7 @@ class BackendClient:
                 await self.start()
             
             # 인증 상태 확인
-            if not self.auth_client.is_authenticated:
+            if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 매수 요청을 보낼 수 없습니다.")
                 return False
             
@@ -165,10 +171,6 @@ class BackendClient:
             
             # 백엔드 API 엔드포인트
             endpoint = f"{self.backend_url}/api/stock/trading/buy"
-            
-            # 세션이 없으면 생성
-            if not self.session:
-                self.session = aiohttp.ClientSession()
             
             # 매수 요청 전송
             async with self.session.post(
@@ -200,7 +202,7 @@ class BackendClient:
                 await self.start()
             
             # 인증 상태 확인
-            if not self.auth_client.is_authenticated:
+            if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 매도 요청을 보낼 수 없습니다.")
                 return False
             
@@ -217,10 +219,6 @@ class BackendClient:
             
             # 백엔드 API 엔드포인트
             endpoint = f"{self.backend_url}/api/stock/trading/sell"
-            
-            # 세션이 없으면 생성
-            if not self.session:
-                self.session = aiohttp.ClientSession()
             
             # 매도 요청 전송
             async with self.session.post(
@@ -244,30 +242,3 @@ class BackendClient:
         except Exception as e:
             logger.error(f"매도 요청 처리 중 오류: {str(e)}")
             return False
-        
-    async def request_trade_history(self, size: int = 10, cursor: str = None):
-        """백엔드 서버에서 거래 내역 요청"""
-        if not self.auth_client or not self.auth_client.is_authenticated:
-            logger.error("백엔드 서버에 인증되지 않았습니다.")
-            return None
-        
-        try:
-            url = f"{self.backend_url}/api/trade-histories?size={size}"
-            if cursor:
-                url += f"&cursor={cursor}"
-            
-            headers = {
-                "Authorization": f"Bearer {self.auth_client.access_token}",
-                "Content-Type": "application/json"
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    else:
-                        logger.error(f"거래 내역 요청 실패: 상태 코드 {response.status}")
-                        return None
-        except Exception as e:
-            logger.error(f"거래 내역 요청 중 오류: {str(e)}")
-            return None

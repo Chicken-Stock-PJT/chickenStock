@@ -1,14 +1,15 @@
+"""
+키움 API 클라이언트
+"""
 import logging
 import asyncio
-from typing import List, Callable, Any
 import aiohttp
+from typing import Dict, List, Callable, Optional, Any
 from datetime import datetime
-
+from app.auth.token_manager import TokenManager
+from app.cache.stock_cache import StockCache
+from app.api.kiwoom_websocket import KiwoomWebSocket
 from app.config import settings
-from app.token_manager import TokenManager
-from app.stock_cache import StockCache
-from app.kiwoom_auth import KiwoomAuthClient
-from app.kiwoom_websocket import KiwoomWebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +60,9 @@ class KiwoomAPI:
                 )
             
             # 키움 API 토큰 가져오기
-            kiwoom_auth_client = KiwoomAuthClient()
-            kiwoom_auth_client.set_token_manager(self.token_manager)
-            await kiwoom_auth_client.initialize()
-            
-            self.kiwoom_token = await kiwoom_auth_client.get_access_token()
+            self.kiwoom_token = self.token_manager.token
             if not self.kiwoom_token:
-                logger.error("키움 API 토큰 발급 실패")
+                logger.error("키움 API 토큰을 가져올 수 없습니다")
                 return False
             
             # 웹소켓 클라이언트 초기화
@@ -196,7 +193,7 @@ class KiwoomAPI:
         except Exception as e:
             logger.error(f"종목 필터링 중 오류: {str(e)}")
             return []
-    
+            
     async def initialize_chart_data(self, symbols, from_date=None, period=90):
         """여러 종목의 차트 데이터를 한 번에 초기화하고 캐싱"""
         try:
