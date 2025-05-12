@@ -33,6 +33,9 @@ public class FeeTaxSummary {
     @Column(name = "total_amount", nullable = false)
     private Long totalAmount;
 
+    @Version
+    private Long version; // 낙관적 락을 위한 버전 필드
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

@@ -37,6 +37,15 @@ public class PendingOrder {
     @Column(name = "target_price", nullable = false)
     private Long targetPrice;
 
+    @Column(name = "reserved_fee")
+    private Long reservedFee; // 매수 주문시 예약된 수수료
+
+    @Column(name = "expected_fee")
+    private Long expectedFee; // 매도 주문시 예상 수수료
+
+    @Column(name = "expected_tax")
+    private Long expectedTax; // 매도 주문시 예상 세금
+
     @Column(name = "created_at", nullable = false, columnDefinition = "DATETIME(0)")
     private LocalDateTime createdAt;
 
@@ -63,9 +72,46 @@ public class PendingOrder {
         this.createdAt = LocalDateTime.now();
     }
 
+    // 매수 주문용 정적 팩토리 메서드
+    public static PendingOrder createBuyOrder(Member member, StockData stockData,
+                                              Integer quantity, Long targetPrice, Long reservedFee) {
+        PendingOrder order = new PendingOrder(member, stockData, TradeHistory.TradeType.BUY,
+                quantity, targetPrice, OrderStatus.PENDING);
+        order.reservedFee = reservedFee;
+        return order;
+    }
+
+    // 매도 주문용 정적 팩토리 메서드
+    public static PendingOrder createSellOrder(Member member, StockData stockData,
+                                               Integer quantity, Long targetPrice,
+                                               Long expectedFee, Long expectedTax) {
+        PendingOrder order = new PendingOrder(member, stockData, TradeHistory.TradeType.SELL,
+                quantity, targetPrice, OrderStatus.PENDING);
+        order.expectedFee = expectedFee;
+        order.expectedTax = expectedTax;
+        return order;
+    }
+
+    // 기존 of 메서드 (하위 호환성을 위해 유지)
     public static PendingOrder of(Member member, StockData stockData, TradeHistory.TradeType orderType,
                                   Integer quantity, Long targetPrice) {
         return new PendingOrder(member, stockData, orderType, quantity, targetPrice, OrderStatus.PENDING);
+    }
+
+    // 수수료/세금 정보 업데이트 메서드
+    public void updateBuyOrderFees(Long reservedFee) {
+        if (this.orderType != TradeHistory.TradeType.BUY) {
+            throw new IllegalStateException("매수 주문이 아닌 경우 예약 수수료를 설정할 수 없습니다.");
+        }
+        this.reservedFee = reservedFee;
+    }
+
+    public void updateSellOrderFees(Long expectedFee, Long expectedTax) {
+        if (this.orderType != TradeHistory.TradeType.SELL) {
+            throw new IllegalStateException("매도 주문이 아닌 경우 예상 수수료/세금을 설정할 수 없습니다.");
+        }
+        this.expectedFee = expectedFee;
+        this.expectedTax = expectedTax;
     }
 
     public void complete() {

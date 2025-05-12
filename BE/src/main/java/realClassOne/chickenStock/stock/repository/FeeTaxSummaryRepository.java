@@ -9,7 +9,6 @@ import java.util.Optional;
 
 @Repository
 public interface FeeTaxSummaryRepository extends JpaRepository<FeeTaxSummary, Long> {
-
-    @Query("SELECT f FROM FeeTaxSummary f ORDER BY f.feeTaxId DESC")
+    @Query("SELECT f FROM FeeTaxSummary f ORDER BY f.createdAt DESC")
     Optional<FeeTaxSummary> findLatest();
 }
