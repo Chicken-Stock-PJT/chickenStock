@@ -33,8 +33,11 @@ public class CommentController {
 
     // 댓글,대댓글 조회
     @GetMapping
-    public ResponseEntity<List<CommentResponseDTO>> getComments(@PathVariable String shortCode) {
-        List<CommentResponseDTO> comments = commentService.getCommentsByStock(shortCode);
+    public ResponseEntity<List<CommentResponseDTO>> getComments(
+            @PathVariable String shortCode,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        List<CommentResponseDTO> comments = commentService.getCommentsByStock(shortCode, authorizationHeader);
         return ResponseEntity.ok(comments);
     }
 

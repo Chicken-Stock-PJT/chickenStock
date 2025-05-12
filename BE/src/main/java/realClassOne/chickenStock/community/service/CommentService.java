@@ -13,6 +13,7 @@ import realClassOne.chickenStock.community.dto.response.CommentResponseDTO;
 import realClassOne.chickenStock.community.dto.response.CommentUpdateResponseDTO;
 import realClassOne.chickenStock.community.entity.StockComment;
 import realClassOne.chickenStock.community.exception.CommentErrorCode;
+import realClassOne.chickenStock.community.repository.StockCommentLikeRepository;
 import realClassOne.chickenStock.community.repository.StockCommentRepository;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
@@ -34,11 +35,23 @@ public class CommentService {
     private final StockCommentRepository commentRepository;
     private final StockDataRepository stockDataRepository;
     private final JwtTokenProvider jwtTokenProvider;
+    private final StockCommentLikeRepository stockCommentLikeRepository;
 
 
-    public List<CommentResponseDTO> getCommentsByStock(String shortCode) {
+    public List<CommentResponseDTO> getCommentsByStock(String shortCode, String authorizationHeader) {
         StockData stock = stockDataRepository.findByShortCode(shortCode)
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
+
+        Long memberId = null;
+        Member member = null;
+
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            memberId = jwtTokenProvider.getMemberIdFromToken(token);
+            member = memberRepository.findById(memberId).orElse(null);
+        }
+
+        final Member currentMember = member;
 
         List<StockComment> parentComments = commentRepository
                 .findByStockDataStockDataIdAndParentIsNullOrderByCreatedAtDesc(stock.getStockDataId());
@@ -46,10 +59,21 @@ public class CommentService {
         return parentComments.stream()
                 .map(parent -> {
                     List<StockComment> children = commentRepository.findByParentIdOrderByCreatedAt(parent.getId());
+
                     List<CommentResponseDTO> childDTOs = children.stream()
-                            .map(child -> CommentResponseDTO.from(child, List.of()))
+                            .map(child -> {
+                                long likeCount = stockCommentLikeRepository.countByStockComment_Id(child.getId());
+                                boolean likedByMe = currentMember != null &&
+                                        stockCommentLikeRepository.findByMemberAndStockComment(currentMember, child).isPresent();
+                                return CommentResponseDTO.from(child, List.of(), likeCount, likedByMe);
+                            })
                             .toList();
-                    return CommentResponseDTO.from(parent, childDTOs);
+
+                    long likeCount = stockCommentLikeRepository.countByStockComment_Id(parent.getId());
+                    boolean likedByMe = currentMember != null &&
+                            stockCommentLikeRepository.findByMemberAndStockComment(currentMember, parent).isPresent();
+
+                    return CommentResponseDTO.from(parent, childDTOs, likeCount, likedByMe);
                 })
                 .toList();
     }
@@ -69,7 +93,7 @@ public class CommentService {
         StockComment comment = StockComment.of(stock, member, dto.getContent(), null);
         commentRepository.save(comment);
 
-        return CommentResponseDTO.from(comment, List.of());
+        return CommentResponseDTO.from(comment, List.of(), 0L, false);
     }
 
     // 대댓글 생성
