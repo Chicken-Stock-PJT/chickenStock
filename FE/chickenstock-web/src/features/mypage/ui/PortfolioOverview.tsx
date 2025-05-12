@@ -4,12 +4,14 @@ import { ArrowUpIcon, ArrowDownIcon } from "lucide-react";
 
 interface PortfolioOverviewProps {
   totalAsset: number; // 총 자산 (현금 + 주식 평가금액)
+  memberMoney: number; // 예수금 잔고
   totalProfitLoss: number; // 총 손익 (평가금액 - 투자금액)
   totalReturnRate: number; // 총 수익률 (%)
   sectors: number; // 보유 종목 수
 }
 const PortfolioOverview = ({
   totalAsset,
+  memberMoney,
   totalProfitLoss,
   totalReturnRate,
   sectors,
@@ -47,6 +49,15 @@ const PortfolioOverview = ({
               {totalReturnRate.toFixed(2)}% )
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle>예수금 잔고</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">{memberMoney.toLocaleString()}원</div>
         </CardContent>
       </Card>
 

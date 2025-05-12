@@ -1,13 +1,12 @@
-import { getUserInfo } from "@/features/mypage/api";
 import { useAuthStore } from "@/shared/store/auth";
 import { useQuery } from "@tanstack/react-query";
 
 export const useSimpleProfile = () => {
-  const { isLoggedIn } = useAuthStore();
+  const { isLoggedIn, getSimpleProfile } = useAuthStore();
 
   return useQuery({
     queryKey: ["simpleProfile"],
-    queryFn: getUserInfo,
+    queryFn: getSimpleProfile,
     enabled: isLoggedIn,
     staleTime: 1000 * 60 * 2, // 2분 동안은 캐시된 데이터 사용
     refetchOnWindowFocus: true, // 윈도우 포커스 시 갱신

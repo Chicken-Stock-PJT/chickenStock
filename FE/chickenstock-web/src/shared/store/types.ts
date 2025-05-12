@@ -14,6 +14,7 @@ export interface AuthState {
 export interface SimpleProfile {
   nickname: string;
   memberMoney: string;
+  totalAsset: string;
   returnRate: string;
   isOauth: string;
 }

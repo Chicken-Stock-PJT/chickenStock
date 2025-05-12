@@ -67,8 +67,8 @@ const Header = () => {
         <div className="flex items-center text-sm font-semibold lg:text-lg">
           <div className="flex items-center gap-4">
             <div className="hidden items-center gap-2 lg:flex">
-              <div className="rounded-md bg-primary-100 p-2 text-xs">잔고</div>
-              <div className="text-sm">\{Number(simpleProfile?.memberMoney).toLocaleString()}</div>
+              <div className="rounded-md bg-primary-100 p-2 text-xs">총 자산</div>
+              <div className="text-sm">\{Number(simpleProfile?.totalAsset).toLocaleString()}</div>
             </div>
             <div className="hidden items-center gap-2 lg:flex">
               <div className="rounded-md bg-primary-100 p-2 text-xs">수익률</div>
