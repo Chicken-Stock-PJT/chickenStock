@@ -18,6 +18,7 @@ import com.example.chickenstock.ui.theme.SCDreamFontFamily
 @Composable
 fun MoreButton(
     onClick: () -> Unit,
+    text: String,
     modifier: Modifier = Modifier
 ) {
     Button(
@@ -39,7 +40,7 @@ fun MoreButton(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "더 많은 종목 보기",
+                text = text,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.W500,
                 fontFamily = SCDreamFontFamily
