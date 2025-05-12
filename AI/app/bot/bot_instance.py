@@ -1,10 +1,11 @@
 import logging
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime
 
 from app.auth.auth_client import AuthClient
 from app.auth.token_manager import TokenManager
+from app.auth.kiwoom_auth import KiwoomAuthClient
 from app.api.kiwoom_api import KiwoomAPI
 from app.api.backend_client import BackendClient
 
@@ -24,11 +25,16 @@ class BotInstance:
         
         # API 인스턴스
         self.auth_client = None
+        self.token_manager = None
+        self.kiwoom_auth_client = None
         self.kiwoom_api = None
         self.backend_client = None
         
         # 트레이딩 모델
         self.trading_model = None
+        
+        # 계좌 정보 (독립적으로 관리)
+        self.account_info = {}
         
         # 상태 정보
         self.is_running = False
@@ -39,7 +45,7 @@ class BotInstance:
         
         logger.info(f"봇 인스턴스 생성: {email} (전략: {strategy})")
     
-    async def initialize(self, password: str):
+    async def initialize(self, password: str, shared_kiwoom_api: Optional[KiwoomAPI] = None):
         """봇 초기화 및 로그인"""
         try:
             # 인증 클라이언트 초기화
@@ -54,14 +60,34 @@ class BotInstance:
             
             logger.info(f"봇 {self.email} 로그인 성공")
             
-            # 토큰 관리자 초기화
-            token_manager = TokenManager()
-            await token_manager.initialize()
+            # 공유 KiwoomAPI가 제공되면 사용 (시장 데이터 효율적 공유)
+            if shared_kiwoom_api:
+                logger.info(f"봇 {self.email}에 공유 KiwoomAPI 설정")
+                self.kiwoom_api = shared_kiwoom_api
+            else:
+                # 독립적인 KiwoomAPI 생성
+                logger.info(f"봇 {self.email}에 독립적인 KiwoomAPI 생성")
+                # 토큰 관리자 초기화
+                self.token_manager = TokenManager()
+                await self.token_manager.initialize()
+                
+                # 키움 인증 클라이언트 초기화 및 토큰 발급
+                self.kiwoom_auth_client = KiwoomAuthClient()
+                self.kiwoom_auth_client.set_token_manager(self.token_manager)
+                await self.kiwoom_auth_client.initialize()
+                
+                # 키움 API 토큰 발급
+                kiwoom_token = await self.kiwoom_auth_client.get_access_token()
+                if not kiwoom_token:
+                    logger.error(f"봇 {self.email}의 키움 API 토큰 발급 실패")
+                    return False
+                
+                logger.info(f"봇 {self.email}의 키움 API 토큰 발급 성공")
+                
+                # 키움 API 초기화
+                self.kiwoom_api = KiwoomAPI(self.token_manager)
             
-            # 키움 API 초기화
-            self.kiwoom_api = KiwoomAPI(token_manager)
-            
-            # 백엔드 클라이언트 초기화
+            # 백엔드 클라이언트 초기화 (각 봇마다 독립적인 클라이언트)
             self.backend_client = BackendClient()
             self.backend_client.set_auth_client(self.auth_client)
             await self.backend_client.start()
@@ -78,8 +104,34 @@ class BotInstance:
             return True
         
         except Exception as e:
-            logger.error(f"봇 {self.email} 초기화 중 오류: {str(e)}")
+            logger.error(f"봇 {self.email} 초기화 중 오류: {str(e)}", exc_info=True)
             await self.cleanup()
+            return False
+    
+    async def update_account_info(self):
+        """계좌 정보 업데이트 (독립적으로 관리)"""
+        try:
+            if not self.backend_client:
+                logger.error(f"봇 {self.email}의 백엔드 클라이언트가 초기화되지 않았습니다")
+                return False
+            
+            account_info = await self.backend_client.request_account_info()
+            if account_info:
+                self.account_info = account_info
+                
+                # 트레이딩 모델에도 계좌 정보 전달 (각 봇마다 독립적인 계좌 정보)
+                if self.trading_model and hasattr(self.trading_model, 'update_account_info'):
+                    self.trading_model.update_account_info(account_info)
+                
+                logger.info(f"봇 {self.email} 계좌 정보 업데이트: 예수금={account_info.get('memberMoney', 0)}, "
+                          f"보유종목수={len(account_info.get('holdings', []))}")
+                return True
+            else:
+                logger.warning(f"봇 {self.email} 계좌 정보 조회 실패")
+                return False
+        
+        except Exception as e:
+            logger.error(f"봇 {self.email} 계좌 정보 업데이트 중 오류: {str(e)}")
             return False
     
     async def start(self):
@@ -93,73 +145,22 @@ class BotInstance:
                 logger.error(f"봇 {self.email}이 인증되지 않았습니다")
                 return False
             
-            # REST API 연결
-            if not await self.kiwoom_api.connect():
-                logger.error(f"봇 {self.email} API 연결 실패")
-                return False
+            # REST API 연결 - KiwoomAPI가 공유된 경우 스킵
+            if not hasattr(self.kiwoom_api, 'websocket') or self.kiwoom_api.websocket is None:
+                if not await self.kiwoom_api.connect():
+                    logger.error(f"봇 {self.email} API 연결 실패")
+                    return False
             
-            # 종목 정보 초기화
-            stock_list = await self.backend_client.get_all_stocks()
-            await self.kiwoom_api.initialize_stock_list(stock_list)
-            
-            # 계좌 정보 초기화
-            account_info = await self.backend_client.request_account_info()
-            if account_info:
-                self.kiwoom_api.update_account_info(account_info)
-            
-            # 필터링된 종목 리스트 가져오기 (시가총액 기준)
-            initial_filtered_symbols = await self.kiwoom_api.get_filtered_symbols(450, 150)
-            logger.info(f"봇 {self.email} 시가총액 기준 초기 필터링 완료: 총 {len(initial_filtered_symbols)}개 종목")
-            
-            # 필터링된 종목 중 실제 stock_list에 있는 종목만 추출
-            available_symbols = [
-                symbol for symbol in initial_filtered_symbols
-                if any(stock.get('shortCode') == symbol for stock in stock_list)
-            ]
-            
-            # 정확히 600개 종목을 선택 (또는 가능한 최대)
-            target_count = min(600, len(available_symbols))
-            final_symbols = available_symbols[:target_count]
-            
-            # 필터링된 종목 정보로 stock_cache 업데이트
-            filtered_stock_list = [
-                stock for stock in stock_list 
-                if stock.get('shortCode') in final_symbols
-            ]
-            await self.kiwoom_api.initialize_stock_list(filtered_stock_list)
-            
-            filtered_stockcode_list = [
-                stock.get("shortCode") for stock in filtered_stock_list if stock.get("shortCode")
-            ]
-            
-            # StockCache에 필터링된 종목 리스트 설정
-            self.kiwoom_api.stock_cache.set_filtered_stocks(filtered_stockcode_list)
-            
-            # 전략에 따른 차트 데이터 수집 및 지표 계산
-            if self.strategy == TradingStrategy.ENVELOPE:
-                # Envelope 지표 계산용 차트 데이터 초기화 (120일 데이터)
-                await self.kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
-                # Envelope 지표 계산
-                self.kiwoom_api.stock_cache.calculate_envelope_indicators()
-            elif self.strategy == TradingStrategy.BOLLINGER:
-                # 볼린저 밴드 지표 계산용 차트 데이터 초기화 (60일 데이터)
-                await self.kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=60)
-                # 볼린저 밴드 지표 계산
-                self.kiwoom_api.stock_cache.calculate_bollinger_bands()
-            
-            # 마지막 데이터 업데이트 시간 기록
-            self.last_data_update = datetime.now()
+            # 계좌 정보 초기화 (각 봇마다 독립적으로 관리)
+            await self.update_account_info()
             
             # 트레이딩 모델 시작
             if self.trading_model:
                 await self.trading_model.start()
             
-            # 실시간 데이터 구독 준비
-            await self.kiwoom_api.prepare_subscription_groups(filtered_stock_list, 30)
-            
-            # 실시간 데이터 구독 로테이션 시작
-            self.subscription_task = asyncio.create_task(
-                self.kiwoom_api.start_rotating_subscriptions(self.trading_model.handle_realtime_price)
+            # 거래 처리 루프 시작 (각 봇마다 독립적인 거래 로직)
+            self.trading_loop_task = asyncio.create_task(
+                self.trading_loop()
             )
             
             # 상태 업데이트
@@ -174,6 +175,87 @@ class BotInstance:
             await self.cleanup()
             return False
     
+    async def trading_loop(self):
+        """봇의 거래 처리 루프"""
+        logger.info(f"봇 {self.email}의 거래 처리 루프 시작")
+        
+        try:
+            # 마지막 처리 시간 초기화
+            last_processing_time = datetime.now()
+            
+            while self.is_running:
+                try:
+                    # 현재 시간
+                    current_time = datetime.now()
+                    
+                    # 10초마다 계좌 정보 업데이트 및 매매 결정 처리
+                    if (current_time - last_processing_time).total_seconds() >= 10:
+                        # 인증 상태 확인
+                        if not self.auth_client or not self.auth_client.is_authenticated:
+                            logger.warning(f"봇 {self.email}의 인증이 유효하지 않습니다. 거래는 건너뜁니다.")
+                            await asyncio.sleep(30)  # 30초 후 재시도
+                            continue
+                        
+                        # 계좌 정보 업데이트
+                        await self.update_account_info()
+                        
+                        if self.trading_model:
+                            # 트레이딩 모델에서 매매 결정 가져오기
+                            decisions = await self.trading_model.get_trade_decisions()
+                            
+                            if decisions:
+                                logger.info(f"봇 {self.email} 매매 결정: {len(decisions)}개")
+                                
+                                # 매매 결정이 있으면 백엔드 클라이언트로 요청 전송
+                                for idx, decision in enumerate(decisions):
+                                    try:
+                                        symbol = decision.get("symbol")
+                                        action = decision.get("action")
+                                        quantity = decision.get("quantity", 0)
+                                        price = decision.get("price", 0)
+                                        
+                                        logger.info(f"봇 {self.email} 매매 결정 #{idx+1}: {action} {symbol} {quantity}주 @ {price}원")
+                                        
+                                        # 백엔드 클라이언트를 통해 거래 요청 전송
+                                        if action.lower() == "buy":
+                                            result = await self.backend_client.request_buy(symbol, quantity, price)
+                                            if result:
+                                                logger.info(f"봇 {self.email} 매수 요청 성공: {symbol} {quantity}주 @ {price}원")
+                                            else:
+                                                logger.error(f"봇 {self.email} 매수 요청 실패: {symbol} {quantity}주 @ {price}원")
+                                        
+                                        elif action.lower() == "sell":
+                                            result = await self.backend_client.request_sell(symbol, quantity, price)
+                                            if result:
+                                                logger.info(f"봇 {self.email} 매도 요청 성공: {symbol} {quantity}주 @ {price}원")
+                                            else:
+                                                logger.error(f"봇 {self.email} 매도 요청 실패: {symbol} {quantity}주 @ {price}원")
+                                    
+                                    except Exception as e:
+                                        logger.error(f"봇 {self.email}의 거래 요청 전송 중 오류: {str(e)}")
+                            else:
+                                logger.debug(f"봇 {self.email} 매매 결정 없음")
+                        
+                        # 마지막 처리 시간 업데이트
+                        last_processing_time = current_time
+                    
+                    # 1초 대기
+                    await asyncio.sleep(1)
+                
+                except asyncio.CancelledError:
+                    logger.info(f"봇 {self.email}의 거래 처리 루프 취소됨")
+                    break
+                except Exception as e:
+                    logger.error(f"봇 {self.email}의 거래 처리 중 오류: {str(e)}")
+                    await asyncio.sleep(5)  # 오류 시 5초 후 재시도
+        
+        except asyncio.CancelledError:
+            logger.info(f"봇 {self.email}의 거래 처리 루프 취소됨")
+        except Exception as e:
+            logger.error(f"봇 {self.email}의 거래 처리 루프 실행 중 오류: {str(e)}")
+        
+        logger.info(f"봇 {self.email}의 거래 처리 루프 종료")
+    
     async def stop(self):
         """봇 중지"""
         if not self.is_running:
@@ -182,6 +264,9 @@ class BotInstance:
         
         try:
             logger.info(f"봇 {self.email} 중지 중...")
+            
+            # 상태 업데이트 (먼저 실행 중 상태를 False로 변경하여 루프 종료)
+            self.is_running = False
             
             # 태스크 취소
             if self.subscription_task:
@@ -208,12 +293,9 @@ class BotInstance:
             if self.backend_client:
                 await self.backend_client.stop()
             
-            # API 연결 종료
-            if self.kiwoom_api:
+            # API 연결 종료 (공유 API인 경우 스킵)
+            if self.token_manager and self.kiwoom_api:
                 await self.kiwoom_api.close()
-            
-            # 상태 업데이트
-            self.is_running = False
             
             logger.info(f"봇 {self.email} 중지 완료")
             return True
@@ -235,7 +317,9 @@ class BotInstance:
             
             # 객체 참조 제거
             self.auth_client = None
-            self.kiwoom_api = None
+            if self.token_manager:  # 공유 API가 아닌 경우에만
+                self.kiwoom_api = None
+                self.token_manager = None
             self.trading_model = None
             self.backend_client = None
             
@@ -256,8 +340,28 @@ class BotInstance:
             "last_data_update": self.last_data_update.isoformat() if self.last_data_update else None,
             "authenticated": self.auth_client.is_authenticated if self.auth_client else False,
             "account_info": {
-                "cash_balance": self.kiwoom_api.get_cash_balance() if self.kiwoom_api else 0,
-                "positions_count": len(self.kiwoom_api.get_positions()) if self.kiwoom_api else 0,
-                "total_asset_value": self.kiwoom_api.get_total_asset_value() if self.kiwoom_api else 0
-            } if self.kiwoom_api else None
+                "cash_balance": self.account_info.get('memberMoney', 0),
+                "positions_count": len(self.account_info.get('positions', [])),
+                "total_asset_value": self.account_info.get('totalAsset', 0)
+            } if self.account_info else None
         }
+    
+    def get_account_info(self) -> Dict:
+        """계좌 정보 반환"""
+        return self.account_info
+    
+    def get_cash(self) -> float:
+        """예수금 조회"""
+        return self.account_info.get('memberMoney', 0)
+    
+    def get_holdings(self) -> List:
+        """보유 종목 목록 조회"""
+        return self.account_info.get('positions', [])
+    
+    def get_holding(self, symbol: str) -> Optional[Dict]:
+        """특정 종목 보유 정보 조회"""
+        holdings = self.get_holdings()
+        for holding in holdings:
+            if holding.get('stockName') == symbol:
+                return holding
+        return None

@@ -12,7 +12,7 @@ class KiwoomAuthClient:
     """키움 API 인증 처리"""
     
     def __init__(self):
-        self.base_url = settings.API_AUTH_URL
+        self.base_url = settings.API_BASE_URL
         self.token_manager = None
         self.session = None
     

@@ -51,7 +51,7 @@ class BackendClient:
         logger.info("백엔드 클라이언트 시작")
         return True
     
-    async def stop(self):
+    async def close(self):
         """클라이언트 정지"""
         self.running = False
         

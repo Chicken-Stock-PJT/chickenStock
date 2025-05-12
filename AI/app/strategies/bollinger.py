@@ -37,11 +37,27 @@ class BollingerBandTradingModel(BaseTradingModel):
         self.min_price_change_pct = 0.1  # 최소 가격 변동 비율 (0.1%)
         self.min_process_interval = 5    # 최소 처리 간격 (초)
         
+        # 계좌 정보 관리 (독립적으로 관리)
+        self.account_info = {}
+        self.positions = {}
+        self.cash_balance = 0
+        
         logger.info("볼린저 밴드 트레이딩 모델 초기화 완료")
     
     def set_backend_client(self, backend_client):
         """백엔드 클라이언트 설정"""
         self.backend_client = backend_client
+    
+    def update_account_info(self, account_info):
+        """계좌 정보 업데이트 (독립적으로 관리)"""
+        self.account_info = account_info
+        # 포지션 데이터 구조 변환 (symbol을 키로 하는 딕셔너리)
+        self.positions = {
+            position.get('symbol'): position 
+            for position in self.account_info.get('holdings', [])
+        }
+        self.cash_balance = account_info.get('cash', 0)
+        logger.debug(f"계좌 정보 업데이트: 예수금={self.cash_balance}, 보유종목수={len(self.positions)}")
     
     async def start(self):
         """트레이딩 모델 시작"""
@@ -56,7 +72,7 @@ class BollingerBandTradingModel(BaseTradingModel):
         if self.backend_client:
             account_info = await self.backend_client.request_account_info()
             if account_info:
-                self.kiwoom_api.update_account_info(account_info)
+                self.update_account_info(account_info)
                 logger.info("계좌 정보 초기 동기화 완료")
         
         # 매매 신호 모니터링 시작
@@ -66,6 +82,12 @@ class BollingerBandTradingModel(BaseTradingModel):
         """트레이딩 모델 중지"""
         self.is_running = False
         logger.info("볼린저 밴드 트레이딩 모델 중지")
+    
+    async def refresh_indicators(self):
+        """지표 갱신 (데이터 갱신 후 호출)"""
+        logger.info("볼린저 밴드 지표 갱신")
+        # 필요한 경우 캐시 비우기 또는 내부 상태 초기화
+        # 현재는 구현이 필요하지 않음
     
     def _should_process_price_update(self, symbol: str, price: float) -> bool:
         """가격 업데이트를 처리해야 하는지 판단 (중복 메시지 필터링)"""
@@ -140,9 +162,8 @@ class BollingerBandTradingModel(BaseTradingModel):
                 seconds_passed = (now - last_trade_time).total_seconds()
                 min_holding_passed = seconds_passed >= (self.min_holding_period * 86400)
             
-            # 계좌 정보에서 보유 종목 확인
-            positions = self.kiwoom_api.get_positions()
-            is_holding = symbol in positions
+            # 계좌 정보에서 보유 종목 확인 - 독립적인 positions 사용
+            is_holding = symbol in self.positions
             
             # 볼린저 밴드 기반 매매 신호 로직
             # 1. 매수 신호: %B가 0.1 이하 (하단 밴드 아래거나 근처)
@@ -188,7 +209,7 @@ class BollingerBandTradingModel(BaseTradingModel):
             # 3. 손절 신호: 보유 중인 종목이 이동평균 아래로 15% 이상 하락
             elif is_holding and price < middle_band * 0.85:
                 # 손절 신호는 최소 보유 기간과 상관없이 항상 발생
-                position = positions[symbol]
+                position = self.positions[symbol]
                 avg_price = position.get("avgPrice", 0)
                 
                 # 매수가 대비 10% 이상 손실인 경우에만 손절
@@ -224,7 +245,7 @@ class BollingerBandTradingModel(BaseTradingModel):
                 if self.backend_client:
                     account_info = await self.backend_client.request_account_info()
                     if account_info:
-                        self.kiwoom_api.update_account_info(account_info)
+                        self.update_account_info(account_info)
                         logger.debug("계좌 정보 정기 동기화 완료")
                 
                 # 1시간마다 볼린저 밴드 지표 재계산
@@ -264,19 +285,16 @@ class BollingerBandTradingModel(BaseTradingModel):
         
         decisions = []
         try:
-            # 계좌 정보 최신화
+            # 계좌 정보 최신화 (백엔드에서 가져옴)
             if self.backend_client:
                 account_info = await self.backend_client.request_account_info()
                 if account_info:
-                    self.kiwoom_api.update_account_info(account_info)
+                    self.update_account_info(account_info)
             
             # 계좌 정보 확인
-            if not self.kiwoom_api.account_info:
+            if not self.account_info:
                 logger.warning("계좌 정보가 없습니다.")
                 return []
-            
-            cash_balance = self.kiwoom_api.get_cash_balance()
-            positions = self.kiwoom_api.get_positions()
             
             # 현재 시간
             now = datetime.now()
@@ -297,17 +315,17 @@ class BollingerBandTradingModel(BaseTradingModel):
                 # 1. 매수 신호 처리
                 if signal == "buy":
                     # 현재 보유 종목 수 확인
-                    if len(positions) >= self.max_positions:
+                    if len(self.positions) >= self.max_positions:
                         logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
                         continue
                     
                     # 충분한 현금 확인
-                    if cash_balance < self.trade_amount_per_stock:
-                        logger.debug(f"현금 부족({cash_balance}), 매수 보류: {symbol}")
+                    if self.cash_balance < self.trade_amount_per_stock:
+                        logger.debug(f"현금 부족({self.cash_balance}), 매수 보류: {symbol}")
                         continue
                     
                     # 이미 보유 중인지 확인
-                    if symbol in positions:
+                    if symbol in self.positions:
                         logger.debug(f"이미 보유 중인 종목 매수 신호 무시: {symbol}")
                         del self.trading_signals[symbol]
                         continue
@@ -349,12 +367,12 @@ class BollingerBandTradingModel(BaseTradingModel):
                 # 2. 매도 신호 처리
                 elif signal in ["sell", "stop_loss"]:
                     # 보유 중인 종목인지 확인
-                    if symbol not in positions:
+                    if symbol not in self.positions:
                         logger.debug(f"미보유 종목 매도 신호 무시: {symbol}")
                         del self.trading_signals[symbol]
                         continue
                     
-                    position = positions[symbol]
+                    position = self.positions[symbol]
                     total_quantity = position.get("quantity", 0)
                     
                     if total_quantity <= 0:
