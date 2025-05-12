@@ -2,12 +2,14 @@ package realClassOne.chickenStock.community.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.support.SimpleJpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.community.dto.request.CommentRequestDTO;
 import realClassOne.chickenStock.community.dto.request.CommentUpdateRequestDTO;
+import realClassOne.chickenStock.community.dto.response.CommentPageResponseDTO;
 import realClassOne.chickenStock.community.dto.response.CommentReplyResponseDTO;
 import realClassOne.chickenStock.community.dto.response.CommentResponseDTO;
 import realClassOne.chickenStock.community.dto.response.CommentUpdateResponseDTO;
@@ -24,6 +26,7 @@ import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.community.dto.request.CommentReplyRequestDTO;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -38,7 +41,7 @@ public class CommentService {
     private final StockCommentLikeRepository stockCommentLikeRepository;
 
 
-    public List<CommentResponseDTO> getCommentsByStock(String shortCode, String authorizationHeader) {
+    public CommentPageResponseDTO getCommentsByStock(String shortCode, String cursor, int limit, String authorizationHeader) {
         StockData stock = stockDataRepository.findByShortCode(shortCode)
                 .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
@@ -52,11 +55,16 @@ public class CommentService {
         }
 
         final Member currentMember = member;
+        LocalDateTime cursorTime = (cursor != null)
+                ? LocalDateTime.parse(cursor)
+                : LocalDateTime.now();
 
         List<StockComment> parentComments = commentRepository
-                .findByStockDataStockDataIdAndParentIsNullOrderByCreatedAtDesc(stock.getStockDataId());
+                .findByStockDataStockDataIdAndParentIsNullAndCreatedAtLessThanOrderByCreatedAtDesc(
+                        stock.getStockDataId(), cursorTime, PageRequest.of(0, limit)
+                );
 
-        return parentComments.stream()
+        List<CommentResponseDTO> responseDTOs = parentComments.stream()
                 .map(parent -> {
                     List<StockComment> children = commentRepository.findByParentIdOrderByCreatedAt(parent.getId());
 
@@ -76,7 +84,16 @@ public class CommentService {
                     return CommentResponseDTO.from(parent, childDTOs, likeCount, likedByMe);
                 })
                 .toList();
+
+        String nextCursor = null;
+        if (!parentComments.isEmpty()) {
+            LocalDateTime lastCreatedAt = parentComments.get(parentComments.size() - 1).getCreatedAt();
+            nextCursor = lastCreatedAt.toString(); // ISO-8601
+        }
+
+        return new CommentPageResponseDTO(responseDTOs, nextCursor);
     }
+
 
     public CommentResponseDTO createComment(String shortCode, CommentRequestDTO dto, String authorizationHeader) {
         // JWT에서 memberId 추출
