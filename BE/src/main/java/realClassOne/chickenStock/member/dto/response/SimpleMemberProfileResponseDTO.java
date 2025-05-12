@@ -10,4 +10,5 @@ public class SimpleMemberProfileResponseDTO {
     private String totalAsset;
     private String returnRate;
     private String isOauth;
+    private String memberMoney;
 }

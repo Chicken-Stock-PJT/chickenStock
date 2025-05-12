@@ -825,8 +825,9 @@ public class MemberService {
 
             String nickname = member.getNickname();
             String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
+            String memberMoney = member.getMemberMoney() != null ? member.getMemberMoney().toString() : "조회 중";
 
-            return SimpleMemberProfileResponseDTO.of(nickname, totalAsset, returnRate, isOauth);
+            return SimpleMemberProfileResponseDTO.of(nickname, totalAsset, returnRate, isOauth, memberMoney);
         } catch (Exception e) {
             log.error("간단 회원 정보 조회 중 오류 발생", e);
             throw new CustomException(MemberErrorCode.MEMBER_NOT_FOUND, "회원 정보를 불러올 수 없습니다");
