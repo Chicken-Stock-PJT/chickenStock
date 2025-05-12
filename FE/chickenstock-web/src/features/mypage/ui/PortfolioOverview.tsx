@@ -1,21 +1,21 @@
 import { useGetDailyProfitRate } from "@/features/mypage/model/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/libs/ui/card";
-import { useAuthStore } from "@/shared/store/auth";
 import { ArrowUpIcon, ArrowDownIcon } from "lucide-react";
 
 interface PortfolioOverviewProps {
   totalAsset: number; // 총 자산 (현금 + 주식 평가금액)
+  memberMoney: number; // 예수금 잔고
   totalProfitLoss: number; // 총 손익 (평가금액 - 투자금액)
   totalReturnRate: number; // 총 수익률 (%)
   sectors: number; // 보유 종목 수
 }
 const PortfolioOverview = ({
   totalAsset,
+  memberMoney,
   totalProfitLoss,
   totalReturnRate,
   sectors,
 }: PortfolioOverviewProps) => {
-  const simpleProfile = useAuthStore((state) => state.simpleProfile);
   const { data: dailyProfitRate } = useGetDailyProfitRate();
 
   const sectorMention = () => {
@@ -39,9 +39,7 @@ const PortfolioOverview = ({
           <CardTitle>총 자산</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {Number(simpleProfile?.totalAsset).toLocaleString()}원
-          </div>
+          <div className="text-2xl font-bold">{totalAsset.toLocaleString()}원</div>
           <div className="mt-2 flex items-center">
             <div
               className={`flex items-center ${totalProfitLoss > 0 ? "text-chart-red" : totalProfitLoss < 0 ? "text-chart-blue" : ""}`}
@@ -59,9 +57,7 @@ const PortfolioOverview = ({
           <CardTitle>예수금 잔고</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {Number(simpleProfile?.memberMoney).toLocaleString()}원
-          </div>
+          <div className="text-2xl font-bold">{memberMoney.toLocaleString()}원</div>
         </CardContent>
       </Card>
 

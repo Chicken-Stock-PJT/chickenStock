@@ -3,8 +3,15 @@ import HoldingsList from "./ui/HoldingsList";
 import PortfolioOverview from "./ui/PortfolioOverview";
 import { useGetPortfolio } from "./model/queries";
 import { PortfolioResponse } from "./model/types";
+import { useEffect } from "react";
+import { useSimpleProfile } from "@/shared/model/queries";
 
 const Portfolio = () => {
+  const { refetch: refetchSimpleProfile } = useSimpleProfile();
+  useEffect(() => {
+    void refetchSimpleProfile();
+  }, [refetchSimpleProfile]);
+
   const { data, isLoading, error } = useGetPortfolio();
 
   if (isLoading) return <div>Loading...</div>;
@@ -24,6 +31,7 @@ const Portfolio = () => {
         />
         <PortfolioOverview
           totalAsset={portfolio.totalAsset}
+          memberMoney={portfolio.memberMoney}
           totalProfitLoss={portfolio.totalProfitLoss}
           totalReturnRate={portfolio.totalReturnRate}
           sectors={sectors}
