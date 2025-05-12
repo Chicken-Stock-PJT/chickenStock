@@ -34,6 +34,7 @@ import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 import realClassOne.chickenStock.stock.websocket.handler.PortfolioWebSocketHandler;
+import realClassOne.chickenStock.stock.websocket.handler.StockWebSocketHandler;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -60,6 +61,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     private final StockSubscriptionService stockSubscriptionService;
     private final JwtTokenProvider jwtTokenProvider;
     private final PortfolioWebSocketHandler portfolioWebSocketHandler;
+    private final StockWebSocketHandler stockWebSocketHandler;
+    private final FeeTaxService feeTaxService;
 
 
     // 동시성 제어를 위한 락 추가
@@ -133,20 +136,29 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 // 총 구매 금액 계산
                 Long totalAmount = currentPrice * request.getQuantity();
 
+                // 수수료 계산
+                Long fee = feeTaxService.calculateBuyFee(totalAmount);
+
+                // 총 구매 금액에 수수료 추가
+                Long totalAmountWithFee = totalAmount + fee;
+
                 // 잔액 확인 - 재조회하여 최신 데이터로 확인
                 member = memberRepository.findById(memberId)
                         .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-                if (member.getMemberMoney() < totalAmount) {
+                if (member.getMemberMoney() < totalAmountWithFee) {
                     failedTrades.incrementAndGet();
                     throw new CustomException(StockErrorCode.INSUFFICIENT_BALANCE);
                 }
 
-                // 매수 처리
-                member.subtractMemberMoney(totalAmount);
+                // 매수 처리 (수수료 포함)
+                member.subtractMemberMoney(totalAmountWithFee);
                 memberRepository.save(member);
 
-                // 거래 내역 생성
+                // 수수료를 전체 통계에 추가
+                feeTaxService.addBuyFee(fee);
+
+                // 거래 내역 생성 (수수료, 세금 포함)
                 TradeHistory tradeHistory = TradeHistory.of(
                         member,
                         stock,
@@ -154,6 +166,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                         request.getQuantity(),
                         currentPrice,
                         totalAmount,
+                        fee,    // 수수료 추가
+                        0L,     // 매수에는 세금 없음
                         LocalDateTime.now()
                 );
                 tradeHistoryRepository.save(tradeHistory);
@@ -212,6 +226,24 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 }
 
                 successfulTrades.incrementAndGet();
+
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "BUY",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+                } catch (Exception e) {
+                    log.warn("시장가 매수 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
+
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
                 log.error("매수 주문 처리 중 오류 발생", e);
@@ -225,6 +257,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         }
     }
 
+    // 오버로딩 - 내부 사용
     // 오버로딩 - 내부 사용
     @Transactional
     public TradeResponseDTO buyStock(TradeRequestDTO request, Member member) {
@@ -253,21 +286,31 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     return createErrorResponse("내부 로직 오류: 시장가 주문이 아닌 요청이 들어왔습니다.");
                 }
 
-                // 총 구매 금액 계산 및 잔액 확인
+                // 총 구매 금액 계산
                 Long totalAmount = currentPrice * request.getQuantity();
+
+                // 수수료 계산
+                Long fee = feeTaxService.calculateBuyFee(totalAmount);
+
+                // 총 구매 금액에 수수료 추가
+                Long totalAmountWithFee = totalAmount + fee;
+
                 member = memberRepository.findById(member.getMemberId())
                         .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-                if (member.getMemberMoney() < totalAmount) {
+                if (member.getMemberMoney() < totalAmountWithFee) {
                     failedTrades.incrementAndGet();
                     throw new CustomException(StockErrorCode.INSUFFICIENT_BALANCE);
                 }
 
-                // 매수 처리
-                member.subtractMemberMoney(totalAmount);
+                // 매수 처리 (수수료 포함)
+                member.subtractMemberMoney(totalAmountWithFee);
                 memberRepository.save(member);
 
-                // 거래 내역 생성
+                // 수수료를 전체 통계에 추가
+                feeTaxService.addBuyFee(fee);
+
+                // 거래 내역 생성 (수수료, 세금 포함)
                 TradeHistory tradeHistory = TradeHistory.of(
                         member,
                         stock,
@@ -275,10 +318,11 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                         request.getQuantity(),
                         currentPrice,
                         totalAmount,
+                        fee,    // 수수료 추가
+                        0L,     // 매수에는 세금 없음
                         LocalDateTime.now()
                 );
                 tradeHistoryRepository.save(tradeHistory);
-;
 
                 // 비활성화된 기존 포지션 확인 (같은 종목 재매수 확인)
                 Optional<HoldingPosition> existingPosition = holdingPositionRepository
@@ -338,6 +382,23 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 }
 
                 successfulTrades.incrementAndGet();
+
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "BUY",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+                } catch (Exception e) {
+                    log.warn("시장가 매수 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
 
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
@@ -422,12 +483,25 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     holdingPositionRepository.flush(); // 즉시 DB에 반영
                 }
 
-                // 총 판매 금액 계산 및 매도 처리
+                // 총 판매 금액 계산
                 Long totalAmount = currentPrice * request.getQuantity();
-                member.addMemberMoney(totalAmount);
+
+                // 수수료 및 세금 계산
+                Long fee = feeTaxService.calculateSellFee(totalAmount);
+                Long tax = feeTaxService.calculateSellTax(totalAmount);
+
+                // 순 매도 금액 (수수료와 세금 제외)
+                Long netAmount = totalAmount - fee - tax;
+
+                // 매도 처리 (순 금액만 입금)
+                member.addMemberMoney(netAmount);
                 memberRepository.save(member);
 
-                // 거래 내역 생성
+                // 수수료와 세금을 전체 통계에 추가
+                feeTaxService.addSellFee(fee);
+                feeTaxService.addSellTax(tax);
+
+                // 거래 내역 생성 (수수료, 세금 포함)
                 TradeHistory tradeHistory = TradeHistory.of(
                         member,
                         stock,
@@ -435,6 +509,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                         request.getQuantity(),
                         currentPrice,
                         totalAmount,
+                        fee,    // 매도 수수료
+                        tax,    // 매도 세금
                         LocalDateTime.now()
                 );
                 tradeHistoryRepository.save(tradeHistory);
@@ -452,6 +528,23 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 // 추가: 트랜잭션을 즉시 플러시하여 DB에 반영
                 holdingPositionRepository.flush();
                 memberRepository.flush();
+
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "SELL",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+                } catch (Exception e) {
+                    log.warn("시장가 매도 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
 
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
@@ -478,6 +571,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         }
     }
 
+    // 오버로딩 - 내부 사용
     // 오버로딩 - 내부 사용
     @Transactional
     public TradeResponseDTO sellStock(TradeRequestDTO request, Member member) {
@@ -544,12 +638,25 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     holdingPositionRepository.flush(); // 즉시 DB에 반영
                 }
 
-                // 총 판매 금액 계산 및 매도 처리
+                // 총 판매 금액 계산
                 Long totalAmount = currentPrice * request.getQuantity();
-                member.addMemberMoney(totalAmount);
+
+                // 수수료 및 세금 계산
+                Long fee = feeTaxService.calculateSellFee(totalAmount);
+                Long tax = feeTaxService.calculateSellTax(totalAmount);
+
+                // 순 매도 금액 (수수료와 세금 제외)
+                Long netAmount = totalAmount - fee - tax;
+
+                // 매도 처리 (순 금액만 입금)
+                member.addMemberMoney(netAmount);
                 memberRepository.save(member);
 
-                // 거래 내역 생성
+                // 수수료와 세금을 전체 통계에 추가
+                feeTaxService.addSellFee(fee);
+                feeTaxService.addSellTax(tax);
+
+                // 거래 내역 생성 (수수료, 세금 포함)
                 TradeHistory tradeHistory = TradeHistory.of(
                         member,
                         stock,
@@ -557,6 +664,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                         request.getQuantity(),
                         currentPrice,
                         totalAmount,
+                        fee,    // 매도 수수료
+                        tax,    // 매도 세금
                         LocalDateTime.now()
                 );
                 tradeHistoryRepository.save(tradeHistory);
@@ -575,6 +684,22 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 holdingPositionRepository.flush();
                 memberRepository.flush();
 
+                // 여기에 체결 정보 WebSocket 전송 코드 추가
+                try {
+                    // 시간 포맷 변환 (HHmmss 형식으로)
+                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                    stockWebSocketHandler.broadcastTradeExecution(
+                            stock.getShortCode(),
+                            "SELL",
+                            request.getQuantity(),
+                            currentPrice,
+                            totalAmount,
+                            timestamp
+                    );
+                } catch (Exception e) {
+                    log.warn("시장가 매도 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+                }
 
                 return TradeResponseDTO.fromTradeHistory(tradeHistory);
             } catch (Exception e) {
@@ -866,17 +991,23 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         ReentrantLock memberLock = getMemberLock(member.getMemberId());
         memberLock.lock();
         try {
-            // 총 금액 계산 및 잔액 확보
+            // 총 금액 계산
             Long totalAmount = request.getPrice() * request.getQuantity();
+
+            // 수수료 계산 - 지정가 주문 시점에 수수료도 미리 계산하여 예약
+            Long fee = feeTaxService.calculateBuyFee(totalAmount);
+            Long totalAmountWithFee = totalAmount + fee;
 
             // 최신 회원 정보 조회
             member = memberRepository.findById(member.getMemberId())
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            // 잔액 확인
-            if (member.getMemberMoney() < totalAmount) {
+            // 잔액 확인 (수수료 포함)
+            if (member.getMemberMoney() < totalAmountWithFee) {
                 failedTrades.incrementAndGet();
-                throw new CustomException(StockErrorCode.INSUFFICIENT_BALANCE);
+                throw new CustomException(StockErrorCode.INSUFFICIENT_BALANCE,
+                        String.format("잔액이 부족합니다. 필요금액: %d원 (수수료 %d원 포함), 보유금액: %d원",
+                                totalAmountWithFee, fee, member.getMemberMoney()));
             }
 
             // 현재 가격 확인하여 매수 조건 즉시 충족 여부 체크
@@ -903,17 +1034,17 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
             PendingOrder pendingOrder = null;
             try {
-                // 지정가 매수를 위한 금액을 예약
-                member.subtractMemberMoney(totalAmount);
+                // 지정가 매수를 위한 금액을 예약 (수수료 포함)
+                member.subtractMemberMoney(totalAmountWithFee);
                 memberRepository.save(member);
 
-                // 지정가 주문 생성
-                pendingOrder = PendingOrder.of(
+                // 지정가 주문 생성 (수수료 정보 포함하여 저장) - 새로운 팩토리 메서드 사용
+                pendingOrder = PendingOrder.createBuyOrder(
                         member,
                         stock,
-                        TradeHistory.TradeType.BUY,
                         request.getQuantity(),
-                        request.getPrice()
+                        request.getPrice(),
+                        fee  // 예약된 수수료 정보 전달
                 );
                 pendingOrderRepository.save(pendingOrder);
 
@@ -928,16 +1059,18 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 response.setQuantity(request.getQuantity());
                 response.setUnitPrice(request.getPrice());
                 response.setTotalPrice(totalAmount);
+                response.setFee(fee);  // 예약된 수수료 정보 반환
                 response.setTradedAt(LocalDateTime.now());
                 response.setStatus("PENDING");
-                response.setMessage("지정가 매수 주문이 접수되었습니다.");
+                response.setMessage(String.format("지정가 매수 주문이 접수되었습니다. (수수료 %d원 포함하여 %d원 예약)",
+                        fee, totalAmountWithFee));
 
                 return response;
             } catch (Exception e) {
                 log.error("지정가 매수 주문 처리 중 오류 발생", e);
 
-                // 오류 발생 시 차감된 금액 환불 처리
-                refundMoneyOnOrderFailure(member, totalAmount);
+                // 오류 발생 시 차감된 금액 환불 처리 (수수료 포함)
+                refundMoneyOnOrderFailure(member, totalAmountWithFee);
 
                 // 주문이 생성되었다면 실패 상태로 변경
                 if (pendingOrder != null) {
@@ -989,13 +1122,21 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             member = memberRepository.findById(member.getMemberId())
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-            // 보유 수량 확인
-            HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, stock)
-                    .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "해당 종목을 보유하고 있지 않습니다"));
+            // 보유 수량 확인 (active=true인 포지션만)
+            HoldingPosition position = holdingPositionRepository.findByMemberAndStockDataAndActiveTrue(member, stock)
+                    .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK,
+                            "해당 종목을 보유하고 있지 않습니다"));
 
-            if (position.getQuantity() < request.getQuantity()) {
+            // 현재 보유 수량과 대기 중인 매도 주문 수량을 고려한 검증
+            int pendingSellQuantity = pendingOrderRepository.getTotalPendingSellQuantityForMemberAndStock(
+                    member.getMemberId(), stock.getShortCode());
+            int availableQuantity = position.getQuantity() - pendingSellQuantity;
+
+            if (availableQuantity < request.getQuantity()) {
                 failedTrades.incrementAndGet();
-                throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK, "보유 수량이 부족합니다");
+                throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK,
+                        String.format("매도 가능 수량이 부족합니다. 보유: %d주, 대기 중: %d주, 가능: %d주, 요청: %d주",
+                                position.getQuantity(), pendingSellQuantity, availableQuantity, request.getQuantity()));
             }
 
             // 현재 가격 확인하여 매도 조건 즉시 충족 여부 체크
@@ -1004,6 +1145,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
             // 현재가가 지정가보다 높거나 같으면 즉시 체결
             if (currentPrice != null && currentPrice >= request.getPrice()) {
+                log.info("지정가({}원)가 현재가({}원)보다 낮거나 같아 즉시 체결합니다.", request.getPrice(), currentPrice);
+
                 // 시장가와 동일한 sellStock 메서드 사용
                 TradeRequestDTO marketRequest = new TradeRequestDTO();
                 marketRequest.setStockCode(request.getStockCode());
@@ -1020,20 +1163,19 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
             PendingOrder pendingOrder = null;
             try {
-                // [추가] 지정가 매도를 위한 주식 수량 "예약" 처리
-                // 포지션에서 매도 예정 수량을 차감 또는 표시
-                int newQuantity = position.getQuantity() - request.getQuantity();
-                position.updatePosition(newQuantity, position.getAveragePrice(),
-                        position.getCurrentProfit(), position.getReturnRate());
-                holdingPositionRepository.save(position);
+                // 예상 수수료 및 세금 계산
+                Long expectedTotalAmount = request.getPrice() * request.getQuantity();
+                Long expectedFee = feeTaxService.calculateSellFee(expectedTotalAmount);
+                Long expectedTax = feeTaxService.calculateSellTax(expectedTotalAmount);
 
-                // 지정가 주문 생성
-                pendingOrder = PendingOrder.of(
+                // 지정가 주문 생성 (물리적으로 수량을 차감하지 않음, 논리적 예약만) - 새로운 팩토리 메서드 사용
+                pendingOrder = PendingOrder.createSellOrder(
                         member,
                         stock,
-                        TradeHistory.TradeType.SELL,
                         request.getQuantity(),
-                        request.getPrice()
+                        request.getPrice(),
+                        expectedFee,  // 예상 수수료
+                        expectedTax   // 예상 세금
                 );
                 pendingOrderRepository.save(pendingOrder);
 
@@ -1047,23 +1189,20 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 response.setTradeType("SELL");
                 response.setQuantity(request.getQuantity());
                 response.setUnitPrice(request.getPrice());
-                response.setTotalPrice(request.getPrice() * request.getQuantity());
+                response.setTotalPrice(expectedTotalAmount);
+                response.setFee(expectedFee);
+                response.setTax(expectedTax);
                 response.setTradedAt(LocalDateTime.now());
                 response.setStatus("PENDING");
-                response.setMessage("지정가 매도 주문이 접수되었습니다.");
+                response.setMessage(String.format("지정가 매도 주문이 접수되었습니다. 예상 수수료: %d원, 예상 세금: %d원",
+                        expectedFee, expectedTax));
 
                 return response;
             } catch (Exception e) {
                 log.error("지정가 매도 주문 처리 중 오류 발생", e);
 
-                // [추가] 주문 실패 시 차감했던 수량 복구
+                // 주문 실패 시 처리
                 if (pendingOrder != null) {
-                    // 예약했던 주식 수량 되돌리기
-                    int restoredQuantity = position.getQuantity() + request.getQuantity();
-                    position.updatePosition(restoredQuantity, position.getAveragePrice(),
-                            position.getCurrentProfit(), position.getReturnRate());
-                    holdingPositionRepository.save(position);
-
                     pendingOrder.fail();
                     pendingOrderRepository.save(pendingOrder);
                 }
@@ -1333,23 +1472,64 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             order.processing();
             pendingOrderRepository.save(order);
 
-            // 거래 내역 생성
-            long totalAmount = currentPrice * order.getQuantity();
+            // 실제 거래 금액 계산
+            long actualTotalAmount = currentPrice * order.getQuantity();
 
-            // 지정가와 현재가 차이만큼 환불 (이미 예약된 금액을 사용)
-            long refundAmount = (order.getTargetPrice() - currentPrice) * order.getQuantity();
+            // 새로운 수수료 계산 (실제 체결가 기준)
+            Long actualFee = feeTaxService.calculateBuyFee(actualTotalAmount);
+
+            // 원래 예약된 금액과 수수료
+            long reservedTotalAmount = order.getTargetPrice() * order.getQuantity();
+            Long reservedFee = order.getReservedFee() != null ? order.getReservedFee() : 0L;
+            long totalReserved = reservedTotalAmount + reservedFee;
+
+            // 실제 필요한 금액
+            long actualTotalWithFee = actualTotalAmount + actualFee;
+
+            // 환불액 계산 (예약액 - 실제 필요액)
+            long refundAmount = totalReserved - actualTotalWithFee;
+
             if (refundAmount > 0) {
+                // 차액 환불
                 member.addMemberMoney(refundAmount);
                 memberRepository.save(member);
+                log.info("체결가 차이로 인한 환불: 주문ID={}, 환불액={}원", order.getOrderId(), refundAmount);
+            } else if (refundAmount < 0) {
+                // 매우 드문 경우지만, 수수료가 예상보다 많을 경우
+                long additionalAmount = Math.abs(refundAmount);
+
+                // 잔액 확인
+                if (member.getMemberMoney() < additionalAmount) {
+                    log.error("체결 시 추가 수수료 부족: 주문ID={}, 부족액={}원", order.getOrderId(), additionalAmount);
+                    order.fail();
+                    pendingOrderRepository.save(order);
+                    failedTrades.incrementAndGet();
+
+                    // 전체 예약금 환불
+                    member.addMemberMoney(totalReserved);
+                    memberRepository.save(member);
+                    return;
+                }
+
+                // 추가 차감
+                member.subtractMemberMoney(additionalAmount);
+                memberRepository.save(member);
+                log.info("체결가 차이로 인한 추가 차감: 주문ID={}, 추가액={}원", order.getOrderId(), additionalAmount);
             }
 
+            // 수수료를 전체 통계에 추가
+            feeTaxService.addBuyFee(actualFee);
+
+            // 거래 내역 생성
             TradeHistory tradeHistory = TradeHistory.of(
                     member,
                     stock,
                     TradeHistory.TradeType.BUY,
                     order.getQuantity(),
                     currentPrice,
-                    totalAmount,
+                    actualTotalAmount,
+                    actualFee,
+                    0L,
                     LocalDateTime.now()
             );
             tradeHistoryRepository.save(tradeHistory);
@@ -1371,6 +1551,23 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 portfolioWebSocketHandler.sendFullPortfolioUpdate(member.getMemberId());
             } catch (Exception e) {
                 log.warn("포트폴리오 업데이트 알림 실패: {}", e.getMessage());
+            }
+
+            // 체결 정보 WebSocket 전송
+            try {
+                String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                stockWebSocketHandler.broadcastTradeExecution(
+                        stockCode,
+                        "BUY",
+                        order.getQuantity(),
+                        currentPrice,
+                        actualTotalAmount,
+                        timestamp
+                );
+                log.info("지정가 매수 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+                        stockCode, currentPrice, order.getQuantity());
+            } catch (Exception e) {
+                log.warn("지정가 매수 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
             }
 
             successfulTrades.incrementAndGet();
@@ -1409,9 +1606,20 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             // 거래 내역 생성
             long totalAmount = currentPrice * order.getQuantity();
 
-            // 매도 금액 입금
-            member.addMemberMoney(totalAmount);
+            // 수수료 및 세금 계산
+            Long fee = feeTaxService.calculateSellFee(totalAmount);
+            Long tax = feeTaxService.calculateSellTax(totalAmount);
+
+            // 순 매도 금액 (수수료와 세금 제외)
+            Long netAmount = totalAmount - fee - tax;
+
+            // 매도 처리 (순 금액만 입금)
+            member.addMemberMoney(netAmount);
             memberRepository.save(member);
+
+            // 수수료와 세금을 전체 통계에 추가
+            feeTaxService.addSellFee(fee);
+            feeTaxService.addSellTax(tax);
 
             TradeHistory tradeHistory = TradeHistory.of(
                     member,
@@ -1420,6 +1628,8 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     order.getQuantity(),
                     currentPrice,
                     totalAmount,
+                    fee,    // 매도 수수료
+                    tax,    // 매도 세금
                     LocalDateTime.now()
             );
             tradeHistoryRepository.save(tradeHistory);
@@ -1443,13 +1653,31 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 log.warn("포트폴리오 업데이트 알림 실패: {}", e.getMessage());
             }
 
+            // 추가: 체결 정보 WebSocket 전송
+            try {
+                // 시간 포맷 변환 (HHmmss 형식으로)
+                String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+                stockWebSocketHandler.broadcastTradeExecution(
+                        stockCode,
+                        "SELL",
+                        order.getQuantity(),
+                        currentPrice,
+                        totalAmount,
+                        timestamp
+                );
+                log.info("지정가 매도 체결 정보 WebSocket 전송 성공: 종목={}, 가격={}, 수량={}",
+                        stockCode, currentPrice, order.getQuantity());
+            } catch (Exception e) {
+                log.warn("지정가 매도 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
+                // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+            }
+
             successfulTrades.incrementAndGet();
         } catch (Exception e) {
             handleOrderExecutionFailure(order, "매도", e);
         }
     }
 
-    // 주문 실패 처리 공통 메서드
     // 주문 실패 처리 공통 메서드
     private void handleOrderExecutionFailure(PendingOrder order, String orderType, Exception e) {
         log.error("지정가 {} 주문 체결 중 오류 발생: {}", orderType, e.getMessage(), e);
@@ -1557,45 +1785,21 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 return false;
             }
 
-            // 매수 주문인 경우 예약된 금액 환불
+            // 매수 주문인 경우 예약된 금액 환불 (수수료 포함)
             if (order.getOrderType() == TradeHistory.TradeType.BUY) {
                 Long refundAmount = order.getTargetPrice() * order.getQuantity();
-                member.addMemberMoney(refundAmount);
+                Long reservedFee = order.getReservedFee() != null ? order.getReservedFee() : 0L;
+                Long totalRefund = refundAmount + reservedFee;
+
+                member.addMemberMoney(totalRefund);
                 memberRepository.save(member);
-                log.info("취소된 매수 주문에 대한 금액 환불: 주문ID={}, 금액={}원", orderId, refundAmount);
+                log.info("취소된 매수 주문에 대한 금액 환불: 주문ID={}, 원금={}원, 수수료={}원, 총 환불액={}원",
+                        orderId, refundAmount, reservedFee, totalRefund);
             }
-            // 매도 주문인 경우 예약된 주식 수량 복구
+            // 매도 주문인 경우 - 논리적 예약만 했으므로 별도 처리 불필요
             else if (order.getOrderType() == TradeHistory.TradeType.SELL) {
-                // 해당 포지션 찾기
-                HoldingPosition position = holdingPositionRepository.findByMemberAndStockData(member, order.getStockData())
-                        .orElse(null);
-
-                if (position != null) {
-                    // 예약했던 주식 수량 되돌리기
-                    int restoredQuantity = position.getQuantity() + order.getQuantity();
-                    position.updatePosition(restoredQuantity, position.getAveragePrice(),
-                            position.getCurrentProfit(), position.getReturnRate());
-                    holdingPositionRepository.save(position);
-                    log.info("취소된 매도 주문에 대한 주식 수량 복구: 주문ID={}, 종목={}, 수량={}주",
-                            orderId, order.getStockData().getShortCode(), order.getQuantity());
-                } else {
-                    // 만약 포지션이 삭제되었다면 새로 생성
-                    HoldingPosition newPosition = HoldingPosition.of(
-                            member,
-                            order.getStockData(),
-                            order.getQuantity(),
-                            order.getTargetPrice(),
-                            0L,  // 초기 수익
-                            0.0  // 초기 수익률
-                    );
-                    holdingPositionRepository.save(newPosition);
-                    member.addHoldingPosition(newPosition);
-                    log.info("취소된 매도 주문에 대한 새 포지션 생성: 주문ID={}, 종목={}, 수량={}주",
-                            orderId, order.getStockData().getShortCode(), order.getQuantity());
-                }
-
-                // 투자 요약 업데이트
-                updateInvestmentSummary(member);
+                log.info("취소된 매도 주문: 주문ID={}, 종목={}, 수량={}주 (물리적 수량 변경 없음)",
+                        orderId, order.getStockData().getShortCode(), order.getQuantity());
             }
 
             // 주문 취소 처리

@@ -38,4 +38,12 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
     boolean existsActivePendingOrderForStock(@Param("stockCode") String stockCode);
 
     Page<PendingOrder> findPageByStatus(PendingOrder.OrderStatus status, Pageable pageable);
+
+    @Query("SELECT COALESCE(SUM(p.quantity), 0) FROM PendingOrder p " +
+            "WHERE p.member.memberId = :memberId " +
+            "AND p.stockData.shortCode = :stockCode " +
+            "AND p.orderType = 'SELL' " +
+            "AND p.status = 'PENDING'")
+    int getTotalPendingSellQuantityForMemberAndStock(@Param("memberId") Long memberId,
+                                                     @Param("stockCode") String stockCode);
 }

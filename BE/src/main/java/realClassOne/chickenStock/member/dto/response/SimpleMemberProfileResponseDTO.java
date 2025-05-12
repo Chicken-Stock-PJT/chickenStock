@@ -7,7 +7,7 @@ import lombok.Getter;
 @AllArgsConstructor(staticName = "of")
 public class SimpleMemberProfileResponseDTO {
     private String nickname;
-    private String memberMoney;
+    private String totalAsset;
     private String returnRate;
     private String isOauth;
 }
