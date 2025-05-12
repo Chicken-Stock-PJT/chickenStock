@@ -280,7 +280,7 @@ fun StockDetailScreen(
         tradeExecutionFlow?.let {
             if (it.stockCode == stock.stockCode) {
                 tradeExecutions.add(0, it)
-                if (tradeExecutions.size > 10) tradeExecutions.removeLast()
+                if (tradeExecutions.size > 10) tradeExecutions.removeAt(tradeExecutions.lastIndex)
             }
         }
     }
