@@ -1,344 +1,224 @@
-"""
-키움 API 클라이언트
-"""
 import logging
 import asyncio
 import aiohttp
-from typing import Dict, List, Callable, Optional, Any
-from datetime import datetime
-from app.auth.token_manager import TokenManager
+from typing import List, Callable
 from app.cache.stock_cache import StockCache
-from app.api.kiwoom_websocket import KiwoomWebSocket
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-class KiwoomAPI:
-    """REST API와 WebSocket을 사용하는 키움 API 클래스"""
+class KiwoomWebSocket:
+    """키움 API 웹소켓 연결 및 데이터 구독"""
     
-    def __init__(self, token_manager: TokenManager):
-        """API 초기화"""
-        # REST API 설정
-        self.base_url = settings.API_BASE_URL
-        self.websocket_url = settings.WEBSOCKET_API_URL
-        
-        # 토큰 관리자
-        self.token_manager = token_manager
-        
-        # 키움 API 토큰
-        self.kiwoom_token = ""
-        
-        # HTTP 세션
-        self.session = None
-        
-        # 연결 상태
-        self.connected = False
-        
-        # 종목 캐시
-        self.stock_cache = StockCache()
-        
-        # 웹소켓 클라이언트
-        self.websocket_client = None
-        
-        # 계좌 정보
-        self.account_info = {
-            "cash_balance": 0,
-            "positions": {},
-            "total_asset_value": 0
-        }
+    def __init__(self, base_url: str, stock_cache: StockCache):
+        self.base_url = base_url
+        self.stock_cache = stock_cache
+        self.ws = None
+        self.subscription_groups = []  # 구독 그룹 목록
+        self.current_group_index = 0  # 현재 구독 중인 그룹 인덱스
+        self.rotation_task = None  # 로테이션 태스크
+        self.callback = None  # 실시간 데이터 처리 콜백
+        self.running = False  # 실행 상태
     
-    async def connect(self) -> bool:
-        """API 연결"""
+    async def connect(self, kiwoom_token: str):
+        """웹소켓 연결"""
         try:
-            # HTTP 세션 생성
-            if not self.session:
-                self.session = aiohttp.ClientSession(
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    }
-                )
+            if self.ws:
+                await self.close()
             
-            # 키움 API 토큰 가져오기
-            self.kiwoom_token = self.token_manager.token
-            if not self.kiwoom_token:
-                logger.error("키움 API 토큰을 가져올 수 없습니다")
-                return False
+            # 웹소켓 연결 URL
+            ws_url = f"{self.base_url}/ws/v1/quotes/domestic/stocks?authorization={kiwoom_token}"
             
-            # 웹소켓 클라이언트 초기화
-            self.websocket_client = KiwoomWebSocket(
-                base_url=self.websocket_url,
-                stock_cache=self.stock_cache
-            )
-            
-            # 연결 상태 설정
-            self.connected = True
-            logger.info("키움 API 연결 완료")
+            # 웹소켓 연결
+            self.ws = await aiohttp.ClientSession().ws_connect(ws_url)
+            logger.info("웹소켓 연결 성공")
             return True
         
         except Exception as e:
-            logger.error(f"API 연결 중 오류: {str(e)}")
+            logger.error(f"웹소켓 연결 실패: {str(e)}")
             return False
     
-    async def initialize_stock_list(self, stock_list=None):
-        """종목 정보 초기화"""
-        try:
-            if stock_list:
-                success = self.stock_cache.init_stock_info(stock_list)
-                if success:
-                    logger.info(f"종목 정보 초기화 완료: {len(stock_list)}개 종목")
-                    return True
-                else:
-                    logger.error("종목 캐시 초기화 실패")
-                    return False
-            else:
-                logger.error("종목 정보가 제공되지 않았습니다")
-                return False
-        
-        except Exception as e:
-            logger.error(f"종목 정보 초기화 중 오류: {str(e)}")
-            return False
-    
-    def update_account_info(self, account_info):
-        """외부에서 제공된 계좌 정보로 업데이트"""
-        if account_info:
-            self.account_info = account_info
-            return True
-        return False
-    
-    def get_cash_balance(self):
-        """현금 잔고 조회"""
-        return self.account_info.get("cash_balance", 0)
-    
-    def get_positions(self):
-        """보유 종목 조회"""
-        return self.account_info.get("positions", {})
-    
-    def get_total_asset_value(self):
-        """총 자산 가치 조회"""
-        return self.account_info.get("total_asset_value", 0)
-    
-    def get_trade_history(self):
-        """거래 이력 조회"""
-        # 실제 구현에서는 백엔드에서 거래 이력을 가져옴
-        return []
-    
-    async def get_filtered_symbols(self, top_kospi: int = 450, top_kosdaq: int = 150) -> List[str]:
-        """시가총액 기준으로 종목 필터링"""
-        try:
-            if not self.session:
-                self.session = aiohttp.ClientSession()
-            
-            # 키움 API 요청 헤더 구성
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.kiwoom_token}",
-                "api-id": "ka10099"  # API ID 설정
-            }
-
-            # 코스피, 코스닥 시장 정보 요청
-            market_types = [('0', 'KOSPI'), ('10', 'KOSDAQ')]
-            all_stocks = []
-
-            for market_code, market_name in market_types:
-                logger.info(f"{market_name} 시장 종목 조회 시작")
-                
-                # 요청 파라미터
-                params = {'mrkt_tp': market_code}
-                
-                async with self.session.post(
-                    f"{self.base_url}/api/dostk/stkinfo", 
-                    headers=headers, 
-                    json=params
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        stocks = data.get('list', [])
-                        
-                        # 종목 정보 처리
-                        all_market_stocks = []
-                        for stock in stocks:
-                            try:
-                                list_count = int(stock.get('listCount', '0').replace(',', ''))
-                                last_price = int(stock.get('lastPrice', '0').replace(',', ''))
-                                
-                                market_cap = list_count * last_price
-                                
-                                all_market_stocks.append({
-                                    'code': stock.get('code'),
-                                    'name': stock.get('name'),
-                                    'market_cap': market_cap
-                                })
-                            except (ValueError, TypeError) as e:
-                                logger.warning(f"종목 처리 중 오류: {e}")
-                                continue
-                        
-                        # 시가총액 기준 정렬
-                        all_market_stocks.sort(key=lambda x: x['market_cap'], reverse=True)
-                        
-                        # 상위 N개 종목 선택 (코스피 450, 코스닥 150)
-                        top_count = top_kospi if market_name == 'KOSPI' else top_kosdaq
-                        selected_stocks = all_market_stocks[:top_count]
-                        
-                        logger.info(f"{market_name} 시장 상위 {top_count}개 선택")
-                        
-                        all_stocks.extend([stock['code'] for stock in selected_stocks])
-                    else:
-                        logger.error(f"{market_name} 종목 정보 조회 실패: HTTP {response.status}")
-
-            logger.info(f"총 선택된 종목 수: {len(all_stocks)}")
-            return all_stocks
-
-        except Exception as e:
-            logger.error(f"종목 필터링 중 오류: {str(e)}")
-            return []
-            
-    async def initialize_chart_data(self, symbols, from_date=None, period=90):
-        """여러 종목의 차트 데이터를 한 번에 초기화하고 캐싱"""
-        try:
-            logger.info(f"차트 데이터 일괄 초기화 시작: {len(symbols)}개 종목")
-            
-            # 세션이 없으면 생성
-            if not self.session:
-                self.session = aiohttp.ClientSession()
-                
-            # 동시 요청 제한 (5개씩 처리)
-            batch_size = 5
-            total_batches = (len(symbols) + batch_size - 1) // batch_size
-            processed_count = 0
-            
-            for batch_index in range(total_batches):
-                start_idx = batch_index * batch_size
-                end_idx = min(start_idx + batch_size, len(symbols))
-                current_batch = symbols[start_idx:end_idx]
-                
-                # 배치 내 종목 병렬 처리
-                tasks = [
-                    self.get_daily_chart_data(code, from_date=from_date, period=period)
-                    for code in current_batch
-                ]
-                
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # 결과 처리
-                for i, result in enumerate(results):
-                    code = current_batch[i]
-                    if isinstance(result, Exception):
-                        logger.error(f"종목 {code} 차트 데이터 조회 실패: {str(result)}")
-                    elif result and len(result) > 0:
-                        processed_count += 1
-                
-                # 배치 간 간격 (API 부하 제어)
-                await asyncio.sleep(1)
-            
-            logger.info(f"차트 데이터 일괄 초기화 완료: {processed_count}/{len(symbols)} 성공")
-            return processed_count > 0
-        
-        except Exception as e:
-            logger.error(f"차트 데이터 일괄 초기화 중 오류: {str(e)}")
-            return False
-    
-    async def get_daily_chart_data(self, code, from_date=None, to_date=None, period=None):
-        """일별 차트 데이터 조회"""
-        try:
-            # 세션 확인
-            if not self.session:
-                self.session = aiohttp.ClientSession()
-                
-            # 키움 API 요청 헤더 구성
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.kiwoom_token}",
-                "api-id": "ka10081"  # API ID 설정
-            }
-            
-            # API 요청 파라미터 구성
-            params = {
-                "stk_cd": code,  # 종목코드
-                "upd_stkpc_tp": "1"  # 수정주가구분
-            }
-            
-            # 기준일자 설정
-            if to_date:
-                params["base_dt"] = to_date
-            else:
-                params["base_dt"] = datetime.now().strftime("%Y%m%d")
-                
-            # API 요청
-            async with self.session.post(
-                f"{self.base_url}/api/dostk/chart",
-                json=params,
-                headers=headers
-            ) as response:
-                if response.status == 200:
-                    chart_data = await response.json()
-                    
-                    # 응답 데이터 처리
-                    all_data = []
-                    chart_items = chart_data.get("stk_dt_pole_chart_qry", [])
-                    
-                    for item in chart_items:
-                        data_item = {
-                            "date": item.get("dt", ""),  # 일자
-                            "open": float(item.get("open_pric", "0") or "0"),  # 시가
-                            "high": float(item.get("high_pric", "0") or "0"),  # 고가
-                            "low": float(item.get("low_pric", "0") or "0"),    # 저가
-                            "close": float(item.get("cur_prc", "0") or "0"),   # 현재가 (종가)
-                            "volume": int(item.get("trde_qty", "0") or "0")    # 거래량
-                        }
-                        all_data.append(data_item)
-                    
-                    # 날짜 기준 내림차순 정렬 (최신 데이터가 앞에 오도록)
-                    all_data.sort(key=lambda x: x["date"], reverse=True)
-                    
-                    # StockCache에 차트 데이터 저장
-                    self.stock_cache.add_chart_data(code, all_data)
-                    
-                    return all_data
-                else:
-                    logger.error(f"차트 데이터 요청 실패: {code} HTTP {response.status}")
-                    return []
-        
-        except Exception as e:
-            logger.error(f"차트 데이터 요청 중 오류: {code} - {str(e)}")
-            return []
-    
-    async def prepare_subscription_groups(self, filtered_stock_list, group_size: int = 30):
+    async def prepare_subscription_groups(self, symbols: List[str], group_size: int = 30):
         """구독 그룹 준비"""
-        if not self.websocket_client:
-            logger.error("웹소켓 클라이언트가 초기화되지 않았습니다.")
-            return False
+        try:
+            # 그룹으로 분할 (최대 group_size 개씩)
+            self.subscription_groups = []
+            for i in range(0, len(symbols), group_size):
+                group = symbols[i:i+group_size]
+                self.subscription_groups.append(group)
             
-        all_symbols = [stock.get("shortCode") for stock in filtered_stock_list if stock.get("shortCode")]
-        return await self.websocket_client.prepare_subscription_groups(all_symbols, group_size)
+            logger.info(f"구독 그룹 준비 완료: {len(self.subscription_groups)}개 그룹, 총 {len(symbols)}개 종목")
+            return True
         
-    async def start_rotating_subscriptions(self, callback: Callable = None):
+        except Exception as e:
+            logger.error(f"구독 그룹 준비 중 오류: {str(e)}")
+            return False
+    
+    async def subscribe_group(self, group_index: int, kiwoom_token: str):
+        """특정 그룹 구독"""
+        try:
+            if not self.ws:
+                await self.connect(kiwoom_token)
+            
+            if group_index >= len(self.subscription_groups):
+                logger.error(f"유효하지 않은 그룹 인덱스: {group_index}")
+                return False
+            
+            # 현재 그룹의 종목 코드 목록
+            symbols = self.subscription_groups[group_index]
+            
+            # 구독 메시지 구성
+            subscribe_msg = {
+                "type": "subscribe",
+                "codes": symbols,
+                "isOnlyRealtime": True
+            }
+            
+            # 구독 요청 전송
+            await self.ws.send_json(subscribe_msg)
+            
+            # 구독된 종목 저장
+            for symbol in symbols:
+                self.stock_cache.add_subscribed_symbol(symbol)
+            
+            logger.info(f"그룹 {group_index} 구독 완료: {len(symbols)}개 종목")
+            return True
+        
+        except Exception as e:
+            logger.error(f"그룹 구독 중 오류: {str(e)}")
+            return False
+    
+    async def unsubscribe_group(self, group_index: int):
+        """특정 그룹 구독 해제"""
+        try:
+            if not self.ws:
+                logger.error("웹소켓 연결이 없습니다.")
+                return False
+            
+            if group_index >= len(self.subscription_groups):
+                logger.error(f"유효하지 않은 그룹 인덱스: {group_index}")
+                return False
+            
+            # 현재 그룹의 종목 코드 목록
+            symbols = self.subscription_groups[group_index]
+            
+            # 구독 해제 메시지 구성
+            unsubscribe_msg = {
+                "type": "unsubscribe",
+                "codes": symbols
+            }
+            
+            # 구독 해제 요청 전송
+            await self.ws.send_json(unsubscribe_msg)
+            
+            # 구독 해제된 종목 제거
+            for symbol in symbols:
+                self.stock_cache.remove_subscribed_symbol(symbol)
+            
+            logger.info(f"그룹 {group_index} 구독 해제 완료: {len(symbols)}개 종목")
+            return True
+        
+        except Exception as e:
+            logger.error(f"그룹 구독 해제 중 오류: {str(e)}")
+            return False
+    
+    async def start_rotating_subscriptions(self, callback: Callable = None, kiwoom_token: str = None):
         """구독 로테이션 시작"""
-        if not self.websocket_client:
-            logger.error("웹소켓 클라이언트가 초기화되지 않았습니다.")
+        if not self.subscription_groups:
+            logger.error("구독 그룹이 준비되지 않았습니다.")
             return False
         
-        return await self.websocket_client.start_rotating_subscriptions(
-            callback=callback,
-            kiwoom_token=self.kiwoom_token
-        )
+        self.callback = callback
+        self.running = True
+        
+        # 메시지 처리 루프 시작
+        asyncio.create_task(self.message_loop())
+        
+        # 로테이션 태스크 시작
+        self.rotation_task = asyncio.create_task(self.rotation_loop(kiwoom_token))
+        
+        logger.info("구독 로테이션 시작")
+        return True
+    
+    async def rotation_loop(self, kiwoom_token: str):
+        """구독 로테이션 루프"""
+        try:
+            while self.running:
+                # 이전 그룹 구독 해제
+                if len(self.subscription_groups) > 1:  # 그룹이 2개 이상인 경우만 로테이션
+                    await self.unsubscribe_group(self.current_group_index)
+                
+                # 다음 그룹 인덱스로 이동
+                self.current_group_index = (self.current_group_index + 1) % len(self.subscription_groups)
+                
+                # 새 그룹 구독
+                await self.subscribe_group(self.current_group_index, kiwoom_token)
+                
+                # 각 그룹당 5초 동안 유지
+                await asyncio.sleep(5)
+        
+        except asyncio.CancelledError:
+            logger.info("구독 로테이션 루프 취소됨")
+        except Exception as e:
+            logger.error(f"구독 로테이션 루프 오류: {str(e)}")
+    
+    async def message_loop(self):
+        """웹소켓 메시지 처리 루프"""
+        try:
+            while self.running and self.ws:
+                # 메시지 수신
+                msg = await self.ws.receive()
+                
+                # 연결 종료 확인
+                if msg.type == aiohttp.WSMsgType.CLOSED:
+                    logger.warning("웹소켓 연결 닫힘")
+                    break
+                elif msg.type == aiohttp.WSMsgType.ERROR:
+                    logger.error(f"웹소켓 오류: {self.ws.exception()}")
+                    break
+                
+                # 데이터 메시지 처리
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    try:
+                        data = msg.json()
+                        
+                        # 실시간 시세 메시지 처리
+                        if data.get("type") == "price":
+                            symbol = data.get("code")
+                            price = float(data.get("last", 0))
+                            
+                            # 현재가 캐싱
+                            if symbol and price > 0:
+                                self.stock_cache.update_price(symbol, price)
+                                
+                                # 콜백 함수 호출
+                                if self.callback:
+                                    await self.callback(symbol, price)
+                    
+                    except Exception as e:
+                        logger.error(f"메시지 처리 중 오류: {str(e)}")
+        
+        except asyncio.CancelledError:
+            logger.info("메시지 처리 루프 취소됨")
+        except Exception as e:
+            logger.error(f"메시지 처리 루프 오류: {str(e)}")
     
     async def close(self):
-        """API 연결 종료"""
-        try:
-            # 웹소켓 연결 종료
-            if self.websocket_client:
-                await self.websocket_client.close()
-            
-            # HTTP 세션 종료
-            if self.session and not self.session.closed:
-                await self.session.close()
-            
-            self.connected = False
-            logger.info("키움 API 연결 종료")
-            return True
-        except Exception as e:
-            logger.error(f"API 연결 종료 중 오류: {str(e)}")
-            return False
+        """웹소켓 연결 종료"""
+        self.running = False
+        
+        # 로테이션 태스크 취소
+        if self.rotation_task:
+            self.rotation_task.cancel()
+            try:
+                await self.rotation_task
+            except asyncio.CancelledError:
+                pass
+        
+        # 웹소켓 연결 종료
+        if self.ws:
+            await self.ws.close()
+            self.ws = None
+        
+        # 구독 상태 초기화
+        self.stock_cache.clear_subscribed_symbols()
+        logger.info("웹소켓 연결 종료 완료")

@@ -167,7 +167,7 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         await kiwoom_api.initialize_stock_list(stock_list)
         
         # 필터링된 종목 리스트 가져오기 (시가총액 기준)
-        initial_filtered_symbols = await kiwoom_api.get_filtered_symbols(450, 150)
+        initial_filtered_symbols = await kiwoom_api.get_filtered_symbols(620, 150)
         logger.info(f"시가총액 기준 초기 필터링 완료: 총 {len(initial_filtered_symbols)}개 종목")
         
         # 필터링된 종목 중 실제 stock_list에 있는 종목만 추출
@@ -534,7 +534,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """애플리케이션 종료 시 실행"""
-    global bot_manager, auth_client, kiwoom_api, token_manager
+    global bot_manager, auth_client, kiwoom_api, token_manager, backend_client
     
     logger.info("애플리케이션 종료 중...")
     
@@ -545,9 +545,9 @@ async def shutdown_event():
     if bot_manager:
         await bot_manager.cleanup()
     
-    # 토큰 관리자 종료
-    if token_manager:
-        await token_manager.close()
+    # 백엔드 클라이언트 종료
+    if backend_client:
+        await backend_client.close()
     
     # 키움 API 연결 종료
     if kiwoom_api:
@@ -556,6 +556,10 @@ async def shutdown_event():
     # 인증 클라이언트 종료
     if auth_client:
         await auth_client.close()
+    
+    # 토큰 관리자 종료
+    if token_manager:
+        await token_manager.close()
     
     logger.info("애플리케이션 종료 완료")
 
