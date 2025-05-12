@@ -8,7 +8,6 @@ COPY etc/csv /app/../etc/csv
 ENV TZ=Asia/Seoul
 ENV SERVER_PORT=8080
 
-# Actuator가 활성화 되어있나 확인필요
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD curl -f http://localhost:${SERVER_PORT}/actuator/health || exit 1
 
