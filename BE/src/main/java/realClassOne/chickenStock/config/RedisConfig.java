@@ -1,5 +1,6 @@
 package realClassOne.chickenStock.config;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,7 +29,6 @@ public class RedisConfig {
     }
 
     @Bean
-    @Primary  // Add this annotation
     public RedisTemplate<String, Object> redisTemplate() {
         RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
         redisTemplate.setConnectionFactory(redisConnectionFactory());
@@ -43,7 +43,8 @@ public class RedisConfig {
      * 문자열 전용 RedisTemplate (ZSet용)
      */
     @Bean
-    public RedisTemplate<String, String> stringRedisTemplate() {
+    @Primary
+    public RedisTemplate<String, String> customStringRedisTemplate() {
         RedisTemplate<String, String> template = new RedisTemplate<>();
         template.setConnectionFactory(redisConnectionFactory());
         template.setKeySerializer(new StringRedisSerializer());
@@ -55,7 +56,9 @@ public class RedisConfig {
      * ZSetOperations 주입용 Bean
      */
     @Bean
-    public ZSetOperations<String, String> zSetOperations(RedisTemplate<String, String> stringRedisTemplate) {
+    public ZSetOperations<String, String> zSetOperations(
+            @Qualifier("customStringRedisTemplate") RedisTemplate<String, String> stringRedisTemplate
+    ) {
         return stringRedisTemplate.opsForZSet();
     }
 

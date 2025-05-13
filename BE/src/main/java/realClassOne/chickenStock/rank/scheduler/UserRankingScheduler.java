@@ -15,7 +15,7 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class RankingScheduler {
+public class UserRankingScheduler {
 
     private final MemberRepository memberRepository;
     private final PortfolioService portfolioService;
