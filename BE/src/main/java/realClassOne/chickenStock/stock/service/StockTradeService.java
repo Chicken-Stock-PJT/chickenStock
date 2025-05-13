@@ -987,14 +987,14 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
     @Transactional
     public TradeResponseDTO createPendingBuyOrder(Member member, StockData stock, TradeRequestDTO request) {
-        // 회원 락 획득 - 자금 차감 전 락 확보
+        // 회원 락 획득
         ReentrantLock memberLock = getMemberLock(member.getMemberId());
         memberLock.lock();
         try {
             // 총 금액 계산
             Long totalAmount = request.getPrice() * request.getQuantity();
 
-            // 수수료 계산 - 지정가 주문 시점에 수수료도 미리 계산하여 예약
+            // 수수료 계산
             Long fee = feeTaxService.calculateBuyFee(totalAmount);
             Long totalAmountWithFee = totalAmount + fee;
 
@@ -1038,7 +1038,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 member.subtractMemberMoney(totalAmountWithFee);
                 memberRepository.save(member);
 
-                // 지정가 주문 생성 (수수료 정보 포함하여 저장) - 새로운 팩토리 메서드 사용
+                // 지정가 주문 생성 (수수료 정보 포함하여 저장)
                 pendingOrder = PendingOrder.createBuyOrder(
                         member,
                         stock,
@@ -1048,8 +1048,17 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 );
                 pendingOrderRepository.save(pendingOrder);
 
-                // 해당 종목 실시간 가격 구독은 유지 (지정가 주문 모니터링 필요)
-                subscribeStockIfNeeded(request.getStockCode());
+                // 해당 종목 실시간 가격 구독 - 지정가 주문 목적으로 구독
+                String pendingOrderPurpose = "PENDING_ORDER_" + pendingOrder.getOrderId();
+                boolean subscriptionSuccess = kiwoomWebSocketClient.subscribeStockWithPurpose(
+                        request.getStockCode(),
+                        pendingOrderPurpose
+                );
+
+                if (!subscriptionSuccess) {
+                    log.warn("지정가 주문에 대한 종목 구독 실패: {} (주문ID: {})",
+                            request.getStockCode(), pendingOrder.getOrderId());
+                }
 
                 TradeResponseDTO response = new TradeResponseDTO();
                 response.setOrderId(pendingOrder.getOrderId());
@@ -1076,6 +1085,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 if (pendingOrder != null) {
                     pendingOrder.fail();
                     pendingOrderRepository.save(pendingOrder);
+
+                    // 실패한 주문의 구독도 해제
+                    String pendingOrderPurpose = "PENDING_ORDER_" + pendingOrder.getOrderId();
+                    kiwoomWebSocketClient.unsubscribeStockForPurpose(request.getStockCode(), pendingOrderPurpose);
                 }
 
                 // 임시 구독이었고 주문 실패 시 구독 해제
@@ -1114,7 +1127,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
     @Transactional
     public TradeResponseDTO createPendingSellOrder(Member member, StockData stock, TradeRequestDTO request) {
-        // 종목 락 획득 - 보유 수량 확인 전 락 확보
+        // 종목 락 획득
         ReentrantLock stockLock = getStockLock(stock.getShortCode());
         stockLock.lock();
         try {
@@ -1168,7 +1181,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 Long expectedFee = feeTaxService.calculateSellFee(expectedTotalAmount);
                 Long expectedTax = feeTaxService.calculateSellTax(expectedTotalAmount);
 
-                // 지정가 주문 생성 (물리적으로 수량을 차감하지 않음, 논리적 예약만) - 새로운 팩토리 메서드 사용
+                // 지정가 주문 생성
                 pendingOrder = PendingOrder.createSellOrder(
                         member,
                         stock,
@@ -1179,8 +1192,17 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 );
                 pendingOrderRepository.save(pendingOrder);
 
-                // 해당 종목 실시간 가격 구독은 유지 (지정가 주문 모니터링 필요)
-                subscribeStockIfNeeded(request.getStockCode());
+                // 해당 종목 실시간 가격 구독 - 지정가 주문 목적으로 구독
+                String pendingOrderPurpose = "PENDING_ORDER_" + pendingOrder.getOrderId();
+                boolean subscriptionSuccess = kiwoomWebSocketClient.subscribeStockWithPurpose(
+                        request.getStockCode(),
+                        pendingOrderPurpose
+                );
+
+                if (!subscriptionSuccess) {
+                    log.warn("지정가 주문에 대한 종목 구독 실패: {} (주문ID: {})",
+                            request.getStockCode(), pendingOrder.getOrderId());
+                }
 
                 TradeResponseDTO response = new TradeResponseDTO();
                 response.setOrderId(pendingOrder.getOrderId());
@@ -1205,6 +1227,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                 if (pendingOrder != null) {
                     pendingOrder.fail();
                     pendingOrderRepository.save(pendingOrder);
+
+                    // 실패한 주문의 구독도 해제
+                    String pendingOrderPurpose = "PENDING_ORDER_" + pendingOrder.getOrderId();
+                    kiwoomWebSocketClient.unsubscribeStockForPurpose(request.getStockCode(), pendingOrderPurpose);
                 }
 
                 // 임시 구독이었고 주문 실패 시 구독 해제
@@ -1542,6 +1568,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             order.complete();
             pendingOrderRepository.save(order);
 
+            // 체결된 주문의 구독 목적 해제
+            String pendingOrderPurpose = "PENDING_ORDER_" + order.getOrderId();
+            kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, pendingOrderPurpose);
+
             // 구독 여부 확인 및 포트폴리오 업데이트
             if (!isStockNeededElsewhere(stockCode)) {
                 unsubscribeStockAfterTrade(stockCode);
@@ -1641,6 +1671,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             // 주문 상태 업데이트
             order.complete();
             pendingOrderRepository.save(order);
+
+            // 체결된 주문의 구독 목적 해제
+            String pendingOrderPurpose = "PENDING_ORDER_" + order.getOrderId();
+            kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, pendingOrderPurpose);
 
             // 구독 여부 확인 및 포트폴리오 업데이트
             if (!isStockNeededElsewhere(stockCode)) {
@@ -1805,11 +1839,16 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             // 주문 취소 처리
             order.cancel();
             pendingOrderRepository.save(order);
+
+            // 취소된 주문의 구독 목적 해제
+            String pendingOrderPurpose = "PENDING_ORDER_" + order.getOrderId();
+            String stockCode = order.getStockData().getShortCode();
+            kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, pendingOrderPurpose);
+
             log.info("주문 취소 완료: 주문ID={}, 종목={}, 타입={}",
-                    order.getOrderId(), order.getStockData().getShortCode(), order.getOrderType());
+                    order.getOrderId(), stockCode, order.getOrderType());
 
             // 해당 종목의 다른 지정가 주문이 없고, 포트폴리오에도 없으면 구독 해제
-            String stockCode = order.getStockData().getShortCode();
             if (!isStockNeededElsewhere(stockCode)) {
                 unsubscribeStockAfterTrade(stockCode);
             }

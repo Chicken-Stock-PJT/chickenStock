@@ -46,4 +46,7 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
             "AND p.status = 'PENDING'")
     int getTotalPendingSellQuantityForMemberAndStock(@Param("memberId") Long memberId,
                                                      @Param("stockCode") String stockCode);
+
+    @Query("SELECT COUNT(p) FROM PendingOrder p WHERE p.status = :status")
+    int countByStatus(@Param("status") PendingOrder.OrderStatus status);
 }
