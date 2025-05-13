@@ -131,14 +131,16 @@ public class MarketCloseScheduler {
 
                 // 매수 주문인 경우 예약된 금액 환불
                 if (order.getOrderType() == TradeHistory.TradeType.BUY) {
-                    Long refundAmount = order.getTargetPrice() * order.getQuantity();
+                    // 예약된 수수료 포함하여 환불
+                    Long reservedFee = order.getReservedFee() != null ? order.getReservedFee() : 0L;
+                    Long refundAmount = order.getTargetPrice() * order.getQuantity() + reservedFee;
 
                     try {
                         // 별도 트랜잭션으로 환불 처리
                         refundMoneyOnOrderCancellation(order.getMember(), refundAmount);
 
-                        log.info("취소된 매수 주문 환불 처리 완료: 주문ID={}, 회원ID={}, 금액={}원",
-                                order.getOrderId(), order.getMember().getMemberId(), refundAmount);
+                        log.info("취소된 매수 주문 환불 처리 완료: 주문ID={}, 회원ID={}, 금액={}원(수수료 {}원 포함)",
+                                order.getOrderId(), order.getMember().getMemberId(), refundAmount, reservedFee);
                     } catch (Exception e) {
                         log.error("매수 주문 취소 후 환불 처리 중 오류 발생: 주문ID={}, 회원ID={}, 금액={}원, 오류={}",
                                 order.getOrderId(), order.getMember().getMemberId(), refundAmount, e.getMessage());
@@ -159,6 +161,10 @@ public class MarketCloseScheduler {
                         sendRefundFailureEmail(order.getMember().getMemberId(), refundAmount, e);
                     }
                 }
+
+                // 체결된 주문의 구독 목적 해제
+                String pendingOrderPurpose = "PENDING_ORDER_" + order.getOrderId();
+                kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, pendingOrderPurpose);
 
                 cancelCount++;
             } catch (Exception e) {
@@ -299,11 +305,11 @@ public class MarketCloseScheduler {
     }
 
     /**
-     * 매일 저녁 8시 1분에 실행되는 스케줄러
+     * 매일 저녁 8시 5분에 실행되는 스케줄러
      * 모든 종목 구독을 배치 단위로 해제하고 로그를 남깁니다.
      * 구독 취소 상태에 따라 이메일 발송
      */
-    @Scheduled(cron = "0 1 20 * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 5 20 * * *", zone = "Asia/Seoul")
     public void unsubscribeAllStocks() {
         log.info("시장 마감 프로세스 실행: 모든 종목 구독 해제 시작");
         boolean isSuccessful = true; // 전체 과정 성공 여부
@@ -455,10 +461,10 @@ public class MarketCloseScheduler {
     }
 
     /**
-     * 마지막 안전장치: 8시 5분에 다시 한번 모든 구독 해제 시도
+     * 마지막 안전장치: 8시 10분에 다시 한번 모든 구독 해제 시도
      * 실패 시 강제로 웹소켓 연결 종료
      */
-    @Scheduled(cron = "0 5 20 * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 10 20 * * *", zone = "Asia/Seoul")
     public void finalUnsubscribeCheck() {
         Set<String> remainingSubscriptions = kiwoomWebSocketClient.getSubscribedStockCodes();
 
