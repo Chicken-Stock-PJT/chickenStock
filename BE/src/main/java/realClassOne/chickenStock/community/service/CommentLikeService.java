@@ -29,19 +29,15 @@ public class CommentLikeService {
 
     @Transactional
     public boolean toggleLike(String shortCode, Long commentId, String authorizationHeader) {
-        // 토큰 파싱
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
-        // 🔑 Member 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        // 댓글 조회
         StockComment comment = stockCommentRepository.findById(commentId)
                 .orElseThrow(() -> new CustomException(CommentErrorCode.COMMENT_NOT_FOUND));
 
-        // 기존 좋아요 있는지 확인
         Optional<StockCommentLike> existing = stockCommentLikeRepository.findByMemberAndStockComment(member, comment);
 
         if (existing.isPresent()) {
@@ -53,7 +49,8 @@ public class CommentLikeService {
             // 댓글 작성자에게 알림 보내기 (본인이 아닌 경우)
             if (!comment.getMember().getMemberId().equals(memberId)) {
                 notificationService.createLikeNotification(
-                        comment.getMember().getMemberId(),
+                        comment.getMember().getMemberId(),  // 알림 받을 사람
+                        memberId,                          // 알림 보내는 사람
                         comment.getStockData().getShortName(),
                         member.getNickname(),
                         comment.getId()
@@ -62,6 +59,4 @@ public class CommentLikeService {
             return true; // 좋아요 등록됨
         }
     }
-
 }
-

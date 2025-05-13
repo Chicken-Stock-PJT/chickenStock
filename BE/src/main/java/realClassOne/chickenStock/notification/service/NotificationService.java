@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.socket.WebSocketSession;
 import realClassOne.chickenStock.notification.entity.Notification;
 import realClassOne.chickenStock.notification.event.CommentNotificationEvent;
 import realClassOne.chickenStock.notification.event.LikeNotificationEvent;
@@ -44,12 +43,12 @@ public class NotificationService {
         eventPublisher.publishEvent(new TradeNotificationEvent(memberId, stockName, orderType, quantity, price));
     }
 
-    // 댓글 알림 생성 및 전송
+    // 댓글 알림 생성 및 전송 - memberId 비교로 변경
     @Transactional
-    public void createCommentNotification(Long targetMemberId, String stockName,
+    public void createCommentNotification(Long targetMemberId, Long commenterId, String stockName,
                                           String commenterNickname, Long commentId) {
         // 자기 자신에게는 알림을 보내지 않음
-        if (shouldSkipNotification(targetMemberId, commenterNickname)) {
+        if (targetMemberId.equals(commenterId)) {
             return;
         }
 
@@ -70,12 +69,12 @@ public class NotificationService {
         eventPublisher.publishEvent(new CommentNotificationEvent(targetMemberId, stockName, commenterNickname));
     }
 
-    // 좋아요 알림 생성 및 전송
+    // 좋아요 알림 생성 및 전송 - memberId 비교로 변경
     @Transactional
-    public void createLikeNotification(Long targetMemberId, String stockName,
+    public void createLikeNotification(Long targetMemberId, Long likerId, String stockName,
                                        String likerNickname, Long commentId) {
         // 자기 자신에게는 알림을 보내지 않음
-        if (shouldSkipNotification(targetMemberId, likerNickname)) {
+        if (targetMemberId.equals(likerId)) {
             return;
         }
 
@@ -119,12 +118,5 @@ public class NotificationService {
 
         unreadNotifications.forEach(Notification::markAsRead);
         notificationRepository.saveAll(unreadNotifications);
-    }
-
-    // 자기 자신에게 보내는 알림인지 확인
-    private boolean shouldSkipNotification(Long targetMemberId, String actorNickname) {
-        // 추가 로직: 실제로는 actorNickname으로 memberId를 조회해서 비교해야 함
-        // 여기서는 간단히 처리
-        return false;
     }
 }

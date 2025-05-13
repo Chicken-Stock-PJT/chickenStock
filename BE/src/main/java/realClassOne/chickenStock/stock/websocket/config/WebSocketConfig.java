@@ -26,11 +26,11 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .setAllowedOrigins("*"); // 실제 환경에서는 보안을 위해 특정 오리진만 허용하는 것 추천됨.
 
         // 포트폴리오 실시간 데이터 웹소켓
-        registry.addHandler(portfolioWebSocketHandler, "/ws/portfolio")
+        registry.addHandler(portfolioWebSocketHandler, "ws/portfolio")
                 .setAllowedOrigins("*");
 
         // 채팅 및 알림 웹소켓 추가
-        registry.addHandler(chatWebSocketHandler, "/ws/chat")
+        registry.addHandler(chatWebSocketHandler, "ws/notification")
                 .setAllowedOrigins("*");
     }
 }

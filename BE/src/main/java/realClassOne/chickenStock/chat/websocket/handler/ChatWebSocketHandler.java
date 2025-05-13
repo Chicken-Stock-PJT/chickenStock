@@ -1,5 +1,6 @@
 package realClassOne.chickenStock.chat.websocket.handler;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -7,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -24,6 +26,8 @@ import realClassOne.chickenStock.notification.event.TradeNotificationEvent;
 import realClassOne.chickenStock.notification.repository.NotificationRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,9 +50,14 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     // 세션별 닉네임 캐시
     private final Map<String, String> sessionNicknameMap = new ConcurrentHashMap<>();
 
+    // 마지막 활동 시간 추적 (하트비트 대체)
+    private final Map<String, Long> lastActivityMap = new ConcurrentHashMap<>();
+    private static final long SESSION_TIMEOUT = 180000; // 3분
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         log.info("채팅 WebSocket 클라이언트 연결: {}", session.getId());
+        lastActivityMap.put(session.getId(), System.currentTimeMillis());
 
         try {
             ObjectNode message = objectMapper.createObjectNode();
@@ -63,6 +72,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+        // 모든 메시지 수신 시 활동 시간 업데이트
+        lastActivityMap.put(session.getId(), System.currentTimeMillis());
+
         try {
             JsonNode jsonNode = objectMapper.readTree(message.getPayload());
             String type = jsonNode.get("type").asText();
@@ -98,6 +110,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (memberId != null) {
             memberSessionMap.remove(memberId);
             sessionNicknameMap.remove(sessionId);
+            lastActivityMap.remove(sessionId);
 
             // 사용자 퇴장 알림
             notifyUserLeft(memberId);
@@ -128,16 +141,23 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
-            // 기존 세션이 있으면 종료
-            WebSocketSession oldSession = memberSessionMap.get(memberId);
-            if (oldSession != null && oldSession.isOpen()) {
-                oldSession.close();
-            }
+            // 동시성 문제 해결을 위한 동기화
+            synchronized (memberSessionMap) {
+                // 기존 세션이 있으면 종료
+                WebSocketSession oldSession = memberSessionMap.get(memberId);
+                if (oldSession != null && oldSession.isOpen()) {
+                    try {
+                        oldSession.close();
+                    } catch (Exception e) {
+                        log.error("기존 세션 종료 중 오류", e);
+                    }
+                }
 
-            // 세션 등록
-            sessionMemberMap.put(session.getId(), memberId);
-            memberSessionMap.put(memberId, session);
-            sessionNicknameMap.put(session.getId(), member.getNickname());
+                // 세션 등록
+                sessionMemberMap.put(session.getId(), memberId);
+                memberSessionMap.put(memberId, session);
+                sessionNicknameMap.put(session.getId(), member.getNickname());
+            }
 
             // 인증 성공 응답
             ObjectNode response = objectMapper.createObjectNode();
@@ -185,6 +205,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     // 이벤트 리스너 - 댓글 알림
     @EventListener
+    @Async
     public void handleCommentNotification(CommentNotificationEvent event) {
         try {
             WebSocketSession session = memberSessionMap.get(event.getMemberId());
@@ -205,6 +226,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     // 이벤트 리스너 - 좋아요 알림
     @EventListener
+    @Async
     public void handleLikeNotification(LikeNotificationEvent event) {
         try {
             WebSocketSession session = memberSessionMap.get(event.getMemberId());
@@ -223,7 +245,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    // 미확인 알림 전송 (순환 참조 해결을 위해 직접 조회)
+    // 미확인 알림 전송
     private void sendUnreadNotifications(Long memberId, WebSocketSession session) {
         try {
             List<Notification> unreadNotifications = notificationRepository
@@ -244,7 +266,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    // 나머지 메서드들은 동일...
     private void handleChatMessage(WebSocketSession session, JsonNode jsonNode) {
         try {
             String sessionId = session.getId();
@@ -307,6 +328,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private void handlePing(WebSocketSession session) {
         try {
+            // 활동 시간 업데이트
+            lastActivityMap.put(session.getId(), System.currentTimeMillis());
+
             ObjectNode pong = objectMapper.createObjectNode();
             pong.put("type", "pong");
             pong.put("timestamp", System.currentTimeMillis());
@@ -349,6 +373,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             message.put("title", notification.getTitle());
             message.put("message", notification.getMessage());
             message.put("timestamp", notification.getTimestamp());
+
+            if (notification.getNotificationId() != null) {
+                message.put("notificationId", notification.getNotificationId());
+            }
 
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
         } catch (Exception e) {
@@ -415,6 +443,36 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(error)));
         } catch (Exception e) {
             log.error("에러 메시지 전송 실패", e);
+        }
+    }
+
+    // 비활성 세션만 체크하는 스케줄러
+    @Scheduled(fixedDelay = 60000) // 1분마다 체크
+    public void checkInactiveSessions() {
+        long now = System.currentTimeMillis();
+        List<String> sessionsToClose = new ArrayList<>();
+
+        for (Map.Entry<String, Long> entry : lastActivityMap.entrySet()) {
+            if (now - entry.getValue() > SESSION_TIMEOUT) {
+                sessionsToClose.add(entry.getKey());
+            }
+        }
+
+        // 타임아웃된 세션 종료
+        for (String sessionId : sessionsToClose) {
+            // sessionId로 WebSocketSession 찾기
+            for (Map.Entry<Long, WebSocketSession> entry : memberSessionMap.entrySet()) {
+                WebSocketSession session = entry.getValue();
+                if (session.getId().equals(sessionId)) {
+                    try {
+                        session.close(CloseStatus.SESSION_NOT_RELIABLE);
+                        log.info("비활성 세션 종료: {}", sessionId);
+                    } catch (IOException e) {
+                        log.error("세션 종료 실패", e);
+                    }
+                    break;
+                }
+            }
         }
     }
 }
