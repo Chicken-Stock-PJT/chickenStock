@@ -1,6 +1,8 @@
 package realClassOne.chickenStock.rank.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.member.entity.Member;
@@ -19,6 +21,9 @@ public class RankingService {
     private final ZSetOperations<String, String> zSetOperations;
     private final MemberRepository memberRepository;
     private final JwtTokenProvider jwtTokenProvider;
+
+    @Autowired
+    private final TotalAssetCalculator totalAssetCalculator;
 
     private static final String REDIS_KEY = "ranking:totalAsset";
 
@@ -77,5 +82,48 @@ public class RankingService {
         }
 
         return new RankingResponseDTO(topRankings, myRank);
+    }
+
+    // ai 그룹 랭킹 조회
+    public List<RankingEntryDTO> getGroupMembersRankInGlobal(List<Long> memberIds) {
+        Set<ZSetOperations.TypedTuple<String>> topSet =
+                zSetOperations.reverseRangeWithScores(REDIS_KEY, 0, -1);  // 전체 조회
+
+        if (topSet == null || topSet.isEmpty()) {
+            totalAssetCalculator.recalculateAll();  // 직접 계산해서 Redis 채우기
+            topSet = zSetOperations.reverseRangeWithScores(REDIS_KEY, 0, -1);
+        }
+
+        Map<Long, String> nicknameMap = memberRepository.findAllById(memberIds).stream()
+                .collect(Collectors.toMap(Member::getMemberId, Member::getNickname));
+
+        List<RankingEntryDTO> filteredRanks = new ArrayList<>();
+
+        int rank = 0;
+        long prevScore = -1;
+        int skip = 1;
+
+        for (ZSetOperations.TypedTuple<String> tuple : topSet) {
+            Long memberId = Long.valueOf(tuple.getValue());
+            long totalAsset = tuple.getScore().longValue();
+
+            // 공동 순위 처리
+            if (totalAsset != prevScore) {
+                rank += skip;
+                skip = 1;
+            } else {
+                skip++;
+            }
+
+            // 대상 멤버만 필터링
+            if (memberIds.contains(memberId)) {
+                String nickname = nicknameMap.getOrDefault(memberId, "탈퇴회원");
+                filteredRanks.add(new RankingEntryDTO(rank, nickname, totalAsset));
+            }
+
+            prevScore = totalAsset;
+        }
+
+        return filteredRanks;
     }
 }
