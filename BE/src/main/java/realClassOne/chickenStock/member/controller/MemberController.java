@@ -160,7 +160,6 @@ public class MemberController {
         return ResponseEntity.ok(response);
     }
 
-
     @GetMapping("/dashboard")
     public ResponseEntity<DashboardResponseDTO> getDashboard(
             @RequestHeader("Authorization") String authorizationHeader) {
