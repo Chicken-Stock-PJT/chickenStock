@@ -4,13 +4,13 @@ import { AxiosResponse } from "axios";
 import { ErrorResponse, DailyProfitRateResponse, TransactionResponse } from "./types";
 
 export const useGetPortfolio = () => {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["portfolio"],
     queryFn: getPortfolio,
     staleTime: 0,
     gcTime: 0,
   });
-  return { data, isLoading, error };
+  return { data, isLoading, error, refetch };
 };
 
 export const useGetTransactions = () => {

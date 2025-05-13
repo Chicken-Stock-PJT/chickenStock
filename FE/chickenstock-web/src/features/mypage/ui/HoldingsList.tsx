@@ -1,17 +1,30 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import { Position } from "../model/types";
 import { useNavigate } from "react-router-dom";
+import { RefreshCw } from "lucide-react";
 interface HoldingsListProps {
   holdings: Position[];
+  onClick: () => void;
+  isLoading: boolean;
 }
 
-const HoldingsList = ({ holdings }: HoldingsListProps) => {
+const HoldingsList = ({ holdings, onClick, isLoading }: HoldingsListProps) => {
   const navigate = useNavigate();
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>보유 종목 현황</CardTitle>
+        <CardTitle>
+          <div className="flex items-center gap-4">
+            <span>보유 종목 현황</span>
+            <button className="cursor-pointer rounded-full bg-gray-400 p-1 text-white">
+              <RefreshCw
+                className={`size-4 ${isLoading ? "animate-spin" : ""}`}
+                onClick={onClick}
+              />
+            </button>
+          </div>
+        </CardTitle>
         <CardDescription>현재 보유 중인 주식 종목과 수익률입니다.</CardDescription>
       </CardHeader>
       <CardContent>
