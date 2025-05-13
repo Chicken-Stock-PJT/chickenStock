@@ -25,4 +25,10 @@ public class RankingController {
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
         return ResponseEntity.ok(rankingService.getTop100WithMyRank(authorizationHeader));
     }
+
+    // ai 별도 랭킹 조회
+    @GetMapping("/total-asset/ai")
+    public ResponseEntity<List<RankingEntryDTO>> getCustomGroupRanking() {
+        return ResponseEntity.ok(rankingService.getGroupMembersRankInGlobal(List.of(1L, 2L, 3L, 4L)));
+    }
 }
