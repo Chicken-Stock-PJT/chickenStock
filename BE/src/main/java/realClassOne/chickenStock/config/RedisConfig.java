@@ -27,7 +27,7 @@ public class RedisConfig {
     }
 
     @Bean
-    @Primary  // Add this annotation
+    @Primary
     public RedisTemplate<String, Object> redisTemplate() {
         RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
         redisTemplate.setConnectionFactory(redisConnectionFactory());
@@ -37,4 +37,5 @@ public class RedisConfig {
         redisTemplate.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
         return redisTemplate;
     }
+
 }
