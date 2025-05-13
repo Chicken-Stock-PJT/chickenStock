@@ -10,6 +10,7 @@ import realClassOne.chickenStock.rank.dto.response.RankingResponseDTO;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -21,52 +22,58 @@ public class RankingService {
 
     private static final String REDIS_KEY = "ranking:totalAsset";
 
+    // TOP 100 랭킹과 로그인한 사용자의 공동 순위 정보를 반환
     public RankingResponseDTO getTop100WithMyRank(String authorizationHeader) {
         Set<ZSetOperations.TypedTuple<String>> topSet =
-                zSetOperations.reverseRangeWithScores(REDIS_KEY, 0, 99);
+                zSetOperations.reverseRangeWithScores(REDIS_KEY, 0, -1);  // 전체 순위 조회
+
+        if (topSet == null || topSet.isEmpty()) {
+            return new RankingResponseDTO(List.of(), null);
+        }
+
+        // 닉네임 캐싱: memberId → nickname
+        Map<Long, String> nicknameMap = memberRepository.findAll().stream()
+                .collect(Collectors.toMap(Member::getMemberId, Member::getNickname));
 
         List<RankingEntryDTO> topRankings = new ArrayList<>();
-        int rank = 1;
+        RankingEntryDTO myRank = null;
+
+        int rank = 0;
         long prevScore = -1;
-        int sameCount = 0;
+        int skip = 1;
+
+        Long myId = null;
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            try {
+                String token = jwtTokenProvider.resolveToken(authorizationHeader);
+                myId = jwtTokenProvider.getMemberIdFromToken(token);
+            } catch (Exception ignored) {}
+        }
 
         for (ZSetOperations.TypedTuple<String> tuple : topSet) {
             Long memberId = Long.valueOf(tuple.getValue());
             long totalAsset = tuple.getScore().longValue();
-            String nickname = memberRepository.findById(memberId)
-                    .map(Member::getNickname)
-                    .orElse("탈퇴회원");
 
-            if (totalAsset == prevScore) {
-                sameCount++;
+            if (totalAsset != prevScore) {
+                rank += skip;
+                skip = 1;
             } else {
-                rank += sameCount;
-                sameCount = 1;
+                skip++;
             }
 
-            topRankings.add(new RankingEntryDTO(rank, nickname, totalAsset));
+            String nickname = nicknameMap.getOrDefault(memberId, "탈퇴회원");
+
+            // TOP 100만 담기
+            if (topRankings.size() < 100) {
+                topRankings.add(new RankingEntryDTO(rank, nickname, totalAsset));
+            }
+
+            // 로그인 유저 순위 기록
+            if (myId != null && myId.equals(memberId)) {
+                myRank = new RankingEntryDTO(rank, nickname, totalAsset);
+            }
+
             prevScore = totalAsset;
-        }
-
-        // 로그인 유저 등수 조회
-        RankingEntryDTO myRank = null;
-        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
-            try {
-                String token = jwtTokenProvider.resolveToken(authorizationHeader);
-                Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
-
-                Long rankIndex = zSetOperations.reverseRank(REDIS_KEY, memberId.toString());
-                Double score = zSetOperations.score(REDIS_KEY, memberId.toString());
-
-                if (rankIndex != null && score != null) {
-                    String nickname = memberRepository.findById(memberId)
-                            .map(Member::getNickname)
-                            .orElse("탈퇴회원");
-                    myRank = new RankingEntryDTO(rankIndex.intValue() + 1, nickname, score.longValue());
-                }
-            } catch (Exception e) {
-                // 토큰 파싱 실패 시 무시하고 myRank는 null 유지
-            }
         }
 
         return new RankingResponseDTO(topRankings, myRank);

@@ -14,14 +14,14 @@ import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import java.util.*;
 
 @RestController
-@RequestMapping("/api/rankings")
+@RequestMapping("/api/ranking")
 @RequiredArgsConstructor
 public class RankingController {
 
     private final RankingService rankingService;
 
-    @GetMapping("/valuation")
-    public ResponseEntity<RankingResponseDTO> getTop100WithMyRank(
+    @GetMapping("/total-asset")
+    public ResponseEntity<RankingResponseDTO> getTotalAssetRanking(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
         return ResponseEntity.ok(rankingService.getTop100WithMyRank(authorizationHeader));
     }
