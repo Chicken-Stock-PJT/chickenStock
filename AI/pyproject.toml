@@ -1,5 +1,5 @@
 [project]
-name = "ai"
+name = "app"
 version = "0.1.0"
 description = ""
 authors = [
@@ -17,7 +17,9 @@ dependencies = [
     "numpy (==1.24.3)",
     "aiohttp (>=3.11.18,<4.0.0)",
     "pydantic-settings (>=2.9.1,<3.0.0)",
-    "pytz (>=2025.2,<2026.0)"
+    "pytz (>=2025.2,<2026.0)",
+    "dotenv (>=0.9.9,<0.10.0)",
+    "pydantic (>=2.11.4,<3.0.0)"
 ]
 
 

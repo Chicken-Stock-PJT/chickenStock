@@ -1,7 +1,8 @@
 import os
 from typing import Dict, Optional, List, Any
-from pydantic import model_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
 
 class AccountConfig(BaseSettings):
     """개별 계정 설정을 위한 모델"""
@@ -10,6 +11,7 @@ class AccountConfig(BaseSettings):
     strategy: str = "ENVELOPE"  # 기본값은 ENVELOPE
 
 class Settings(BaseSettings):
+    load_dotenv()
     # API 설정
     API_BASE_URL: str = "https://api.kiwoom.com"  # 키움증권 API 기본 URL
     BACKEND_API_URL: str = "https://chickenstock.shop"  # 백엔드 API URL
@@ -33,18 +35,7 @@ class Settings(BaseSettings):
     ACCOUNT_STRATEGIES: Dict[str, str] = {}
     
     # 추가 계정 목록 (자동 시작용)
-    ADDITIONAL_ACCOUNTS: List[AccountConfig] = [
-        {
-        'email': os.getenv("ACCOUNT_1_EMAIL", ""),
-        'password': os.getenv("ACCOUNT_1_PASSWORD", ""),
-        'strategy': os.getenv("ACCOUNT_1_STRATEGY", ""),
-        },
-        {
-        'email': os.getenv("ACCOUNT_2_EMAIL", ""),
-        'password': os.getenv("ACCOUNT_2_PASSWORD", ""),
-        'strategy': os.getenv("ACCOUNT_2_STRATEGY", ""),
-        },
-    ]
+    ADDITIONAL_ACCOUNTS: List[AccountConfig] = Field(default_factory=list)
     
     # Pydantic 2.x에서는 추가 필드를 허용하도록 설정
     model_config = SettingsConfigDict(
@@ -52,6 +43,38 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"  # 추가 필드를 무시하도록 설정
     )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        # 초기화 후 환경 변수에서 계정 정보 직접 로드
+        accounts = []
+        
+        # 계정 1 설정 로드
+        email1 = os.getenv("ACCOUNT_1_EMAIL")
+        password1 = os.getenv("ACCOUNT_1_PASSWORD")
+        strategy1 = os.getenv("ACCOUNT_1_STRATEGY")
+        
+        if email1 and password1 and strategy1:
+            accounts.append(AccountConfig(
+                email=email1,
+                password=password1,
+                strategy=strategy1
+            ))
+            
+        # 계정 2 설정 로드
+        email2 = os.getenv("ACCOUNT_2_EMAIL")
+        password2 = os.getenv("ACCOUNT_2_PASSWORD")
+        strategy2 = os.getenv("ACCOUNT_2_STRATEGY")
+        
+        if email2 and password2 and strategy2:
+            accounts.append(AccountConfig(
+                email=email2,
+                password=password2,
+                strategy=strategy2
+            ))
+            
+        self.ADDITIONAL_ACCOUNTS = accounts
 
 # 설정 인스턴스 생성
 settings = Settings()

@@ -70,6 +70,12 @@ class KiwoomAPI:
                 base_url=self.websocket_url,
                 stock_cache=self.stock_cache
             )
+
+            # 실제 웹소켓 연결 추가
+            websocket_connected = await self.websocket_client.connect(self.kiwoom_token)
+            if not websocket_connected:
+                logger.error("웹소켓 연결 실패")
+                return False
             
             # 연결 상태 설정
             self.connected = True

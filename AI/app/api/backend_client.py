@@ -77,36 +77,41 @@ class BackendClient:
             # 백엔드 API 요청 헤더
             headers = self.auth_client.get_authorization_header()
             
-            # 백엔드 API에서 포트폴리오 정보 요청
+            # 백엔드 API에서 보유 종목 정보 요청 (새로운 엔드포인트)
             async with self.session.get(
-                f"{self.backend_url}/api/members/portfolio",
+                f"{self.backend_url}/api/members/holding-stocks",
                 headers=headers
             ) as response:
                 if response.status == 200:
-                    portfolio_data = await response.json()
+                    holding_data = await response.json()
                     
                     # 계좌 정보 구성
                     account_info = {
-                        "cash_balance": portfolio_data.get("memberMoney", 0),
-                        "total_asset_value": portfolio_data.get("totalAsset", 0),
+                        "cash_balance": holding_data.get("cashAmount", 0),
+                        "total_asset_value": 0,  # 초기값 설정
                         "positions": {}
                     }
                     
                     # 보유 종목 정보 업데이트
-                    for position in portfolio_data.get("positions", []):
+                    for position in holding_data.get("holdingStocks", []):
                         code = position.get("stockCode")
                         if code:
+                            # 현재가는 API에서 제공하지 않으므로 평균 구매가로 대체 (추후 업데이트 필요)
+                            current_price = position.get("averagePrice", 0)
+                            quantity = position.get("quantity", 0)
+                            avg_price = position.get("averagePrice", 0)
+                            
                             account_info["positions"][code] = {
                                 "code": code,
                                 "name": position.get("stockName", ""),
-                                "quantity": position.get("quantity", 0),
-                                "avgPrice": position.get("averagePrice", 0),
-                                "current_price": position.get("currentPrice", 0),
-                                "eval_profit_loss": position.get("profitLoss", 0),
-                                "earning_rate": position.get("returnRate", 0.0)
+                                "quantity": quantity,
+                                "avgPrice": avg_price,
                             }
                     
-                    logger.info(f"계좌정보 업데이트: 예수금={account_info['cash_balance']}, 종목수={len(account_info['positions'])}")
+                    # 총 자산 가치 계산 (현금 + 주식 평가 금액)
+                    stock_value = sum(pos["quantity"] * pos["avgPrice"] for pos in account_info["positions"].values())
+                    account_info["total_asset_value"] = account_info["cash_balance"] + stock_value
+                    
                     return account_info
                 else:
                     logger.error(f"계좌 정보 조회 실패: HTTP {response.status}")

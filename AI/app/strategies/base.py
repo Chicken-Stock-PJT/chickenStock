@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 class BaseTradingModel(ABC):
     """기본 트레이딩 모델 인터페이스"""
     
-    def __init__(self, kiwoom_api):
+    def __init__(self, stock_cache=None):
         """트레이딩 모델 초기화"""
-        self.kiwoom_api = kiwoom_api
+        self.stock_cache = stock_cache  # 직접 API 대신 StockCache 참조 (선택적)
         self.backend_client = None
         self.is_running = False
         
@@ -38,6 +38,10 @@ class BaseTradingModel(ABC):
         self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (500만원)
         self.min_holding_period = 1  # 최소 보유 기간 (일)
     
+    def set_stock_cache(self, stock_cache):
+        """StockCache 설정"""
+        self.stock_cache = stock_cache
+    
     def set_backend_client(self, backend_client):
         """백엔드 클라이언트 설정"""
         self.backend_client = backend_client
@@ -46,11 +50,8 @@ class BaseTradingModel(ABC):
         """계좌 정보 업데이트 (독립적으로 관리)"""
         self.account_info = account_info
         # 포지션 데이터 구조 변환 (symbol을 키로 하는 딕셔너리)
-        self.positions = {
-            position.get('symbol'): position 
-            for position in self.account_info.get('holdings', [])
-        }
-        self.cash_balance = account_info.get('cash', 0)
+        self.positions = self.account_info.get('positions', [])
+        self.cash_balance = account_info.get('cash_balance', 0)
         logger.debug(f"계좌 정보 업데이트: 예수금={self.cash_balance}, 보유종목수={len(self.positions)}")
     
     def get_cash_balance(self) -> float:
@@ -170,6 +171,24 @@ class BaseTradingModel(ABC):
                 del self.trading_signals[symbol]
                 logger.debug(f"종목 {symbol}의 오래된 신호 제거 ({max_age_seconds}초 경과)")
     
+    def get_price(self, symbol: str) -> Optional[float]:
+        """종목 가격 조회 (캐시 활용)"""
+        if self.stock_cache:
+            return self.stock_cache.get_price(symbol)
+        return None
+    
+    def get_envelope_indicators(self, symbol: str, price: float = None) -> Optional[Dict]:
+        """Envelope 지표 조회 (캐시 활용)"""
+        if self.stock_cache:
+            return self.stock_cache.get_envelope_indicators(symbol, price)
+        return None
+    
+    def get_bollinger_bands(self, symbol: str, price: float = None) -> Optional[Dict]:
+        """볼린저 밴드 지표 조회 (캐시 활용)"""
+        if self.stock_cache:
+            return self.stock_cache.get_bollinger_bands(symbol, price)
+        return None
+    
     async def refresh_indicators(self):
         """지표 갱신 (데이터 갱신 후 호출)"""
         logger.info(f"{self.__class__.__name__} 지표 갱신")
@@ -205,11 +224,11 @@ class BaseTradingModel(ABC):
         pass
     
     @abstractmethod
-    async def handle_realtime_price(self, symbol, price):
+    async def handle_realtime_price(self, symbol, price, indicators=None):
         """실시간 가격 데이터 처리"""
         pass
     
     @abstractmethod
-    async def get_trade_decisions(self) -> List[Dict[str, Any]]:
+    async def get_trade_decisions(self, prices: Dict[str, float] = None) -> List[Dict[str, Any]]:
         """매매 의사결정 목록 반환"""
         pass

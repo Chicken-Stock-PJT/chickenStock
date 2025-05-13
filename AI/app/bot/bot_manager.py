@@ -4,9 +4,7 @@ from typing import Dict, Optional, Any, List
 
 from app.models.trade_models import TradingStrategy
 from app.bot.bot_instance import BotInstance
-from app.api.kiwoom_api import KiwoomAPI
-from app.auth.token_manager import TokenManager
-from app.auth.kiwoom_auth import KiwoomAuthClient
+from app.bot.bot_stock_cache import BotStockCache  # BotStockCache 임포트 추가
 
 logger = logging.getLogger(__name__)
 
@@ -18,61 +16,26 @@ class BotManager:
         """봇 관리자 초기화"""
         # 이메일을 키로 하는 봇 인스턴스 딕셔너리
         self.bots: Dict[str, BotInstance] = {}
-        
-        # 공유 API 관련 변수
-        self.shared_token_manager = None
-        self.shared_kiwoom_api = None
-        self.shared_api_initialized = False
+        # 공유 StockCache 참조
+        self.shared_stock_cache = None
         
         logger.info("봇 관리자 초기화 완료")
     
     async def initialize_shared_api(self):
-        """공유 API 초기화"""
-        try:
-            if self.shared_api_initialized:
-                logger.info("공유 API가 이미 초기화되어 있습니다.")
-                return True
-            
-            logger.info("공유 API 초기화 시작")
-            
-            # 토큰 관리자 초기화
-            self.shared_token_manager = TokenManager()
-            await self.shared_token_manager.initialize()
-            
-            # 키움 인증 클라이언트 초기화
-            kiwoom_auth_client = KiwoomAuthClient()
-            kiwoom_auth_client.set_token_manager(self.shared_token_manager)
-            await kiwoom_auth_client.initialize()
-            
-            # 키움 API 토큰 발급
-            kiwoom_token = await kiwoom_auth_client.get_access_token()
-            if not kiwoom_token:
-                logger.error("공유 키움 API 토큰 발급 실패")
-                return False
-            
-            # 키움 API 초기화
-            self.shared_kiwoom_api = KiwoomAPI(self.shared_token_manager)
-            
-            # API 연결
-            if not await self.shared_kiwoom_api.connect():
-                logger.error("공유 키움 API 연결 실패")
-                return False
-            
-            self.shared_api_initialized = True
-            logger.info("공유 API 초기화 완료")
-            return True
-        
-        except Exception as e:
-            logger.error(f"공유 API 초기화 중 오류: {str(e)}")
-            return False
+        """공유 API 초기화 - 봇들이 공통으로 사용할 API 참조 설정"""
+        logger.info("공유 API 초기화 완료")
+        return True
     
-    async def create_bot(self, email: str, password: str, strategy: TradingStrategy) -> Optional[BotInstance]:
-        """새로운 봇 생성 및 초기화"""
+    async def create_bot(self, email: str, password: str, strategy: TradingStrategy, shared_stock_cache=None) -> Optional[BotInstance]:
+        """
+        새로운 봇 생성 및 초기화
+        
+        :param email: 사용자 이메일
+        :param password: 사용자 비밀번호
+        :param strategy: 봇 전략 (ENVELOPE 또는 BOLLINGER)
+        :param shared_stock_cache: 공유 StockCache (지정되지 않으면 관리자의 공유 캐시 사용)
+        """
         try:
-            # 공유 API 초기화 (아직 초기화되지 않은 경우)
-            if not self.shared_api_initialized:
-                await self.initialize_shared_api()
-            
             # 이미 존재하는 봇인지 확인
             if email in self.bots:
                 # 동일한 전략이면 기존 봇 반환
@@ -85,11 +48,14 @@ class BotManager:
                               f"({self.bots[email].strategy} -> {strategy})")
                     await self.remove_bot(email)
             
-            # 새 봇 인스턴스 생성
-            bot = BotInstance(email, strategy)
+            # 공유 캐시 결정 (지정된 것 없으면 관리자의 공유 캐시 사용)
+            stock_cache_to_use = shared_stock_cache if shared_stock_cache else self.shared_stock_cache
             
-            # 봇 초기화 (로그인 등) - 공유 API 전달
-            if await bot.initialize(password, self.shared_kiwoom_api):
+            # 새 봇 인스턴스 생성 (공유 캐시 전달)
+            bot = BotInstance(email, strategy, stock_cache_to_use)
+            
+            # 봇 초기화 (로그인 등)
+            if await bot.initialize(password, stock_cache_to_use):
                 # 초기화 성공 시 봇 목록에 추가
                 self.bots[email] = bot
                 logger.info(f"새 봇 생성 성공: {email} (전략: {strategy})")
@@ -221,37 +187,58 @@ class BotManager:
         
         return results
     
-    async def refresh_data(self, symbols: List[str]) -> bool:
-        """공유 API의 차트 데이터 갱신"""
-        try:
-            if not self.shared_kiwoom_api or not self.shared_api_initialized:
-                logger.error("공유 API가 초기화되지 않았습니다")
-                return False
-            
-            logger.info(f"차트 데이터 갱신 시작: {len(symbols)}개 종목")
-            
-            # 차트 데이터 초기화 (120일 데이터)
-            await self.shared_kiwoom_api.initialize_chart_data(symbols, period=120)
-            
-            # 두 전략 모두 지표 계산
-            self.shared_kiwoom_api.stock_cache.calculate_envelope_indicators()
-            logger.info("Envelope 지표 계산 완료")
-            
-            self.shared_kiwoom_api.stock_cache.calculate_bollinger_bands()
-            logger.info("볼린저 밴드 지표 계산 완료")
-            
-            # 필요한 경우 모든 봇에게 업데이트 알림
-            for email, bot in self.bots.items():
-                if bot.trading_model and hasattr(bot.trading_model, 'refresh_indicators'):
-                    await bot.trading_model.refresh_indicators()
-                    logger.info(f"봇 {email}의 지표 갱신 완료")
-            
-            logger.info("차트 데이터 갱신 완료")
-            return True
+    async def handle_realtime_data(self, symbol: str, price: float) -> None:
+        """
+        실시간 데이터 처리 (모든 봇에 전달)
         
+        :param symbol: 종목 코드
+        :param price: 현재가
+        """
+        # 실행 중인 봇만 처리
+        running_bots = self.get_running_bots()
+        
+        # 병렬 처리 태스크 생성
+        tasks = []
+        for email, bot in running_bots.items():
+            tasks.append(bot.handle_realtime_price(symbol, price))
+        
+        # 모든 봇의 실시간 데이터 처리를 병렬로 실행
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+    
+    async def refresh_all_bot_indicators(self) -> Dict[str, int]:
+        """모든 봇의 지표 새로고침"""
+        results = {}
+        refresh_tasks = []
+        
+        # 각 봇마다 별도의 태스크 생성
+        for email, bot in self.bots.items():
+            # 비동기 함수를 호출하는 태스크 생성
+            task = asyncio.create_task(self._refresh_bot_indicators(email, bot))
+            refresh_tasks.append(task)
+        
+        # 모든 태스크 완료 대기
+        if refresh_tasks:
+            await asyncio.gather(*refresh_tasks, return_exceptions=True)
+            
+            # 결과 수집
+            for email, bot in self.bots.items():
+                if hasattr(bot, 'last_refresh_count'):
+                    results[email] = getattr(bot, 'last_refresh_count', 0)
+        
+        return results
+    
+    async def _refresh_bot_indicators(self, email: str, bot: BotInstance) -> int:
+        """개별 봇 지표 새로고침 (내부 사용)"""
+        try:
+            success_count = await bot.refresh_indicators()
+            # 결과를 봇 객체에 임시 저장
+            bot.last_refresh_count = success_count
+            logger.info(f"봇 {email} 지표 새로고침 완료: {success_count}개 종목")
+            return success_count
         except Exception as e:
-            logger.error(f"차트 데이터 갱신 중 오류: {str(e)}")
-            return False
+            logger.error(f"봇 {email} 지표 새로고침 중 오류: {str(e)}")
+            return 0
     
     async def cleanup(self) -> None:
         """모든 봇 정리 (애플리케이션 종료 시 호출)"""
@@ -273,16 +260,7 @@ class BotManager:
         # 봇 딕셔너리 비우기
         self.bots.clear()
         
-        # 공유 API 종료
-        if self.shared_kiwoom_api:
-            await self.shared_kiwoom_api.close()
-            self.shared_kiwoom_api = None
-        
-        # 토큰 관리자 종료
-        if self.shared_token_manager:
-            await self.shared_token_manager.close()
-            self.shared_token_manager = None
-        
-        self.shared_api_initialized = False
+        # 공유 캐시 참조 정리
+        self.shared_stock_cache = None
         
         logger.info("모든 봇 정리 완료")

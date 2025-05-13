@@ -70,6 +70,10 @@ service_status = {
     "current_user": None      # 현재 로그인된 사용자 이메일
 }
 
+# 태스크 관리용 변수들
+trading_loop_task = None
+scheduler_task_instance = None
+
 async def get_next_run_time(target_hour=9, target_minute=0, target_second=0):
     """다음 실행 시간까지 대기해야 하는 시간(초) 계산"""
     now = datetime.now()
@@ -87,17 +91,24 @@ async def get_next_run_time(target_hour=9, target_minute=0, target_second=0):
 async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOPE):
     """자동매매 서비스 초기화 및 시작"""
     global auth_client, kiwoom_api, backend_client, service_status, token_manager, bot_manager
+    global trading_loop_task, scheduler_task_instance
     
     try:
         logger.info(f"자동매매 서비스 초기화 시작 (전략: {strategy})")
+        
+        # 이미 실행 중이면 중복 초기화 방지
+        if service_status["is_running"]:
+            logger.info("서비스가 이미 실행 중입니다. 중복 초기화를 방지합니다.")
+            return True
         
         # 변수 초기화
         default_email = None
         default_password = None
         
         # 토큰 관리자 초기화
-        token_manager = TokenManager()
-        await token_manager.initialize()
+        if not token_manager:
+            token_manager = TokenManager()
+            await token_manager.initialize()
         
         # 키움 API 토큰 발급
         kiwoom_auth_client = KiwoomAuthClient()
@@ -125,8 +136,9 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
                 return False
             
             # 인증 클라이언트 초기화
-            auth_client = AuthClient()
-            await auth_client.initialize()
+            if not auth_client:
+                auth_client = AuthClient()
+                await auth_client.initialize()
             
             # 백엔드 서버 로그인
             success = await auth_client.login(default_email, default_password)
@@ -140,12 +152,14 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
             logger.info("백엔드 서버 자동 로그인 성공")
 
         # 키움 API 초기화
-        kiwoom_api = KiwoomAPI(token_manager)
+        if not kiwoom_api:
+            kiwoom_api = KiwoomAPI(token_manager)
         
         # 백엔드 클라이언트 초기화
-        backend_client = BackendClient()
-        backend_client.set_auth_client(auth_client)
-        await backend_client.start()
+        if not backend_client:
+            backend_client = BackendClient()
+            backend_client.set_auth_client(auth_client)
+            await backend_client.start()
         
         # 키움 API 연결
         if not await kiwoom_api.connect():
@@ -233,116 +247,84 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         kiwoom_api.stock_cache.calculate_bollinger_bands()
         logger.info("볼린저 밴드 지표 계산 완료")
             
-        # 전략에 따른 트레이딩 모델 초기화
-        if strategy == TradingStrategy.ENVELOPE:
-            # 트레이딩 모델 초기화
-            trading_model = EnvelopeTradingModel(kiwoom_api)
-            trading_model.set_backend_client(backend_client)
-        else:
-            # 트레이딩 모델 초기화
-            trading_model = BollingerBandTradingModel(kiwoom_api)
-            trading_model.set_backend_client(backend_client)
-                
+        # 전략에 따른 트레이딩 모델 초기화는 제거
+        # 공통 API 및 서비스 초기화만 여기서 진행
+        
         # 마지막 데이터 업데이트 시간 기록
         service_status["last_data_update"] = datetime.now()
-        
-        # 트레이딩 모델 시작
-        await trading_model.start()
-        
-        # 실시간 데이터 구독 준비
-        await kiwoom_api.prepare_subscription_groups(filtered_stock_list, 30)
-        
-        # 실시간 데이터 구독 로테이션 시작
-        asyncio.create_task(
-            kiwoom_api.start_rotating_subscriptions(trading_model.handle_realtime_price)
-        )
         
         # 서비스 상태 업데이트
         service_status["is_running"] = True
         service_status["start_time"] = datetime.now()
         service_status["active_strategy"] = strategy
         
-        # 기본 봇 추가 (서비스가 시작될 때 기본 계정으로 봇 생성)
-        if bot_manager and default_email and default_password:
-            default_bot = await bot_manager.create_bot(default_email, default_password, strategy)
-            if default_bot:
-                # 생성된 봇에 트레이딩 모델 설정
-                default_bot.trading_model = trading_model
-                await bot_manager.start_bot(default_email)
-                logger.info(f"기본 봇 생성 및 시작 성공: {default_email} (전략: {strategy})")
+        # 봇 매니저 초기화 (아직 초기화되지 않은 경우에만)
+        if not bot_manager:
+            bot_manager = BotManager()
+            bot_manager.shared_stock_cache = kiwoom_api.stock_cache
         
         # settings에서 추가 계정 정보 확인 및 봇 생성
-        # settings.ADDITIONAL_ACCOUNTS가 있는지 확인하고, 있으면 해당 계정들로 봇 생성
         if hasattr(settings, 'ADDITIONAL_ACCOUNTS') and settings.ADDITIONAL_ACCOUNTS:
             logger.info(f"추가 계정으로 봇 생성 시작 (총 {len(settings.ADDITIONAL_ACCOUNTS)}개 계정)")
             
             for account_info in settings.ADDITIONAL_ACCOUNTS:
                 email = account_info.email
                 password = account_info.password
-                account_strategy = account_info.strategy if hasattr(account_info, 'strategy') and account_info.strategy else strategy
+                strategy = account_info.strategy
                 
-                if email and password:
-                    # 전략 문자열을 열거형으로 변환
-                    if isinstance(account_strategy, str):
-                        if account_strategy.upper() == "BOLLINGER":
-                            account_strategy = TradingStrategy.BOLLINGER
-                        else:
-                            account_strategy = TradingStrategy.ENVELOPE
-                
-                    # 봇 생성
-                    try:
-                        # 이미 존재하는 봇인지 확인
-                        existing_bot = bot_manager.get_bot(email)
-                        
-                        if existing_bot:
-                            # 봇이 있으면 전략 업데이트 및 시작
-                            existing_bot.strategy = account_strategy
-                            
-                            # 봇에 새 트레이딩 모델 생성
-                            if account_strategy == TradingStrategy.ENVELOPE:
-                                bot_trading_model = EnvelopeTradingModel(kiwoom_api)
-                            else:
-                                bot_trading_model = BollingerBandTradingModel(kiwoom_api)
-                                
-                            bot_trading_model.set_backend_client(backend_client)
-                            await bot_trading_model.start()
-                            
-                            # 봇에 트레이딩 모델 설정
-                            existing_bot.trading_model = bot_trading_model
-                            
-                            # 봇 시작
-                            await bot_manager.start_bot(email)
-                            logger.info(f"기존 봇 업데이트 및 시작 성공: {email} (전략: {account_strategy})")
-                        else:
-                            # 새 봇 생성
-                            new_bot = await bot_manager.create_bot(email, password, account_strategy)
-                            if new_bot:
-                                # 봇에 맞는 트레이딩 모델 생성
-                                if account_strategy == TradingStrategy.ENVELOPE:
-                                    bot_trading_model = EnvelopeTradingModel(kiwoom_api)
-                                else:
-                                    bot_trading_model = BollingerBandTradingModel(kiwoom_api)
-                                    
-                                bot_trading_model.set_backend_client(backend_client)
-                                await bot_trading_model.start()
-                                
-                                # 봇에 트레이딩 모델 설정
-                                new_bot.trading_model = bot_trading_model
-                                
-                                # 봇 시작
-                                await bot_manager.start_bot(email)
-                                logger.info(f"추가 봇 생성 및 시작 성공: {email} (전략: {account_strategy})")
-                            else:
-                                logger.error(f"추가 봇 생성 실패: {email}")
-                                
-                    except Exception as e:
-                        logger.error(f"추가 계정 봇 생성 중 오류: {email}, 오류: {str(e)}")
+                # 봇 생성 또는 업데이트
+                try:
+                    # 새 봇 생성 (공유 캐시 전달)
+                    new_bot = await bot_manager.create_bot(email, password, strategy, kiwoom_api.stock_cache)
+                    if new_bot:
+                        # 봇 시작
+                        await bot_manager.start_bot(email)
+                        logger.info(f"추가 봇 생성 및 시작 성공: {email} (전략: {strategy})")
+                    else:
+                        logger.error(f"추가 봇 생성 실패: {email}")
+                except Exception as e:
+                    logger.error(f"추가 계정 봇 생성 중 오류: {email}, 오류: {str(e)}")
         
+        # 기존 태스크가 있으면 취소
+        if trading_loop_task and not trading_loop_task.done():
+            trading_loop_task.cancel()
+            
+        if scheduler_task_instance and not scheduler_task_instance.done():
+            scheduler_task_instance.cancel()
+
+        # 실시간 데이터 구독 준비
+        await kiwoom_api.prepare_subscription_groups(filtered_stock_list, 30)
+        
+        # 실시간 데이터 구독 로테이션 시작 (공통 콜백 사용)
+        async def default_realtime_handler(symbol, price):
+            # 실시간 데이터 받을 때 기본 처리 로직
+            logger.debug(f"실시간 데이터 수신: 종목={symbol}, 가격={price}")
+            
+            # 공유 StockCache 업데이트 (현재가만 갱신)
+            kiwoom_api.stock_cache.update_price(symbol, price)
+            
+            # 모든 실행 중인 봇의 트레이딩 모델에 알림
+            running_bots = bot_manager.get_running_bots()
+            for email, bot in running_bots.items():
+                if bot.trading_model:
+                    # 각 봇의 독립적인 트레이딩 모델로 실시간 데이터 전달
+                    await bot_manager.handle_realtime_data(symbol, price)
+            
+            # 원래 형식과 호환되도록 딕셔너리 반환
+            return {
+                'symbol': symbol,
+                'price': price
+            }
+            
+        asyncio.create_task(
+            kiwoom_api.start_rotating_subscriptions(default_realtime_handler)
+        )
+            
         # 거래 처리 루프 태스크 시작
-        asyncio.create_task(trading_loop())
+        trading_loop_task = asyncio.create_task(trading_loop())
         
         # 스케줄러 (정기 데이터 갱신) 태스크 시작
-        asyncio.create_task(scheduler_task())
+        scheduler_task_instance = asyncio.create_task(scheduler_task())
         
         logger.info(f"자동매매 서비스 초기화 완료 (전략: {strategy})")
         return True
@@ -376,75 +358,94 @@ async def trading_loop():
                 running_bots = bot_manager.get_running_bots()
                 logger.info(f"실행 중인 봇 수: {len(running_bots)}")
                 
-                for email, bot in running_bots.items():
+                # 병렬 처리를 위한 태스크 리스트
+                bot_tasks = []
+                
+                # 각 봇에 대한 처리 함수 정의
+                async def process_bot(email, bot):
                     try:
                         logger.info(f"봇 [{email}] 처리 시작 (전략: {bot.strategy})")
                         
                         # 인증 상태 확인
                         if not bot.auth_client or not bot.auth_client.is_authenticated:
                             logger.warning(f"봇 [{email}]의 인증이 유효하지 않습니다. 이 봇의 거래는 건너뜁니다.")
-                            continue
+                            return
                         
-                        # 계좌 정보 업데이트 전 로그
+                        # 계좌 정보 업데이트
                         logger.info(f"봇 [{email}] 계좌 정보 업데이트 요청 중...")
+                        await bot.update_account_info()
                         
-                        # 계좌 정보 업데이트 (봇 자신의 백엔드 클라이언트 사용)
-                        account_info = await bot.backend_client.request_account_info()
-                        if account_info:
-                            logger.info(f"봇 [{email}] 계좌 정보 업데이트 성공: 예수금={account_info.get('cash', 0)}, 보유종목수={len(account_info.get('holdings', []))}")
-                            bot.kiwoom_api.update_account_info(account_info)
-                        else:
-                            logger.warning(f"봇 [{email}] 계좌 정보 업데이트 실패")
+                        # 계좌 정보 로그 출력 (올바른 필드 이름 사용)
+                        cash = bot.get_cash()  # get_cash 메서드 사용
+                        holdings = bot.get_holdings()  # get_holdings 메서드 사용
+                        logger.info(f"봇 [{email}] 계좌 정보 업데이트 성공: 예수금={cash}, 보유종목수={len(holdings)}")
                         
                         if bot.trading_model:
-                            # 캐싱된 현재가 정보 로깅
-                            if hasattr(bot.kiwoom_api, 'stock_cache') and hasattr(bot.kiwoom_api.stock_cache, 'get_all_prices'):
-                                prices = bot.kiwoom_api.stock_cache.get_all_prices()
+                            # 현재가 정보는 bot_stock_cache를 통해 가져오도록 수정
+                            prices = {}
+                            if hasattr(bot.trading_model, 'get_current_prices'):
+                                prices = await bot.trading_model.get_current_prices()
                                 price_count = len(prices) if prices else 0
                                 logger.info(f"봇 [{email}] 캐싱된 현재가 종목 수: {price_count}")
                             
-                            # 트레이딩 모델에서 매매 결정 가져오기
+                            # 매매 결정 요청
                             logger.info(f"봇 [{email}] 매매 결정 요청 중...")
-                            decisions = await bot.trading_model.get_trade_decisions()
-                            
-                            if decisions:
-                                logger.info(f"봇 [{email}] 매매 결정: {len(decisions)}개")
-                                for idx, decision in enumerate(decisions):
-                                    logger.info(f"봇 [{email}] 매매 결정 #{idx+1}: {decision}")
-                            else:
-                                logger.info(f"봇 [{email}] 매매 결정: 없음")
-                            
-                            # 매매 결정이 있으면 봇 자신의 백엔드 클라이언트로 요청 전송
-                            for decision in decisions:
-                                try:
-                                    symbol = decision.get("symbol")
-                                    action = decision.get("action")
-                                    quantity = decision.get("quantity", 0)
-                                    price = decision.get("price", 0)
-                                    
-                                    # 봇 자신의 백엔드 클라이언트를 통해 거래 요청 전송
-                                    if action.lower() == "buy":
-                                        logger.info(f"봇 [{email}] 매수 요청 시작: {symbol} {quantity}주, 가격: {price}")
-                                        result = await bot.backend_client.request_buy(symbol, quantity, price)
-                                        if result:
-                                            logger.info(f"봇 [{email}] 매수 요청 성공: {symbol} {quantity}주, 가격: {price}")
-                                        else:
-                                            logger.error(f"봇 [{email}] 매수 요청 실패: {symbol} {quantity}주, 가격: {price}")
-                                    
-                                    elif action.lower() == "sell":
-                                        logger.info(f"봇 [{email}] 매도 요청 시작: {symbol} {quantity}주, 가격: {price}")
-                                        result = await bot.backend_client.request_sell(symbol, quantity, price)
-                                        if result:
-                                            logger.info(f"봇 [{email}] 매도 요청 성공: {symbol} {quantity}주, 가격: {price}")
-                                        else:
-                                            logger.error(f"봇 [{email}] 매도 요청 실패: {symbol} {quantity}주, 가격: {price}")
+                            try:
+                                decisions = await bot.trading_model.get_trade_decisions(prices)
                                 
-                                except Exception as e:
-                                    logger.error(f"봇 [{email}]의 거래 요청 전송 중 오류: {str(e)}")
-                            
-                            logger.info(f"봇 [{email}] 처리 완료")
+                                if decisions:
+                                    logger.info(f"봇 [{email}] 매매 결정: {len(decisions)}개")
+                                    for idx, decision in enumerate(decisions):
+                                        logger.info(f"봇 [{email}] 매매 결정 #{idx+1}: {decision}")
+                                else:
+                                    logger.info(f"봇 [{email}] 매매 결정: 없음")
+                                
+                                # 매매 결정이 있으면 봇 자신의 백엔드 클라이언트로 요청 전송
+                                for decision in decisions:
+                                    try:
+                                        symbol = decision.get("symbol")
+                                        action = decision.get("action")
+                                        quantity = decision.get("quantity", 0)
+                                        price = decision.get("price", 0)
+                                        
+                                        # 봇 자신의 백엔드 클라이언트를 통해 거래 요청 전송
+                                        if action.lower() == "buy":
+                                            logger.info(f"봇 [{email}] 매수 요청 시작: {symbol} {quantity}주, 가격: {price}")
+                                            result = await bot.backend_client.request_buy(symbol, quantity, price)
+                                            if result:
+                                                logger.info(f"봇 [{email}] 매수 요청 성공: {symbol} {quantity}주, 가격: {price}")
+                                            else:
+                                                logger.error(f"봇 [{email}] 매수 요청 실패: {symbol} {quantity}주, 가격: {price}")
+                                        
+                                        elif action.lower() == "sell":
+                                            logger.info(f"봇 [{email}] 매도 요청 시작: {symbol} {quantity}주, 가격: {price}")
+                                            result = await bot.backend_client.request_sell(symbol, quantity, price)
+                                            if result:
+                                                logger.info(f"봇 [{email}] 매도 요청 성공: {symbol} {quantity}주, 가격: {price}")
+                                            else:
+                                                logger.error(f"봇 [{email}] 매도 요청 실패: {symbol} {quantity}주, 가격: {price}")
+                                    
+                                    except Exception as e:
+                                        logger.error(f"봇 [{email}]의 거래 요청 전송 중 오류: {str(e)}")
+                            except Exception as e:
+                                logger.error(f"봇 [{email}]의 매매 결정 처리 중 오류: {str(e)}")
+                                
+                        logger.info(f"봇 [{email}] 처리 완료")
                     except Exception as e:
                         logger.error(f"봇 [{email}]의 매매 처리 중 오류: {str(e)}")
+                
+                # 각 봇에 대한 태스크 생성
+                for email, bot in running_bots.items():
+                    bot_tasks.append(process_bot(email, bot))
+                
+                # 모든 봇 태스크를 병렬로 실행 (타임아웃 5초 설정)
+                try:
+                    # asyncio.wait_for를 사용하여 전체 gather에 타임아웃 설정
+                    await asyncio.wait_for(asyncio.gather(*bot_tasks), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning("일부 봇 처리가 시간 초과로 완료되지 않았습니다.")
+                except Exception as e:
+                    logger.error(f"봇 병렬 처리 중 오류 발생: {str(e)}")
                 
                 # 마지막 처리 시간 업데이트
                 last_processing_time = current_time
@@ -452,6 +453,9 @@ async def trading_loop():
             # 1초 대기
             await asyncio.sleep(1)
             
+        except asyncio.CancelledError:
+            logger.info("거래 처리 루프가 취소되었습니다.")
+            break
         except Exception as e:
             logger.error(f"거래 처리 루프 오류: {str(e)}")
             await asyncio.sleep(30)  # 오류 시 30초 후 재시도
@@ -481,33 +485,24 @@ async def scheduler_task():
             if service_status.get("is_running", False) and kiwoom_api:
                 logger.info("정기 스케줄에 따른 차트 데이터 수집 및 지표 계산 시작")
                 
-                # 현재 활성화된 전략 확인
-                active_strategy = service_status.get("active_strategy")
+                # 공유 캐시 차트 데이터 업데이트 (120일 - 모든 전략을 위한 충분한 데이터)
                 filtered_stockcode_list = kiwoom_api.stock_cache.filtered_stockcode_list
+                await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
+                logger.info(f"차트 데이터 업데이트 완료: {len(filtered_stockcode_list)}개 종목")
                 
-                # 전략에 따라 다른 지표 계산
-                if active_strategy == TradingStrategy.ENVELOPE:
-                    # Envelope 지표 계산용 차트 데이터 초기화
-                    await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
-                    # Envelope 지표 계산
-                    kiwoom_api.stock_cache.calculate_envelope_indicators()
-                else:
-                    # 볼린저 밴드 지표 계산용 차트 데이터 초기화
-                    await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=60)
-                    # 볼린저 밴드 지표 계산
-                    kiwoom_api.stock_cache.calculate_bollinger_bands()
+                # 모든 봇의 개별 지표 새로고침 (각자의 전략에 맞게)
+                if bot_manager:
+                    logger.info("모든 봇의 지표 새로고침 시작")
+                    refresh_results = await bot_manager.refresh_all_bot_indicators()
+                    
+                    # 결과 로깅
+                    for email, count in refresh_results.items():
+                        logger.info(f"봇 [{email}] 지표 새로고침 결과: {count}개 종목 성공")
+                    
+                    logger.info(f"모든 봇({len(refresh_results)}개)의 지표 새로고침 완료")
                 
                 # 마지막 데이터 업데이트 시간 기록
                 service_status["last_data_update"] = datetime.now()
-                
-                # 봇 매니저가 있는 경우 해당 봇들의 트레이딩 모델 업데이트
-                if bot_manager:
-                    all_bots = bot_manager.get_all_bots()
-                    for email, bot in all_bots.items():
-                        if bot.is_running and hasattr(bot, 'trading_model'):
-                            # 트레이딩 모델 업데이트
-                            if hasattr(bot.trading_model, 'refresh_indicators'):
-                                await bot.trading_model.refresh_indicators()
                 
                 logger.info("정기 스케줄에 따른 차트 데이터 수집 및 지표 계산 완료")
             
@@ -523,102 +518,30 @@ async def scheduler_task():
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행"""
-    global bot_manager, auth_client, token_manager
+    global bot_manager, auth_client, token_manager, backend_client, kiwoom_api
     
     logger.info("애플리케이션 시작 중...")
     
-    # 토큰 관리자 초기화
-    token_manager = TokenManager()
-    await token_manager.initialize()
-    
-    # 인증 클라이언트 초기화
-    auth_client = AuthClient()
-    await auth_client.initialize()
-    
-    # 봇 관리자 초기화
-    bot_manager = BotManager()
-    
-    # 공유 API 초기화
-    await bot_manager.initialize_shared_api()
-    
-    # 기본 계정으로 자동 로그인 시도
     try:
-        # 설정에서 기본 계정 가져오기
-        default_email = None
-        default_password = None
+        # 기본 전략 설정
+        default_strategy_str = settings.DEFAULT_STRATEGY.upper() if hasattr(settings, 'DEFAULT_STRATEGY') else "ENVELOPE"
+        default_strategy = TradingStrategy.ENVELOPE  # 기본값
         
-        try:
-            default_email = settings.DEFAULT_EMAIL
-            default_password = settings.DEFAULT_PASSWORD
-        except AttributeError:
-            logger.warning("기본 계정 정보가 없습니다.")
+        # 전략 문자열을 열거형으로 변환
+        if default_strategy_str == "BOLLINGER":
+            default_strategy = TradingStrategy.BOLLINGER
         
-        if default_email and default_password:
-            logger.info(f"기본 계정 {default_email}으로 자동 로그인 시도")
-            success = await auth_client.login(default_email, default_password)
+        # 서비스 초기화 - 모든 설정 및 봇 관리 여기서 처리
+        service_initialized = await initialize_service(default_strategy)
+        
+        if not service_initialized:
+            logger.error("서비스 초기화 실패")
+            return
             
-            if success:
-                logger.info("백엔드 서버 자동 로그인 성공")
-                
-                # 서비스 상태 업데이트
-                service_status["current_user"] = default_email
-                service_status["is_running"] = True
-                service_status["start_time"] = datetime.now()
-                
-                # 기본 전략 설정
-                default_strategy_str = settings.DEFAULT_STRATEGY.upper() if hasattr(settings, 'DEFAULT_STRATEGY') else "ENVELOPE"
-                default_strategy = TradingStrategy.ENVELOPE  # 기본값
-                
-                # 전략 문자열을 열거형으로 변환
-                if default_strategy_str == "BOLLINGER":
-                    default_strategy = TradingStrategy.BOLLINGER
-                
-                service_status["active_strategy"] = default_strategy
-                
-                # 기본 봇 생성
-                default_bot = await bot_manager.create_bot(default_email, default_password, default_strategy)
-                if default_bot:
-                    # 봇 시작
-                    await bot_manager.start_bot(default_email)
-                    logger.info(f"기본 봇 생성 및 시작 성공: {default_email} (전략: {default_strategy})")
-                
-                # settings에서 추가 계정 정보 확인 및 봇 생성
-                if hasattr(settings, 'ADDITIONAL_ACCOUNTS') and settings.ADDITIONAL_ACCOUNTS:
-                    logger.info(f"추가 계정으로 봇 생성 시작 (총 {len(settings.ADDITIONAL_ACCOUNTS)}개 계정)")
-                    
-                    for account_info in settings.ADDITIONAL_ACCOUNTS:
-                        email = account_info.email
-                        password = account_info.password
-                        account_strategy = account_info.strategy if hasattr(account_info, 'strategy') else default_strategy
-                        
-                        # 계정 정보 유효성 확인
-                        if not email or not password:
-                            logger.error(f"추가 계정의 이메일 또는 비밀번호가 유효하지 않습니다.")
-                            continue
-                        
-                        # 전략 문자열을 열거형으로 변환
-                        if isinstance(account_strategy, str):
-                            if account_strategy.upper() == "BOLLINGER":
-                                account_strategy = TradingStrategy.BOLLINGER
-                            else:
-                                account_strategy = TradingStrategy.ENVELOPE
-                        
-                        # 봇 생성 및 시작
-                        logger.info(f"추가 계정 봇 생성 시도: {email} (전략: {account_strategy})")
-                        additional_bot = await bot_manager.create_bot(email, password, account_strategy)
-                        if additional_bot:
-                            # 봇 시작
-                            await bot_manager.start_bot(email)
-                            logger.info(f"추가 봇 생성 및 시작 성공: {email} (전략: {account_strategy})")
-                        else:
-                            logger.error(f"추가 봇 생성 실패: {email}")
-                
-            else:
-                logger.error("백엔드 서버 자동 로그인 실패")
-        else:
-            logger.info("기본 계정 정보가 없어 자동 로그인을 건너뜁니다.")
+        logger.info("서비스 초기화 성공")
+        
     except Exception as e:
-        logger.error(f"자동 로그인 중 오류 발생: {str(e)}")
+        logger.error(f"애플리케이션 시작 중 오류 발생: {str(e)}", exc_info=True)
     
     logger.info("애플리케이션 시작 완료")
 
@@ -626,11 +549,19 @@ async def startup_event():
 async def shutdown_event():
     """애플리케이션 종료 시 실행"""
     global bot_manager, auth_client, kiwoom_api, token_manager, backend_client
+    global trading_loop_task, scheduler_task_instance
     
     logger.info("애플리케이션 종료 중...")
     
     # 서비스 상태 업데이트
     service_status["is_running"] = False
+    
+    # 실행 중인 태스크 취소
+    if trading_loop_task and not trading_loop_task.done():
+        trading_loop_task.cancel()
+        
+    if scheduler_task_instance and not scheduler_task_instance.done():
+        scheduler_task_instance.cancel()
     
     # 모든 봇 정리
     if bot_manager:
@@ -652,13 +583,22 @@ async def shutdown_event():
     if token_manager:
         await token_manager.close()
     
-    # 모든 비동기 태스크 완료될 때까지 짧게 대기
-    await asyncio.sleep(0.5)
+    # 태스크가 정리될 때까지 충분한 시간 대기 (0.5초에서 2초로 증가)
+    await asyncio.sleep(2)
     
     # 남아있는 모든 세션 강제 종료
-    for task in asyncio.all_tasks():
-        if task is not asyncio.current_task():
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    if tasks:
+        logger.info(f"종료되지 않은 태스크 {len(tasks)}개가 있습니다. 강제 종료합니다.")
+        for task in tasks:
             task.cancel()
+            
+        # 모든 태스크 종료 대기
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=5.0)
+            logger.info("모든 태스크가 종료되었습니다.")
+        except asyncio.TimeoutError:
+            logger.warning("일부 태스크가 5초 이내에 종료되지 않았습니다.")
     
     logger.info("애플리케이션 종료 완료")
 
