@@ -10,7 +10,9 @@ import realClassOne.chickenStock.member.dto.response.*;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
+import realClassOne.chickenStock.stock.dto.response.DashboardResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.PortfolioResponseDTO;
+import realClassOne.chickenStock.stock.service.DashboardService;
 import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.service.StockTradeService;
 
@@ -25,6 +27,7 @@ public class MemberController {
     private final MemberService memberService;
     private final StockTradeService stockTradeService;
     private final PortfolioService portfolioService;
+    private final DashboardService dashboardService;
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
@@ -155,5 +158,14 @@ public class MemberController {
 
         HoldingStocksResponseDTO response = memberService.getHoldingStocks(authorizationHeader);
         return ResponseEntity.ok(response);
+    }
+
+
+    @GetMapping("/dashboard")
+    public ResponseEntity<DashboardResponseDTO> getDashboard(
+            @RequestHeader("Authorization") String authorizationHeader) {
+
+        DashboardResponseDTO dashboard = dashboardService.getDashboard(authorizationHeader);
+        return ResponseEntity.ok(dashboard);
     }
 }
