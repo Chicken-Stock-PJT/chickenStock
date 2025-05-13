@@ -187,9 +187,6 @@ class BackendClient:
                     result = await response.json()
                     logger.info(f"매수 요청 성공: {symbol} {quantity}주")
                     
-                    # 거래 정보 로깅
-                    logger.info(f"매수 주문 정보: {result}")
-                    
                     return True
                 else:
                     error_text = await response.text()
@@ -234,10 +231,7 @@ class BackendClient:
                 if response.status == 200 or response.status == 201:
                     result = await response.json()
                     logger.info(f"매도 요청 성공: {symbol} {quantity}주")
-                    
-                    # 거래 정보 로깅
-                    logger.info(f"매도 주문 정보: {result}")
-                    
+
                     return True
                 else:
                     error_text = await response.text()

@@ -114,8 +114,6 @@ class BotInstance:
                 if self.trading_model and hasattr(self.trading_model, 'update_account_info'):
                     self.trading_model.update_account_info(account_info)
                 
-                logger.info(f"봇 {self.email} 계좌 정보 업데이트: 예수금={account_info.get('cash_balance', 0)}, "
-                          f"보유종목수={len(account_info.get('positions', []))}")
                 return True
             else:
                 logger.warning(f"봇 {self.email} 계좌 정보 조회 실패")
