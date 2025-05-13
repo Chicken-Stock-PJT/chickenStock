@@ -765,8 +765,6 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             // 해당 종목을 구독 중인 세션에만 전송
             broadcastToSubscribers(stockCode, message);
 
-            log.info("체결 정보 전송: 종목={}, 타입={}, 수량={}, 가격={}",
-                    stockCode, tradeType, quantity, price);
         } catch (Exception e) {
             log.error("체결 정보 메시지 생성 중 오류 발생", e);
         }
