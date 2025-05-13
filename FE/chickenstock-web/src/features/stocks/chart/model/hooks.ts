@@ -13,6 +13,27 @@ import {
 import { formatVolume } from "@/shared/libs/hooks/numberFormatters";
 import { renderCandlestickTooltip, renderVolumeTooltip } from "../ui/ChartTooltips";
 
+export const formatChartTime = (date: string, chartType: ChartType) => {
+  let timeLabel;
+  if (chartType === "DAILY" || chartType === "YEARLY") {
+    const year = date.substring(0, 4);
+    const month = date.substring(4, 6);
+    const day = date.substring(6, 8);
+    timeLabel = `${year}-${month}-${day}`;
+  } else if (chartType === "MINUTE") {
+    const year = date.substring(0, 4);
+    const month = date.substring(4, 6);
+    const day = date.substring(6, 8);
+    const hour = date.substring(8, 10);
+    const minute = date.substring(10, 12);
+    timeLabel = `${year}-${month}-${day} ${hour}:${minute}`;
+  } else {
+    timeLabel = date;
+  }
+
+  return timeLabel;
+};
+
 // 데이터 포맷팅
 export const formatChartData = (data: ChartData[], chartType: "DAILY" | "YEARLY" | "MINUTE") => {
   // 시간 간격 일정하게 하기 위해 인덱스 기반 접근
