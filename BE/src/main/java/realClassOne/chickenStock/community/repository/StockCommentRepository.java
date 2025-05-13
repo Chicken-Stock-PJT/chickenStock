@@ -3,6 +3,7 @@ package realClassOne.chickenStock.community.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import realClassOne.chickenStock.community.entity.StockComment;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,5 +17,10 @@ public interface StockCommentRepository extends JpaRepository<StockComment, Long
 
     // 부모 id로 댓글 찾기
     Optional<StockComment> findById(Long id);
+
+    // 무한스크롤을 위한 댓글 조회
+    List<StockComment> findByStockDataStockDataIdAndParentIsNullAndCreatedAtLessThanOrderByCreatedAtDesc(
+            Long stockDataId, LocalDateTime cursorTime, org.springframework.data.domain.Pageable pageable
+    );
 }
 

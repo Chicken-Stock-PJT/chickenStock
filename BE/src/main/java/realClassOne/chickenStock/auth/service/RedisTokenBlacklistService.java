@@ -1,6 +1,7 @@
 package realClassOne.chickenStock.auth.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.auth.exception.AuthErrorCode;
@@ -16,6 +17,7 @@ public class RedisTokenBlacklistService {
     private final RedisTemplate<String, String> redisTemplate;
     private static final String ONE_TIME_CODE_PREFIX = "onetime:";
     private static final String BLACKLIST_PREFIX = "blacklist:";
+
 
     public void addToBlacklist(String token, long timeToLiveMillis) {
         String key = BLACKLIST_PREFIX + token;
