@@ -14,8 +14,6 @@ from app.auth.auth_client import AuthClient
 
 from app.api.backend_client import BackendClient
 from app.api.kiwoom_api import KiwoomAPI
-from app.strategies.bollinger import BollingerBandTradingModel
-from app.strategies.envelope import EnvelopeTradingModel
 
 from app.bot.bot_manager import BotManager
 
@@ -202,8 +200,8 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
             logger.info(f"{market} 시장: 시가총액 기준 {len(market_symbols)}개 → 실제 상장 {len(available_market_symbols)}개")
 
         # 각 시장별로 목표 수량 선택
-        target_kospi_count = min(50, len(available_symbols["KOSPI"]))
-        target_kosdaq_count = min(20, len(available_symbols["KOSDAQ"]))
+        target_kospi_count = min(450, len(available_symbols["KOSPI"]))
+        target_kosdaq_count = min(150, len(available_symbols["KOSDAQ"]))
 
         final_kospi_symbols = available_symbols["KOSPI"][:target_kospi_count]
         final_kosdaq_symbols = available_symbols["KOSDAQ"][:target_kosdaq_count]
@@ -556,37 +554,58 @@ async def shutdown_event():
     # 서비스 상태 업데이트
     service_status["is_running"] = False
     
-    # 실행 중인 태스크 취소
+    # 1. 먼저 실행 중인 태스크 취소
     if trading_loop_task and not trading_loop_task.done():
         trading_loop_task.cancel()
+        try:
+            await trading_loop_task
+        except asyncio.CancelledError:
+            logger.info("거래 루프 태스크가 취소되었습니다.")
         
     if scheduler_task_instance and not scheduler_task_instance.done():
         scheduler_task_instance.cancel()
+        try:
+            await scheduler_task_instance
+        except asyncio.CancelledError:
+            logger.info("스케줄러 태스크가 취소되었습니다.")
     
-    # 모든 봇 정리
-    if bot_manager:
-        await bot_manager.cleanup()
+    # 2. 모든 태스크가 정리될 때까지 충분한 시간 대기
+    await asyncio.sleep(1)
     
-    # 백엔드 클라이언트 종료
-    if backend_client:
-        await backend_client.close()
+    # 3. 순서대로 리소스 정리
+    try:
+        # 모든 봇 정리
+        if bot_manager:
+            await bot_manager.cleanup()
+            logger.info("봇 매니저 리소스 정리 완료")
+        
+        # 백엔드 클라이언트 명시적 종료
+        if backend_client:
+            await backend_client.close()
+            logger.info("백엔드 클라이언트 종료 완료")
+        
+        # 키움 API 연결 종료
+        if kiwoom_api:
+            await kiwoom_api.close()
+            logger.info("키움 API 연결 종료 완료")
+        
+        # 인증 클라이언트 종료
+        if auth_client:
+            await auth_client.close()
+            logger.info("인증 클라이언트 종료 완료")
+        
+        # 토큰 관리자 종료
+        if token_manager:
+            await token_manager.close()
+            logger.info("토큰 매니저 종료 완료")
+        
+    except Exception as e:
+        logger.error(f"리소스 정리 중 오류: {str(e)}")
     
-    # 키움 API 연결 종료
-    if kiwoom_api:
-        await kiwoom_api.close()
-    
-    # 인증 클라이언트 종료
-    if auth_client:
-        await auth_client.close()
-    
-    # 토큰 관리자 종료
-    if token_manager:
-        await token_manager.close()
-    
-    # 태스크가 정리될 때까지 충분한 시간 대기 (0.5초에서 2초로 증가)
+    # 4. 모든 리소스 정리 후 대기
     await asyncio.sleep(2)
     
-    # 남아있는 모든 세션 강제 종료
+    # 5. 남아있는 모든 태스크 강제 종료
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     if tasks:
         logger.info(f"종료되지 않은 태스크 {len(tasks)}개가 있습니다. 강제 종료합니다.")
