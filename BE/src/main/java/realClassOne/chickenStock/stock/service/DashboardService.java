@@ -1,5 +1,6 @@
 package realClassOne.chickenStock.stock.service;
 
+import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -88,26 +89,39 @@ public class DashboardService {
                 allStockCodes.add(order.getStockData().getShortCode()));
 
         if (allStockCodes.isEmpty()) {
+            log.info("조회할 종목이 없습니다.");
             return new HashMap<>();
         }
 
         // List로 변환
         List<String> stockCodeList = new ArrayList<>(allStockCodes);
+        log.info("일괄 조회할 종목 목록: {}", stockCodeList);
 
-        // 키움증권 API를 통해 일괄 조회 (최대 100개까지 가능)
+        // 키움증권 REST API를 통해 일괄 조회 (최대 100개까지 가능)
         Map<String, JsonNode> stockDataMap = kiwoomStockApiService.getWatchListInfoMap(stockCodeList);
 
-        // API 호출 실패 시 웹소켓 데이터로 보충
-        for (String stockCode : stockCodeList) {
-            if (!stockDataMap.containsKey(stockCode) || stockDataMap.get(stockCode) == null) {
-                JsonNode websocketData = kiwoomWebSocketClient.getLatestStockPriceData(stockCode);
-                if (websocketData != null) {
-                    stockDataMap.put(stockCode, websocketData);
-                }
-            }
+        // 디버깅: 키움증권 API 응답 구조 확인
+        for (Map.Entry<String, JsonNode> entry : stockDataMap.entrySet()) {
+            log.info("종목코드: {}, 데이터: {}", entry.getKey(), entry.getValue().toString());
         }
 
-        return stockDataMap;
+        // "_AL" 접미사를 제거한 맵 생성
+        Map<String, JsonNode> cleanStockDataMap = new HashMap<>();
+        for (Map.Entry<String, JsonNode> entry : stockDataMap.entrySet()) {
+            String cleanCode = entry.getKey().replace("_AL", "");
+            cleanStockDataMap.put(cleanCode, entry.getValue());
+            log.info("종목코드 매핑: {} -> {}", entry.getKey(), cleanCode);
+        }
+
+        if (cleanStockDataMap.isEmpty()) {
+            log.error("키움증권 REST API에서 종목 정보를 가져올 수 없습니다.");
+            throw new CustomException(StockErrorCode.API_REQUEST_FAILED,
+                    "종목 정보를 조회할 수 없습니다.");
+        }
+
+        log.info("키움증권 API 응답 종목 수: {}", cleanStockDataMap.size());
+
+        return cleanStockDataMap;
     }
 
     /**
@@ -130,8 +144,20 @@ public class DashboardService {
             String stockCode = position.getStockData().getShortCode();
             JsonNode priceData = stockPriceMap.get(stockCode);
 
+            // 디버깅: 실제 응답 데이터 확인
+            if (priceData != null) {
+                log.info("종목 {} 응답 데이터: {}", stockCode, priceData.toString());
+            }
+
             // 현재가 추출
             Long currentPrice = extractCurrentPrice(priceData);
+
+            // 현재가가 0이면 평균 매입가를 사용
+            if (currentPrice == 0L) {
+                log.warn("종목 {} 현재가를 가져올 수 없어 평균매입가를 사용합니다.", stockCode);
+                currentPrice = position.getAveragePrice();
+            }
+
             String priceChange = extractPriceChange(priceData);
             String changeRate = extractChangeRate(priceData);
 
@@ -168,10 +194,15 @@ public class DashboardService {
         // 미체결 금액 계산
         Long pendingBuyAmount = calculatePendingBuyAmount(pendingOrders);
         Long pendingSellAmount = calculatePendingSellAmount(pendingOrders, stockPriceMap);
-        Long pendingOrderAmount = pendingBuyAmount + pendingSellAmount;
+        Long pendingOrderAmount = pendingBuyAmount;  // 매수 대기 금액
 
         // 총 자산 계산
-        Long totalAsset = member.getMemberMoney() + totalValuation + pendingOrderAmount;
+        // 순자산 개념: 현금 + 주식평가금액
+        // (미체결 매수금액은 이미 member_money에서 차감되어 있음)
+        Long totalAsset = member.getMemberMoney() + totalValuation;
+
+        // 만약 총 자본금 개념으로 표시하고 싶다면:
+        // Long totalAsset = member.getMemberMoney() + totalValuation + pendingOrderAmount;
 
         // 총 손익 및 수익률 계산
         Long totalProfitLoss = totalValuation - totalInvestment;
@@ -202,25 +233,36 @@ public class DashboardService {
 
     /**
      * JsonNode에서 현재가를 추출합니다.
+     * 키움증권 관심종목정보요청(ka10095) API 응답 형식에 맞게 파싱합니다.
      */
     private Long extractCurrentPrice(JsonNode priceData) {
         if (priceData == null) {
+            log.warn("가격 데이터가 null입니다.");
             return 0L;
         }
 
         try {
-            String priceStr;
-            if (priceData.has("cur_prc")) { // API 응답
-                priceStr = priceData.get("cur_prc").asText();
-            } else if (priceData.has("10")) { // 웹소켓 응답
-                priceStr = priceData.get("10").asText();
+            // 키움증권 REST API 응답 형식
+            if (priceData.has("cur_prc")) {
+                String priceStr = priceData.get("cur_prc").asText();
+                log.debug("현재가 문자열: {}", priceStr);
+
+                // 부호와 쉼표를 제거하고 숫자만 추출
+                priceStr = priceStr.replaceAll("[^0-9]", "");
+
+                if (priceStr.isEmpty()) {
+                    log.warn("현재가가 비어있습니다.");
+                    return 0L;
+                }
+
+                return Long.parseLong(priceStr);
             } else {
+                log.error("현재가(cur_prc) 필드를 찾을 수 없습니다. 사용 가능한 필드: {}",
+                        priceData.fieldNames());
                 return 0L;
             }
-
-            return Long.parseLong(priceStr.replaceAll("[^0-9-]", ""));
-        } catch (NumberFormatException e) {
-            log.warn("현재가 파싱 오류", e);
+        } catch (Exception e) {
+            log.error("현재가 파싱 오류: {}", e.getMessage(), e);
             return 0L;
         }
     }

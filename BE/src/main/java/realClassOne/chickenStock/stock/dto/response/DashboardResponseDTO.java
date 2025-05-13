@@ -14,8 +14,8 @@ public class DashboardResponseDTO {
     // 회원 자산 정보
     private Long memberMoney;           // 보유 현금
     private Long stockValuation;        // 주식 평가금액 (보유 종목의 현재가 합계)
-    private Long pendingOrderAmount;    // 미체결 금액 (매수 대기 금액 + 매도 대기 평가금액)
-    private Long totalAsset;            // 총 자산 (현금 + 주식평가금액 + 미체결금액)
+    private Long pendingOrderAmount;    // 미체결 금액 (매수 대기중인 금액)
+    private Long totalAsset;            // 총 자산 (현금 + 주식평가금액)
 
     // 수익률 정보
     private Long totalInvestment;       // 총 투자금액
