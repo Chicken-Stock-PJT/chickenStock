@@ -9,7 +9,9 @@ export const useRankingQuery = () => {
   return useQuery<RankingResponse>({
     queryKey: ["ranking", "total-asset", isLogin], // 로그인 상태에 따라 다른 캐시 키
     queryFn: fetchRanking,
-    staleTime: 5 * 60 * 1000, // 5분간 캐시
-    gcTime: 10 * 60 * 1000, // 10분간 캐시 보관
+    staleTime: 0, // 항상 최신 데이터를 가져오도록 설정
+    gcTime: 0, // 캐시를 저장하지 않음
+    refetchOnWindowFocus: true, // 포커스 시 재조회
+    refetchOnMount: true, // 마운트 시 재조회
   });
 };
