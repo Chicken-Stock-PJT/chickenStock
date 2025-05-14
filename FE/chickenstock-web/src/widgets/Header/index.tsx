@@ -3,12 +3,14 @@ import { Link, NavLink } from "react-router-dom";
 import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
 import SearchModal from "@/features/stocks/search/ui/SearchModal";
+import RankingModal from "@/widgets/Header/ui/RankingModal";
 import { useAuthStore } from "@/shared/store/auth";
 import HeaderDropdown from "@/widgets/Header/HeaderDropdown";
 import { useSimpleProfile } from "@/shared/model/queries";
 
 const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isRankingOpen, setIsRankingOpen] = useState(false);
   const { data: simpleProfile } = useSimpleProfile();
   const isLogin = useAuthStore((state) => state.isLoggedIn);
 
@@ -47,6 +49,13 @@ const Header = () => {
           >
             주식
           </NavLink>
+          {/* 랭킹 버튼 추가 */}
+          <div
+            onClick={() => setIsRankingOpen(true)}
+            className="cursor-pointer text-base font-semibold transition-colors duration-200 hover:text-primary-400"
+          >
+            랭킹
+          </div>
           <div className="relative">
             <div
               className={`flex items-center rounded-full bg-gray-100 text-gray-800 transition-all duration-300 ease-in-out ${
@@ -68,7 +77,7 @@ const Header = () => {
           <div className="flex items-center gap-4">
             <div className="hidden items-center gap-2 lg:flex">
               <div className="rounded-md bg-primary-100 p-2 text-xs">총 자산</div>
-              <div className="text-sm">\{Number(simpleProfile?.totalAsset).toLocaleString()}</div>
+              <div className="text-sm">₩{Number(simpleProfile?.totalAsset).toLocaleString()}</div>
             </div>
             <div className="hidden items-center gap-2 lg:flex">
               <div className="rounded-md bg-primary-100 p-2 text-xs">수익률</div>
@@ -93,6 +102,7 @@ const Header = () => {
         </div>
       )}
       <SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />
+      <RankingModal open={isRankingOpen} onOpenChange={setIsRankingOpen} />
     </div>
   );
 };
