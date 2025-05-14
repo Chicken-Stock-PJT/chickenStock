@@ -1,3 +1,4 @@
+import { getUserInfo } from "@/features/mypage/api";
 import useWatchlistStore from "@/features/watchlist/model/store";
 import apiClient from "@/shared/api/axios";
 import { AuthState, SimpleProfile } from "@/shared/store/types";
@@ -31,15 +32,16 @@ export const useAuthStore = create<AuthState>()(
         simpleProfile: null,
         getSimpleProfile: async () => {
           try {
-            const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
-            set({ simpleProfile: response.data });
-            return response.data;
+            const response = await getUserInfo();
+            set({ simpleProfile: response });
+            return response;
           } catch (error) {
             if (error instanceof Error) {
               alert(`프로필 정보 조회 실패 ${error.message}`);
             } else {
               alert("프로필 정보 조회 실패");
             }
+            set({ simpleProfile: null });
             throw error;
           }
         },

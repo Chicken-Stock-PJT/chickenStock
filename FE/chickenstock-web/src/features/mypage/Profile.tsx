@@ -12,7 +12,10 @@ const Profile = () => {
       {simpleProfile && (
         <>
           <UserInfo simpleProfile={simpleProfile} />
-          <MyAsset memberMoney={Number(simpleProfile.memberMoney ?? 0)} />
+          <MyAsset
+            totalAsset={Number(simpleProfile.totalAsset ?? 0)}
+            memberMoney={Number(simpleProfile.memberMoney ?? 0)}
+          />
         </>
       )}
     </div>

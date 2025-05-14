@@ -1,4 +1,11 @@
-import { User, Settings, ChartNoAxesCombined, ReceiptText, Heart } from "lucide-react";
+import {
+  User,
+  Settings,
+  ChartNoAxesCombined,
+  ReceiptText,
+  Heart,
+  ClipboardList,
+} from "lucide-react";
 
 export const SIDEBAR_CONFIG = [
   {
@@ -16,6 +23,7 @@ export const SIDEBAR_CONFIG = [
       { title: "포트폴리오", url: "/mypage/portfolio", icon: ChartNoAxesCombined },
       { title: "거래내역", url: "/mypage/transactions", icon: ReceiptText },
       { title: "관심종목", url: "/mypage/watchlist", icon: Heart },
+      { title: "지정가 주문목록", url: "/mypage/pending-orders", icon: ClipboardList },
     ],
   },
 ];

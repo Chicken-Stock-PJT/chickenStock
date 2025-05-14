@@ -19,7 +19,7 @@ export const getPendingOrders = async (stockCode: string) => {
 };
 
 export const cancelOrder = async (orderId: string) => {
-  const response = await apiClient.delete<CancelOrderResponse>(
+  const response = await apiClient.post<CancelOrderResponse>(
     `/stock/trading/cancel-order/${orderId}`,
   );
   return response.data;

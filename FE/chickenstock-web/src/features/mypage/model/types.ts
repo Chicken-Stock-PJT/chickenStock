@@ -48,6 +48,47 @@ export interface Position {
   returnRate: number; // 수익률 (%)
 }
 
+export type PortfolioSocketResponse = InitialPortfolioResponse | UpdatePortfolioResponse;
+
+export interface InitialPortfolioResponse {
+  type: "fullPortfolioUpdate";
+  data: {
+    memberMoney: number;
+    memberName: string;
+    portfolioItems: {
+      stockCode: string;
+      stockName: string;
+      quantity: number;
+      averagePrice: number;
+      currentPrice: number;
+      investmentAmount: number;
+      valuationAmount: number;
+      profitLoss: number;
+      returnRate: number;
+    }[];
+    totalInvestmentAmount: number;
+    totalValuationAmount: number;
+    totalProfitLoss: number;
+    totalReturnRate: number;
+    totalAsset: number;
+  };
+}
+
+export interface UpdatePortfolioResponse {
+  type: "stockUpdate"; // 메시지 타입 (주식 업데이트)
+  stockCode: string; // 종목코드
+  currentPrice: number; // 업데이트된 현재가
+  valuationAmount: number; // 업데이트된 평가금액
+  profitLoss: number; // 업데이트된 손익
+  returnRate: number; // 업데이트된 수익률 (%)
+  totalData: {
+    // 포트폴리오 전체 요약 데이터
+    totalAsset: number; // 업데이트된 총 자산
+    totalProfitLoss: number; // 업데이트된 총 손익
+    totalReturnRate: number; // 업데이트된 총 수익률 (%)
+  };
+}
+
 export interface TransactionResponse {
   tradeHistories: TradeHistory[];
   realizedProfit: number;
@@ -94,4 +135,25 @@ export interface ErrorResponse {
   message: string;
   path: string;
   timestamp: string;
+}
+
+// 지정가 주문목록 관련 타입코드 - 정우
+export interface PendingOrder {
+  orderId: number;
+  stockCode: string;
+  stockName: string;
+  orderType: "BUY" | "SELL";
+  quantity: number;
+  targetPrice: number;
+  createdAt: string;
+  status: "PENDING";
+}
+
+export interface CancelOrderRequest {
+  orderId: number;
+}
+
+export interface CancelOrderResponse {
+  success: boolean;
+  message: string;
 }

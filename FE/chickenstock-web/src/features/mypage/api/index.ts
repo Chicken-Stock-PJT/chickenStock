@@ -8,25 +8,19 @@ import {
   UpdatePasswordError,
   UpdatePasswordRequest,
   UpdatePasswordResponse,
+  PendingOrder,
+  CancelOrderRequest,
+  CancelOrderResponse,
 } from "../model/types";
 import { UpdateNicknameError } from "../model/types";
 import { ErrorResponse } from "react-router-dom";
 import axios, { AxiosError } from "axios";
-import { useAuthStore } from "@/shared/store/auth";
 import { toast } from "@/shared/libs/hooks/use-toast";
+import { useAuthStore } from "@/shared/store/auth";
 
 export const getUserInfo = async () => {
-  try {
-    const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
-    return response.data;
-  } catch (error) {
-    void useAuthStore.setState(() => ({
-      isLoggedIn: false,
-      accessToken: null,
-      simpleProfile: null,
-    }));
-    throw error;
-  }
+  const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
+  return response.data;
 };
 
 export const updateNickname = async (
@@ -70,8 +64,23 @@ export const updatePassword = async (
 };
 
 export const getPortfolio = async (): Promise<PortfolioResponse | AxiosError<ErrorResponse>> => {
-  const response = await apiClient.get<PortfolioResponse>("/members/portfolio");
-  return response.data;
+  const { setSimpleProfile } = useAuthStore.getState();
+  try {
+    const response = await apiClient.get<PortfolioResponse>("/members/portfolio");
+    if (response.status === 200) {
+      const updatedSimpleProfile = {
+        totalAsset: response.data.totalAsset.toString(),
+        memberMoney: response.data.memberMoney.toString(),
+      };
+      setSimpleProfile(updatedSimpleProfile);
+      return response.data;
+    } else {
+      throw new Error("Portfolio not found");
+    }
+  } catch (error) {
+    console.error("API error:", error);
+    throw error;
+  }
 };
 
 export const getTransactions = async ({
@@ -111,5 +120,17 @@ export const getDailyProfitRate = async (): Promise<DailyProfitRateResponse> => 
     "/members/return-rate/period?period=daily",
   );
   console.log(response.data);
+  return response.data;
+};
+
+export const fetchPendingOrders = async (): Promise<PendingOrder[]> => {
+  const response = await apiClient.get<PendingOrder[]>("/stock/trading/pending-orders");
+  return response.data;
+};
+
+export const cancelOrder = async (request: CancelOrderRequest): Promise<CancelOrderResponse> => {
+  const response = await apiClient.post<CancelOrderResponse>(
+    `/stock/trading/cancel-order/${request.orderId}`,
+  );
   return response.data;
 };

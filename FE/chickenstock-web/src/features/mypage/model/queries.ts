@@ -1,16 +1,16 @@
 import { useQuery, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
-import { getDailyProfitRate, getPortfolio, getTransactions } from "../api";
+import { getDailyProfitRate, getPortfolio, getTransactions, fetchPendingOrders } from "../api";
 import { AxiosResponse } from "axios";
-import { ErrorResponse, DailyProfitRateResponse, TransactionResponse } from "./types";
+import { ErrorResponse, DailyProfitRateResponse, TransactionResponse, PendingOrder } from "./types";
 
 export const useGetPortfolio = () => {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["portfolio"],
     queryFn: getPortfolio,
     staleTime: 0,
     gcTime: 0,
   });
-  return { data, isLoading, error };
+  return { data, isLoading, error, refetch };
 };
 
 export const useGetTransactions = () => {
@@ -41,5 +41,13 @@ export const useGetDailyProfitRate = () => {
   return useQuery<DailyProfitRateResponse, AxiosResponse<ErrorResponse>>({
     queryKey: ["dailyProfitRate"],
     queryFn: getDailyProfitRate,
+  });
+};
+
+export const usePendingOrdersQuery = () => {
+  return useQuery<PendingOrder[]>({
+    queryKey: ["pendingOrders"],
+    queryFn: fetchPendingOrders,
+    refetchInterval: 30000, // 30초마다 자동 새로고침
   });
 };
