@@ -4,6 +4,7 @@ import apiClient from "@/shared/api/axios";
 import { AuthState, SimpleProfile } from "@/shared/store/types";
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
+import { queryClient } from "../api/queryClient";
 
 const baseURL = import.meta.env.VITE_BASE_URL;
 
@@ -88,6 +89,7 @@ export const useAuthStore = create<AuthState>()(
             isLoggedIn: false,
             simpleProfile: null,
           });
+          void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
         },
       }),
       {
