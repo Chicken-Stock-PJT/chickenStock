@@ -39,6 +39,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<IChartApi | null>(null);
   const handleChartTypeChange = (type: ChartType) => {
+    if (type === chartType) return;
     setChartType(type);
     setChartData([]); // 차트 타입 변경 시 데이터 초기화
   };
@@ -54,6 +55,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
           hasNext: false,
           nextKey: "",
         });
+        console.log(data.chartData);
         setChartData(
           data.chartData
             .map((item) => ({
@@ -84,16 +86,30 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   useEffect(() => {
     if (loading) return;
     if (stockPriceData && candlestickSeriesRef.current) {
-      const time = formatChartTime(stockPriceData.timestamp) as Time;
+      const today = new Date();
+      if (chartType === "YEARLY") {
+        today.setMonth(0, 2); // 1월 2일로 설정
+      }
+      // UTC+9 시간대로 설정
+      today.setHours(0, 0, 0, 0);
+      today.setHours(today.getHours() + 9);
+      const todayTimestamp = Math.floor(today.getTime() / 1000);
+      console.log(todayTimestamp);
+
+      const time =
+        chartType === "MINUTE"
+          ? (formatChartTime(stockPriceData.timestamp) as Time)
+          : (todayTimestamp as Time);
+
       const newData = {
-        time: chartType === "MINUTE" ? time : (formatChartTime("000000") as Time),
+        time,
         open: Number(chartData[chartData.length - 1]?.openPrice),
         high: Number(chartData[chartData.length - 1]?.highPrice),
         low: Number(chartData[chartData.length - 1]?.lowPrice),
         close: Math.abs(Number(stockPriceData.currentPrice)),
       };
       console.log(newData);
-      candlestickSeriesRef.current.update(newData);
+      candlestickSeriesRef.current.update(newData as CandlestickData<Time>);
     }
   }, [stockPriceData]);
 
@@ -101,16 +117,30 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     if (loading) return;
     if (tradeExecutionData && volumeSeriesRef.current && chartData.length > 0) {
       const lastOpenPrice = Number(chartData[chartData.length - 1]?.openPrice ?? 0);
+      const today = new Date();
+      if (chartType === "YEARLY") {
+        today.setMonth(0, 2); // 1월 2일로 설정
+      }
+      // UTC+9 시간대로 설정
+      today.setHours(0, 0, 0, 0);
+      today.setHours(today.getHours() + 9);
+      const todayTimestamp = Math.floor(today.getTime() / 1000);
+      console.log(todayTimestamp);
+
       const time =
         chartType === "MINUTE"
           ? (formatChartTime(tradeExecutionData.timestamp) as Time)
-          : (formatChartTime("000000") as Time);
+          : (todayTimestamp as Time);
+
       const quantity = Number(tradeExecutionData.quantity);
       console.log(time, prevVolume.time);
       const newData = {
         time: time,
         value: prevVolume.time === time ? prevVolume.value + quantity : quantity,
-        color: Number(tradeExecutionData.price) >= lastOpenPrice ? "#FD4141" : "#4170FD",
+        color:
+          Number(tradeExecutionData.price) >= lastOpenPrice
+            ? "rgba(253, 65, 65, 0.5)"
+            : "rgba(65, 112, 253, 0.5)",
       };
       setPrevVolume({ time: newData.time, value: newData.value, color: newData.color });
       volumeSeriesRef.current.update(newData as HistogramData<Time>);
@@ -216,8 +246,8 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       if (candle) {
         color =
           candle.close >= candle.open
-            ? "#FD4141" // 상승 (빨강)
-            : "#4170FD"; // 하락 (파랑)
+            ? "rgba(253, 65, 65, 0.5)" // 상승 (빨강)
+            : "rgba(65, 112, 253, 0.5)"; // 하락 (파랑)
       }
 
       return {
