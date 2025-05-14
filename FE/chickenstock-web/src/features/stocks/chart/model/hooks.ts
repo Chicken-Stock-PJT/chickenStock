@@ -13,25 +13,36 @@ import {
 import { formatVolume } from "@/shared/libs/hooks/numberFormatters";
 import { renderCandlestickTooltip, renderVolumeTooltip } from "../ui/ChartTooltips";
 
-export const formatChartTime = (date: string, chartType: ChartType) => {
-  let timeLabel;
-  if (chartType === "DAILY" || chartType === "YEARLY") {
-    const year = date.substring(0, 4);
-    const month = date.substring(4, 6);
-    const day = date.substring(6, 8);
-    timeLabel = `${year}-${month}-${day}`;
-  } else if (chartType === "MINUTE") {
-    const year = date.substring(0, 4);
-    const month = date.substring(4, 6);
-    const day = date.substring(6, 8);
-    const hour = date.substring(8, 10);
-    const minute = date.substring(10, 12);
-    timeLabel = `${year}-${month}-${day} ${hour}:${minute}`;
-  } else {
-    timeLabel = date;
-  }
+export const formatChartTime = (date: string) => {
+  if (!date) return new Date().getTime() / 1000;
 
-  return timeLabel;
+  // timestamp 형식인 경우 (예: "2024-03-21T14:30:00")
+  if (date.includes("T")) {
+    return new Date(date).getTime() / 1000 + 9 * 60 * 60 * 1000;
+  } else if (date.length === 6) {
+    // HHMMSS 형식인 경우
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hour = date.substring(0, 2);
+    const minute = date.substring(2, 4);
+    return (
+      (new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime() + 9 * 60 * 60 * 1000) /
+      1000
+    );
+  } else {
+    // 기존 형식 처리 (예: "20240321")
+    const year = date.substring(0, 4);
+    const month = date.substring(4, 6);
+    const day = date.substring(6, 8);
+    const hour = date.substring(8, 10) || "00";
+    const minute = date.substring(10, 12) || "00";
+    return (
+      (new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime() + 9 * 60 * 60 * 1000) /
+      1000
+    );
+  }
 };
 
 // 데이터 포맷팅
@@ -42,17 +53,27 @@ export const formatChartData = (data: ChartData[], chartType: "DAILY" | "YEARLY"
       // 날짜/시간 표시용 텍스트 포맷팅
       let timeLabel;
       if (chartType === "DAILY" || chartType === "YEARLY") {
-        const year = item.date.substring(0, 4);
-        const month = item.date.substring(4, 6);
-        const day = item.date.substring(6, 8);
-        timeLabel = `${year}-${month}-${day}`;
+        const year = item.date.toString().substring(0, 4);
+        const month = item.date.toString().substring(4, 6);
+        const day = item.date.toString().substring(6, 8);
+        timeLabel = {
+          year,
+          month,
+          day,
+        };
       } else if (chartType === "MINUTE") {
-        const year = item.date.substring(0, 4);
-        const month = item.date.substring(4, 6);
-        const day = item.date.substring(6, 8);
-        const hour = item.date.substring(8, 10);
-        const minute = item.date.substring(10, 12);
-        timeLabel = `${year}-${month}-${day} ${hour}:${minute}`;
+        const year = item.date.toString().substring(0, 4);
+        const month = item.date.toString().substring(4, 6);
+        const day = item.date.toString().substring(6, 8);
+        const hour = item.date.toString().substring(8, 10);
+        const minute = item.date.toString().substring(10, 12);
+        timeLabel = {
+          year,
+          month,
+          day,
+          hour,
+          minute,
+        };
       } else {
         timeLabel = item.date;
       }

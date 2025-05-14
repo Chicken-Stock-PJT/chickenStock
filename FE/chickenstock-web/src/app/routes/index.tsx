@@ -9,6 +9,7 @@ import MyPage from "@/pages/mypage";
 import ProfileEdit from "@/features/mypage/ProfileEdit";
 import Portfolio from "@/features/mypage/Portfolio";
 import Watchlist from "@/features/mypage/Watchlist";
+import PendingOrders from "@/features/mypage/pending-orders";
 import Transactions from "@/features/mypage/Transactions";
 import SignupPage from "@/pages/SignupPage";
 import LoginPage from "@/pages/LoginPage";
@@ -85,6 +86,10 @@ const router = createBrowserRouter([
           {
             path: "watchlist",
             element: <Watchlist />,
+          },
+          {
+            path: "pending-orders",
+            element: <PendingOrders />,
           },
         ],
       },

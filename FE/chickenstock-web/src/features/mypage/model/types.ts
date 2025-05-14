@@ -136,3 +136,24 @@ export interface ErrorResponse {
   path: string;
   timestamp: string;
 }
+
+// 지정가 주문목록 관련 타입코드 - 정우
+export interface PendingOrder {
+  orderId: number;
+  stockCode: string;
+  stockName: string;
+  orderType: "BUY" | "SELL";
+  quantity: number;
+  targetPrice: number;
+  createdAt: string;
+  status: "PENDING";
+}
+
+export interface CancelOrderRequest {
+  orderId: number;
+}
+
+export interface CancelOrderResponse {
+  success: boolean;
+  message: string;
+}

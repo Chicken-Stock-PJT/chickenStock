@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import Header from "../widgets/Header";
 import { Toaster } from "@/shared/libs/ui/toaster";
+import ChatNotification from "../widgets/ChatNotification/ui";
 function Layout() {
   return (
     <div className="min-h-screen">
@@ -9,6 +10,7 @@ function Layout() {
         <Outlet />
       </div>
       <Toaster />
+      <ChatNotification />
     </div>
   );
 }
