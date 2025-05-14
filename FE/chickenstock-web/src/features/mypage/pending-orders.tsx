@@ -1,5 +1,5 @@
 import PendingOrdersList from "./ui/PendingOrdersList";
-import PendingOrdersGuide from "./ui/PendingORdersGuide";
+import PendingOrdersGuide from "./ui/PendingOrdersGuide";
 
 const PendingOrders = () => {
   return (
