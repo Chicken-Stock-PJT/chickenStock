@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import ChartHeader from "./ChartHeader";
 import { ChartData, ChartType } from "../model/types";
 import { getStockChartData } from "../api";
@@ -12,6 +12,7 @@ import {
   Time,
   CandlestickData,
   HistogramData,
+  MouseEventParams,
 } from "lightweight-charts";
 import { formatChartTime } from "@/features/stocks/chart/model/hooks";
 
@@ -30,6 +31,8 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [chartType, setChartType] = useState<"MINUTE" | "DAILY" | "YEARLY">("DAILY");
+  const [nextKey, setNextKey] = useState<string>("");
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const { stockPriceData, tradeExecutionData } = useWebSocketStore();
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -55,19 +58,20 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
           hasNext: false,
           nextKey: "",
         });
-        console.log(data.chartData);
-        setChartData(
-          data.chartData
-            .map((item) => ({
-              currentPrice: Math.abs(Number(item.currentPrice)).toString(),
-              openPrice: Math.abs(Number(item.openPrice)).toString(),
-              highPrice: Math.abs(Number(item.highPrice)).toString(),
-              lowPrice: Math.abs(Number(item.lowPrice)).toString(),
-              volume: Math.abs(Number(item.volume)).toString(),
-              date: formatChartTime(item.date.toString()),
-            }))
-            .reverse(),
-        );
+        // console.log(data.chartData);
+        const processedData = data.chartData
+          .map((item) => ({
+            currentPrice: Math.abs(Number(item.currentPrice)).toString(),
+            openPrice: Math.abs(Number(item.openPrice)).toString(),
+            highPrice: Math.abs(Number(item.highPrice)).toString(),
+            lowPrice: Math.abs(Number(item.lowPrice)).toString(),
+            volume: Math.abs(Number(item.volume)).toString(),
+            date: formatChartTime(item.date.toString()),
+          }))
+          .reverse(); // API 데이터가 내림차순이므로 오름차순으로 변환
+
+        setChartData(processedData);
+        setNextKey(data.nextKey);
         setPrevVolume({
           time: formatChartTime(data.chartData[0].date.toString()) as Time,
           value: Number(data.chartData[0].volume),
@@ -82,6 +86,70 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     void fetchChartData();
   }, [stockCode, chartType]);
 
+  // 이전 데이터 로드 함수
+  const loadMoreData = useCallback(async () => {
+    if (isLoadingMore || !nextKey) return;
+
+    try {
+      setIsLoadingMore(true);
+
+      // 현재 보이는 영역 저장
+      const visibleRange = chartInstanceRef.current?.timeScale().getVisibleLogicalRange();
+      const currentFrom = visibleRange?.from ?? 0;
+      const currentTo = visibleRange?.to ?? 0;
+
+      const data = await getStockChartData({
+        stockCode,
+        chartType,
+        hasNext: true,
+        nextKey,
+      });
+
+      const lastDate = chartData[chartData.length - 1].date;
+      const firstDate = formatChartTime(data.chartData[0].date.toString());
+
+      if (lastDate === firstDate) {
+        setIsLoadingMore(false);
+        return;
+      }
+
+      const newData = data.chartData
+        .map((item) => ({
+          currentPrice: Math.abs(Number(item.currentPrice)).toString(),
+          openPrice: Math.abs(Number(item.openPrice)).toString(),
+          highPrice: Math.abs(Number(item.highPrice)).toString(),
+          lowPrice: Math.abs(Number(item.lowPrice)).toString(),
+          volume: Math.abs(Number(item.volume)).toString(),
+          date: formatChartTime(item.date.toString()),
+        }))
+        .reverse();
+
+      setChartData((prev) => {
+        const updatedData = [...newData, ...prev];
+
+        // 데이터 업데이트 후 차트의 가시 영역 복원
+        setTimeout(() => {
+          if (chartInstanceRef.current) {
+            const newFrom = currentFrom + newData.length;
+            const newTo = currentTo + newData.length;
+            chartInstanceRef.current.timeScale().setVisibleLogicalRange({
+              from: newFrom,
+              to: newTo,
+            });
+          }
+        }, 0);
+
+        return updatedData;
+      });
+
+      setNextKey(data.nextKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [stockCode, chartType, nextKey, chartData]);
+
   // stockPriceData 업데이트 시 차트 업데이트
   useEffect(() => {
     if (loading) return;
@@ -94,7 +162,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       today.setHours(0, 0, 0, 0);
       today.setHours(today.getHours() + 9);
       const todayTimestamp = Math.floor(today.getTime() / 1000);
-      console.log(todayTimestamp);
+      // console.log(todayTimestamp);
 
       const time =
         chartType === "MINUTE"
@@ -108,7 +176,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         low: Number(chartData[chartData.length - 1]?.lowPrice),
         close: Math.abs(Number(stockPriceData.currentPrice)),
       };
-      console.log(newData);
+      // console.log(newData);
       candlestickSeriesRef.current.update(newData as CandlestickData<Time>);
     }
   }, [stockPriceData]);
@@ -125,7 +193,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       today.setHours(0, 0, 0, 0);
       today.setHours(today.getHours() + 9);
       const todayTimestamp = Math.floor(today.getTime() / 1000);
-      console.log(todayTimestamp);
+      // console.log(todayTimestamp);
 
       const time =
         chartType === "MINUTE"
@@ -133,7 +201,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
           : (todayTimestamp as Time);
 
       const quantity = Number(tradeExecutionData.quantity);
-      console.log(time, prevVolume.time);
+      // console.log(time, prevVolume.time);
       const newData = {
         time: time,
         value: prevVolume.time === time ? prevVolume.value + quantity : quantity,
@@ -189,6 +257,10 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       wickUpColor: "#FD4141",
       wickDownColor: "#4170FD",
       priceScaleId: "right", // 오른쪽 가격 스케일 사용
+      priceFormat: {
+        type: "price",
+        minMove: 1,
+      },
     });
     candlestickSeriesRef.current = candlestickSeries;
 
@@ -222,6 +294,9 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       },
     });
 
+    // console.log("chartData", chartData);
+
+    // 주가 차트 데이터 설정
     const candleData = chartData.map((item: ChartData) => ({
       time: item.date,
       open: Number(item.openPrice),
@@ -230,6 +305,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       close: Number(item.currentPrice),
     }));
 
+    // 거래량 차트 데이터 설정
     const volumeData = chartData.map((item: ChartData) => ({
       time: item.date,
       value: Number(item.volume),
@@ -264,6 +340,17 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       to: chartData.length,
     });
 
+    // 무한스크롤
+    let timeoutId: NodeJS.Timeout;
+    chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+      if (logicalRange?.from && logicalRange.from < 10) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          void loadMoreData();
+        }, 250); // 300ms 디바운스
+      }
+    });
+
     // 창 크기 변경에 대응
     const handleResize = () => {
       if (chartContainerRef.current && chartInstanceRef.current) {
@@ -272,9 +359,80 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         });
       }
     };
-
     window.addEventListener("resize", handleResize);
     chartInstanceRef.current = chart;
+
+    // 툴팁 설정
+    const tooltip = document.createElement("div");
+    tooltip.style.position = "absolute";
+    tooltip.style.display = "none";
+    tooltip.style.padding = "8px";
+    tooltip.style.background = "rgba(255, 255, 255, 0.9)";
+    tooltip.style.border = "1px solid #ccc";
+    tooltip.style.borderRadius = "4px";
+    tooltip.style.fontSize = "12px";
+    tooltip.style.pointerEvents = "none";
+    tooltip.style.zIndex = "1000";
+    chartContainerRef.current?.appendChild(tooltip);
+
+    // 마우스 이벤트 핸들러
+    chart.subscribeCrosshairMove((param: MouseEventParams) => {
+      if (
+        param.point === undefined ||
+        !param.time ||
+        param.point.x < 0 ||
+        param.point.x > chartContainerRef.current!.clientWidth ||
+        param.point.y < 0 ||
+        param.point.y > chartContainerRef.current!.clientHeight
+      ) {
+        tooltip.style.display = "none";
+        return;
+      }
+
+      const data = param.seriesData.get(candlestickSeries);
+      if (!data) {
+        tooltip.style.display = "none";
+        return;
+      }
+
+      const candleData = data as CandlestickData<Time>;
+      const yearStr = new Date(Number(param.time) * 1000).getFullYear();
+      const dateStr = new Date(Number(param.time) * 1000).toLocaleDateString();
+      const timeStr = new Date(Number(param.time) * 1000).toLocaleTimeString();
+      const price = candleData.close;
+      const volumeData = param.seriesData.get(volumeSeries);
+      const volume = volumeData && "value" in volumeData ? volumeData.value : 0;
+
+      let left = param.point.x + 15;
+      if (left > chartContainerRef.current!.clientWidth - tooltip.clientWidth) {
+        left = param.point.x - tooltip.clientWidth - 15;
+      }
+
+      let top = param.point.y + 15;
+      if (top > chartContainerRef.current!.clientHeight - tooltip.clientHeight) {
+        top = param.point.y - tooltip.clientHeight - 15;
+      }
+
+      tooltip.style.display = "block";
+      tooltip.style.left = left + "px";
+      tooltip.style.top = top + "px";
+      tooltip.innerHTML = `
+        <div style="font-weight: bold">${chartType === "YEARLY" ? yearStr + "년" : dateStr} ${chartType === "MINUTE" ? timeStr.slice(0, 8) : ""}</div>
+        <div>시가: ${candleData.open}</div>
+        <div>고가: ${candleData.high}</div>
+        <div>저가: ${candleData.low}</div>
+        <div style="color: ${
+          Number(price) >= Number(candleData.open)
+            ? "rgba(253, 65, 65, 1)"
+            : "rgba(65, 112, 253, 1)"
+        }">종가: ${price}</div>
+        <div style="color: ${
+          Number(price) >= Number(candleData.open)
+            ? "rgba(253, 65, 65, 1)"
+            : "rgba(65, 112, 253, 1)"
+        }">거래량: ${volume?.toLocaleString() ?? "0"}</div>
+      `;
+    });
 
     // 컴포넌트 언마운트 시 정리
     return () => {
@@ -283,8 +441,10 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         chartInstanceRef.current.remove();
         chartInstanceRef.current = null;
       }
+      tooltip.remove();
+      clearTimeout(timeoutId);
     };
-  }, [chartData, loading]);
+  }, [chartData, loading, loadMoreData]);
 
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error: {error}</div>;
@@ -301,7 +461,10 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         onChartTypeChange={handleChartTypeChange}
         selectedChartType={chartType}
       />
-      <div ref={chartContainerRef} style={{ width: "100%", height: "500px" }} />
+      <div
+        ref={chartContainerRef}
+        style={{ width: "100%", height: "500px", position: "relative" }}
+      />
     </div>
   );
 };
