@@ -8,6 +8,9 @@ import {
   UpdatePasswordError,
   UpdatePasswordRequest,
   UpdatePasswordResponse,
+  PendingOrder,
+  CancelOrderRequest,
+  CancelOrderResponse,
 } from "../model/types";
 import { UpdateNicknameError } from "../model/types";
 import { ErrorResponse } from "react-router-dom";
@@ -117,5 +120,17 @@ export const getDailyProfitRate = async (): Promise<DailyProfitRateResponse> => 
     "/members/return-rate/period?period=daily",
   );
   console.log(response.data);
+  return response.data;
+};
+
+export const fetchPendingOrders = async (): Promise<PendingOrder[]> => {
+  const response = await apiClient.get<PendingOrder[]>("/stock/trading/pending-orders");
+  return response.data;
+};
+
+export const cancelOrder = async (request: CancelOrderRequest): Promise<CancelOrderResponse> => {
+  const response = await apiClient.post<CancelOrderResponse>(
+    `/stock/trading/cancel-order/${request.orderId}`,
+  );
   return response.data;
 };
