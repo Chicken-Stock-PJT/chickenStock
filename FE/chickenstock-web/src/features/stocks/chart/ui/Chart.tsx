@@ -29,7 +29,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [chartType, setChartType] = useState<"MINUTE" | "DAILY" | "YEARLY">("MINUTE");
+  const [chartType, setChartType] = useState<"MINUTE" | "DAILY" | "YEARLY">("DAILY");
   const { stockPriceData, tradeExecutionData } = useWebSocketStore();
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -101,12 +101,12 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       const quantity = Number(tradeExecutionData.quantity);
       console.log(time, prevVolume.time);
       const newData = {
-        time,
+        time: chartType === "MINUTE" ? time : formatChartTime("000000"),
         value: prevVolume.time === Number(time) ? prevVolume.value + quantity : quantity,
         color: Number(tradeExecutionData.price) >= lastOpenPrice ? "#FD4141" : "#4170FD",
       };
-      setPrevVolume({ time: Number(time), value: newData.value, color: newData.color });
-      volumeSeriesRef.current.update(newData);
+      setPrevVolume({ time: Number(newData.time), value: newData.value, color: newData.color });
+      volumeSeriesRef.current.update(newData as HistogramData<Time>);
     }
   }, [tradeExecutionData, chartData]);
 
@@ -222,9 +222,10 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     // 데이터 설정
     candlestickSeries.setData(candleData as CandlestickData<Time>[]);
     volumeSeries.setData(coloredVolumeData as HistogramData<Time>[]);
-
-    // 차트의 가시 영역을 데이터에 맞게 조정
-    chart.timeScale().fitContent();
+    chart.timeScale().setVisibleLogicalRange({
+      from: chartData.length - 100,
+      to: chartData.length,
+    });
 
     // 창 크기 변경에 대응
     const handleResize = () => {
