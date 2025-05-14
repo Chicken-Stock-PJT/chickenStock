@@ -1,4 +1,3 @@
-// @/widgets/mypage/ui/ConfirmModal.tsx
 interface ConfirmModalProps {
   show: boolean;
   title: string;
