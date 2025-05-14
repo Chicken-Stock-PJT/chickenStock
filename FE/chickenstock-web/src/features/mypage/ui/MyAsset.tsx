@@ -1,7 +1,7 @@
-const MyAsset = ({ memberMoney }: { memberMoney: number }) => {
+const MyAsset = ({ totalAsset, memberMoney }: { totalAsset: number; memberMoney: number }) => {
   const assetRatio = {
     cash: Number(memberMoney ?? 0),
-    stock: 100000000 - Number(memberMoney ?? 0), // 아직 데이터 X
+    stock: Number(totalAsset) - Number(memberMoney ?? 0), // 아직 데이터 X
   };
 
   return (
@@ -24,8 +24,11 @@ const MyAsset = ({ memberMoney }: { memberMoney: number }) => {
               <div className="size-[12px] rounded-sm bg-primary-400"></div>
               <div>현금</div>
             </div>
-            <div className="flex gap-1.5">
-              <span className="font-semibold">{assetRatio.cash.toLocaleString()}원</span>
+            <div className="flex items-center gap-1.5 font-semibold">
+              <span>{assetRatio.cash.toLocaleString()}원</span>
+              <span className="text-sm text-muted-foreground ">
+                ({((assetRatio.cash / (assetRatio.cash + assetRatio.stock)) * 100).toFixed(2)}%)
+              </span>
             </div>
           </div>
           <div className="flex flex-1 justify-between">
@@ -33,8 +36,11 @@ const MyAsset = ({ memberMoney }: { memberMoney: number }) => {
               <div className="size-[12px] rounded-sm bg-[#00C49F]"></div>
               <div>주식</div>
             </div>
-            <div className="flex gap-1.5">
-              <span className="font-semibold">{assetRatio.stock.toLocaleString()}원</span>
+            <div className="flex items-center gap-1.5 font-semibold">
+              <span>{assetRatio.stock.toLocaleString()}원</span>
+              <span className="text-sm text-muted-foreground ">
+                ({((assetRatio.stock / (assetRatio.cash + assetRatio.stock)) * 100).toFixed(2)}%)
+              </span>
             </div>
           </div>
         </div>
