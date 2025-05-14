@@ -49,7 +49,7 @@ export const connect = () => {
     return;
   }
 
-  const wsUrl = `${import.meta.env.VITE_BASE_WS_URL}/ws/notification`;
+  const wsUrl = `${import.meta.env.VITE_BASE_WS_URL}/notification`;
   console.log("WebSocket 연결 시도:", wsUrl);
 
   ws = new WebSocket(wsUrl);
