@@ -1,9 +1,18 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import ChartHeader from "./ChartHeader";
 import { ChartData, ChartType } from "../model/types";
 import { getStockChartData } from "../api";
 import { useWebSocketStore } from "@/shared/store/websocket";
-import { createChart, CandlestickSeries, HistogramSeries } from "lightweight-charts";
+import {
+  createChart,
+  CandlestickSeries,
+  HistogramSeries,
+  ISeriesApi,
+  IChartApi,
+  Time,
+  CandlestickData,
+  HistogramData,
+} from "lightweight-charts";
 import { formatChartTime } from "@/features/stocks/chart/model/hooks";
 
 interface ChartProps {
@@ -20,21 +29,15 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [chartType, setChartType] = useState<"MINUTE" | "DAILY" | "YEARLY">("DAILY");
-  const { stockPriceData } = useWebSocketStore();
+  const [chartType, setChartType] = useState<"MINUTE" | "DAILY" | "YEARLY">("MINUTE");
+  const { stockPriceData, tradeExecutionData } = useWebSocketStore();
+  const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const [prevVolume, setPrevVolume] = useState({ time: 0, value: 0, color: "" });
 
   // 차트 관련 refs - 항상 선언 (조건부로 선언하지 않음)
-  const chartContainerRef = useRef(null);
-  const chartInstanceRef = useRef(null);
-
-  // 최근 받은 웹소켓 데이터를 참조로 저장
-  const latestPriceRef = useRef<{
-    currentPrice: string;
-    timestamp: number;
-  } | null>(null);
-
-  // 업데이트 디바운싱을 위한 타이머 참조
-  const updateTimerRef = useRef<number | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<IChartApi | null>(null);
 
   const fetchChartData = useCallback(async () => {
     try {
@@ -48,8 +51,12 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       setChartData(
         data.chartData
           .map((item) => ({
-            ...item,
-            date: formatChartTime(item.date, chartType),
+            currentPrice: Math.abs(Number(item.currentPrice)).toString(),
+            openPrice: Math.abs(Number(item.openPrice)).toString(),
+            highPrice: Math.abs(Number(item.highPrice)).toString(),
+            lowPrice: Math.abs(Number(item.lowPrice)).toString(),
+            volume: Math.abs(Number(item.volume)).toString(),
+            date: formatChartTime(item.date.toString()),
           }))
           .reverse(),
       );
@@ -60,72 +67,53 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     }
   }, [stockCode, chartType]);
 
-  // 초기 차트 데이터 로드
-  useEffect(() => {
-    void fetchChartData();
-
-    // 컴포넌트 언마운트 시 타이머 정리
-    return () => {
-      if (updateTimerRef.current !== null) {
-        window.clearTimeout(updateTimerRef.current);
-      }
-    };
-  }, [fetchChartData]);
-
-  // 효율적인 차트 데이터 업데이트 함수
-  const updateChartData = useCallback(() => {
-    if (!latestPriceRef.current || chartData.length === 0) return;
-
-    const newPrice = Number(latestPriceRef.current?.currentPrice);
-    const lastData = chartData[0];
-
-    // 실제로 가격이 변경되었고 유효한 가격일 때만 업데이트
-    if (Number(lastData.currentPrice) !== newPrice && !isNaN(newPrice)) {
-      setChartData((prevData) => {
-        const updatedData = [...prevData];
-        updatedData[0] = {
-          ...lastData,
-          currentPrice: latestPriceRef.current!.currentPrice,
-          highPrice: Math.max(Number(lastData.highPrice), newPrice).toString(),
-          lowPrice: Math.min(Number(lastData.lowPrice), newPrice).toString(),
-        };
-        return updatedData;
-      });
-    }
-
-    // 타이머 참조 초기화
-    updateTimerRef.current = null;
-  }, [chartData]);
-
-  // 웹소켓 데이터 업데이트 처리 - 디바운싱 적용
-  useEffect(() => {
-    if (!stockPriceData || chartData.length === 0) return;
-
-    // 최신 가격 정보 참조 업데이트
-    latestPriceRef.current = {
-      currentPrice: stockPriceData.currentPrice,
-      timestamp: Date.now(),
-    };
-
-    // 이미 예약된 업데이트가 있다면 새로 예약하지 않음
-    if (updateTimerRef.current !== null) return;
-
-    // 100ms 디바운스로 차트 업데이트 예약
-    updateTimerRef.current = window.setTimeout(updateChartData, 100);
-  }, [stockPriceData, updateChartData, chartData.length]);
-
   const handleChartTypeChange = useCallback((type: ChartType) => {
     setChartType(type);
     setChartData([]); // 차트 타입 변경 시 데이터 초기화
   }, []);
 
-  // 메모이제이션된 차트 데이터
-  const memoizedChartData = useMemo(() => chartData, [chartData]);
+  // 초기 차트 데이터 로드
+  useEffect(() => {
+    void fetchChartData();
+  }, [fetchChartData, chartType]);
+
+  // stockPriceData 업데이트 시 차트 업데이트
+  useEffect(() => {
+    if (loading) return;
+    if (stockPriceData && candlestickSeriesRef.current) {
+      const newData = {
+        time: formatChartTime(stockPriceData.timestamp) as Time,
+        open: Number(chartData[chartData.length - 1]?.openPrice),
+        high: Number(chartData[chartData.length - 1]?.highPrice),
+        low: Number(chartData[chartData.length - 1]?.lowPrice),
+        close: Math.abs(Number(stockPriceData.currentPrice)),
+      };
+      console.log(newData);
+      candlestickSeriesRef.current.update(newData);
+    }
+  }, [stockPriceData]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (tradeExecutionData && volumeSeriesRef.current && chartData.length > 0) {
+      const lastOpenPrice = Number(chartData[chartData.length - 1]?.openPrice ?? 0);
+      const time = formatChartTime(tradeExecutionData.timestamp) as Time;
+      const quantity = Number(tradeExecutionData.quantity);
+      console.log(time, prevVolume.time);
+      const newData = {
+        time,
+        value: prevVolume.time === Number(time) ? prevVolume.value + quantity : quantity,
+        color: Number(tradeExecutionData.price) >= lastOpenPrice ? "#FD4141" : "#4170FD",
+      };
+      setPrevVolume({ time: Number(time), value: newData.value, color: newData.color });
+      volumeSeriesRef.current.update(newData);
+    }
+  }, [tradeExecutionData, chartData]);
 
   // 차트 생성 및 설정 - 의존성 배열에 memoizedChartData 추가
   useEffect(() => {
     // 데이터가 없거나 로딩 중이면 차트를 생성하지 않음
-    if (!memoizedChartData.length || loading || !chartContainerRef.current) return;
+    if (!chartData.length || loading || !chartContainerRef.current) return;
 
     // 기존 차트 인스턴스가 있다면 제거
     if (chartInstanceRef.current) {
@@ -135,9 +123,6 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
 
     // 차트 인스턴스 생성
     const chart = createChart(chartContainerRef.current, {
-      localization: {
-        locale: "ko",
-      },
       width: chartContainerRef.current.clientWidth,
       height: 500,
       layout: {
@@ -168,6 +153,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       wickDownColor: "#4170FD",
       priceScaleId: "right", // 오른쪽 가격 스케일 사용
     });
+    candlestickSeriesRef.current = candlestickSeries;
 
     // 캔들스틱 시리즈의 오른쪽 가격 스케일 설정
     chart.priceScale("right").applyOptions({
@@ -187,6 +173,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       },
       priceScaleId: "volume", // 별도의 가격 스케일 ID
     });
+    volumeSeriesRef.current = volumeSeries;
 
     // 거래량 시리즈의 가격 스케일 설정
     chart.priceScale("volume").applyOptions({
@@ -198,7 +185,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       },
     });
 
-    const candleData = memoizedChartData.map((item: ChartData) => ({
+    const candleData = chartData.map((item: ChartData) => ({
       time: item.date,
       open: Number(item.openPrice),
       high: Number(item.highPrice),
@@ -206,7 +193,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       close: Number(item.currentPrice),
     }));
 
-    const volumeData = memoizedChartData.map((item: ChartData) => ({
+    const volumeData = chartData.map((item: ChartData) => ({
       time: item.date,
       value: Number(item.volume),
     }));
@@ -233,8 +220,8 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     });
 
     // 데이터 설정
-    candlestickSeries.setData(candleData);
-    volumeSeries.setData(coloredVolumeData);
+    candlestickSeries.setData(candleData as CandlestickData<Time>[]);
+    volumeSeries.setData(coloredVolumeData as HistogramData<Time>[]);
 
     // 차트의 가시 영역을 데이터에 맞게 조정
     chart.timeScale().fitContent();
@@ -259,11 +246,11 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         chartInstanceRef.current = null;
       }
     };
-  }, [memoizedChartData, loading]);
+  }, [chartData, loading]);
 
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error: {error}</div>;
-  if (!memoizedChartData.length) return null;
+  if (!chartData.length) return null;
 
   return (
     <div className="flex w-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4">
