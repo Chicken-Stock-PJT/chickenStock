@@ -12,6 +12,7 @@ import realClassOne.chickenStock.community.repository.StockCommentRepository;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
+import realClassOne.chickenStock.notification.service.NotificationService;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 
 import java.util.Optional;
@@ -24,23 +25,19 @@ public class CommentLikeService {
     private final StockCommentLikeRepository stockCommentLikeRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final MemberRepository memberRepository;
-
+    private final NotificationService notificationService;
 
     @Transactional
     public boolean toggleLike(String shortCode, Long commentId, String authorizationHeader) {
-        // 토큰 파싱
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
-        // 🔑 Member 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        // 댓글 조회
         StockComment comment = stockCommentRepository.findById(commentId)
                 .orElseThrow(() -> new CustomException(CommentErrorCode.COMMENT_NOT_FOUND));
 
-        // 기존 좋아요 있는지 확인
         Optional<StockCommentLike> existing = stockCommentLikeRepository.findByMemberAndStockComment(member, comment);
 
         if (existing.isPresent()) {
@@ -48,9 +45,18 @@ public class CommentLikeService {
             return false; // 좋아요 취소됨
         } else {
             stockCommentLikeRepository.save(StockCommentLike.of(member, comment));
+
+            // 댓글 작성자에게 알림 보내기 (본인이 아닌 경우)
+            if (!comment.getMember().getMemberId().equals(memberId)) {
+                notificationService.createLikeNotification(
+                        comment.getMember().getMemberId(),  // 알림 받을 사람
+                        memberId,                          // 알림 보내는 사람
+                        comment.getStockData().getShortName(),
+                        member.getNickname(),
+                        comment.getId()
+                );
+            }
             return true; // 좋아요 등록됨
         }
     }
-
 }
-
