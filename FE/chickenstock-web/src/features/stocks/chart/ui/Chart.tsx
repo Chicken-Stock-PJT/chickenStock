@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import ChartHeader from "./ChartHeader";
 import { ChartData, ChartType } from "../model/types";
 import { getStockChartData } from "../api";
@@ -33,56 +33,60 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const { stockPriceData, tradeExecutionData } = useWebSocketStore();
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const [prevVolume, setPrevVolume] = useState({ time: 0, value: 0, color: "" });
+  const [prevVolume, setPrevVolume] = useState({ time: 0 as Time, value: 0, color: "" });
 
   // 차트 관련 refs - 항상 선언 (조건부로 선언하지 않음)
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<IChartApi | null>(null);
-
-  const fetchChartData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await getStockChartData({
-        stockCode,
-        chartType,
-        hasNext: false,
-        nextKey: "",
-      });
-      setChartData(
-        data.chartData
-          .map((item) => ({
-            currentPrice: Math.abs(Number(item.currentPrice)).toString(),
-            openPrice: Math.abs(Number(item.openPrice)).toString(),
-            highPrice: Math.abs(Number(item.highPrice)).toString(),
-            lowPrice: Math.abs(Number(item.lowPrice)).toString(),
-            volume: Math.abs(Number(item.volume)).toString(),
-            date: formatChartTime(item.date.toString()),
-          }))
-          .reverse(),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  }, [stockCode, chartType]);
-
-  const handleChartTypeChange = useCallback((type: ChartType) => {
+  const handleChartTypeChange = (type: ChartType) => {
     setChartType(type);
     setChartData([]); // 차트 타입 변경 시 데이터 초기화
-  }, []);
+  };
 
   // 초기 차트 데이터 로드
   useEffect(() => {
+    const fetchChartData = async () => {
+      try {
+        setLoading(true);
+        const data = await getStockChartData({
+          stockCode,
+          chartType,
+          hasNext: false,
+          nextKey: "",
+        });
+        setChartData(
+          data.chartData
+            .map((item) => ({
+              currentPrice: Math.abs(Number(item.currentPrice)).toString(),
+              openPrice: Math.abs(Number(item.openPrice)).toString(),
+              highPrice: Math.abs(Number(item.highPrice)).toString(),
+              lowPrice: Math.abs(Number(item.lowPrice)).toString(),
+              volume: Math.abs(Number(item.volume)).toString(),
+              date: formatChartTime(item.date.toString()),
+            }))
+            .reverse(),
+        );
+        setPrevVolume({
+          time: formatChartTime(data.chartData[0].date.toString()) as Time,
+          value: Number(data.chartData[0].volume),
+          color: "",
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An error occurred");
+      } finally {
+        setLoading(false);
+      }
+    };
     void fetchChartData();
-  }, [fetchChartData, chartType]);
+  }, [stockCode, chartType]);
 
   // stockPriceData 업데이트 시 차트 업데이트
   useEffect(() => {
     if (loading) return;
     if (stockPriceData && candlestickSeriesRef.current) {
+      const time = formatChartTime(stockPriceData.timestamp) as Time;
       const newData = {
-        time: formatChartTime(stockPriceData.timestamp) as Time,
+        time: chartType === "MINUTE" ? time : (formatChartTime("000000") as Time),
         open: Number(chartData[chartData.length - 1]?.openPrice),
         high: Number(chartData[chartData.length - 1]?.highPrice),
         low: Number(chartData[chartData.length - 1]?.lowPrice),
@@ -97,15 +101,18 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     if (loading) return;
     if (tradeExecutionData && volumeSeriesRef.current && chartData.length > 0) {
       const lastOpenPrice = Number(chartData[chartData.length - 1]?.openPrice ?? 0);
-      const time = formatChartTime(tradeExecutionData.timestamp) as Time;
+      const time =
+        chartType === "MINUTE"
+          ? (formatChartTime(tradeExecutionData.timestamp) as Time)
+          : (formatChartTime("000000") as Time);
       const quantity = Number(tradeExecutionData.quantity);
       console.log(time, prevVolume.time);
       const newData = {
-        time: chartType === "MINUTE" ? time : formatChartTime("000000"),
-        value: prevVolume.time === Number(time) ? prevVolume.value + quantity : quantity,
+        time: time,
+        value: prevVolume.time === time ? prevVolume.value + quantity : quantity,
         color: Number(tradeExecutionData.price) >= lastOpenPrice ? "#FD4141" : "#4170FD",
       };
-      setPrevVolume({ time: Number(newData.time), value: newData.value, color: newData.color });
+      setPrevVolume({ time: newData.time, value: newData.value, color: newData.color });
       volumeSeriesRef.current.update(newData as HistogramData<Time>);
     }
   }, [tradeExecutionData, chartData]);
