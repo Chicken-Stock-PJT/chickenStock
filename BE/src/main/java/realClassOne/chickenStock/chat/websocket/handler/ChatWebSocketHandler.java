@@ -3,6 +3,7 @@ package realClassOne.chickenStock.chat.websocket.handler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -92,12 +94,103 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 case "ping":
                     handlePing(session);
                     break;
+                case "getNotifications":
+                    handleGetNotifications(session, jsonNode);
+                    break;
+                case "markAsRead":
+                    handleMarkAsRead(session, jsonNode);
+                    break;
                 default:
                     sendError(session, "지원하지 않는 메시지 타입입니다: " + type);
             }
         } catch (Exception e) {
             log.error("메시지 처리 중 오류 발생", e);
             sendError(session, "메시지 처리 중 오류가 발생했습니다");
+        }
+    }
+
+    // 알림 목록 조회 처리
+    @Transactional(readOnly = true)
+    private void handleGetNotifications(WebSocketSession session, JsonNode jsonNode) {
+        try {
+            Long memberId = sessionMemberMap.get(session.getId());
+            if (memberId == null) {
+                sendError(session, "인증이 필요합니다");
+                return;
+            }
+
+            String filter = jsonNode.has("filter") ? jsonNode.get("filter").asText() : "all";
+            List<Notification> notifications;
+
+            if ("unread".equals(filter)) {
+                notifications = notificationRepository.findByMemberIdAndIsReadFalseOrderByCreatedAtDesc(memberId);
+            } else {
+                notifications = notificationRepository.findByMemberIdOrderByCreatedAtDesc(memberId);
+            }
+
+            // 응답 생성
+            ObjectNode response = objectMapper.createObjectNode();
+            response.put("type", "notificationList");
+
+            ArrayNode notificationsArray = objectMapper.createArrayNode();
+            for (Notification notification : notifications) {
+                ObjectNode notificationNode = objectMapper.createObjectNode();
+                notificationNode.put("notificationId", notification.getId());
+                notificationNode.put("notificationType", notification.getType());
+                notificationNode.put("title", notification.getTitle());
+                notificationNode.put("message", notification.getMessage());
+                notificationNode.put("timestamp", notification.getCreatedAt().toEpochSecond(java.time.ZoneOffset.UTC) * 1000);
+                notificationNode.put("isRead", notification.isRead());
+
+                // relatedId 추가 (댓글 ID)
+                if (notification.getRelatedId() != null) {
+                    notificationNode.put("relatedId", notification.getRelatedId());
+                }
+
+                notificationsArray.add(notificationNode);
+            }
+
+            response.set("notifications", notificationsArray);
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+
+        } catch (Exception e) {
+            log.error("알림 목록 조회 중 오류 발생", e);
+            sendError(session, "알림 목록 조회 중 오류가 발생했습니다");
+        }
+    }
+
+    // 알림 읽음 처리
+    @Transactional
+    private void handleMarkAsRead(WebSocketSession session, JsonNode jsonNode) {
+        try {
+            Long memberId = sessionMemberMap.get(session.getId());
+            if (memberId == null) {
+                sendError(session, "인증이 필요합니다");
+                return;
+            }
+
+            Long notificationId = jsonNode.get("notificationId").asLong();
+            Notification notification = notificationRepository.findById(notificationId).orElse(null);
+
+            if (notification == null || !notification.getMemberId().equals(memberId)) {
+                sendError(session, "알림을 찾을 수 없거나 권한이 없습니다");
+                return;
+            }
+
+            notification.markAsRead();
+            notificationRepository.save(notification);
+
+            // 읽음 처리 성공 응답
+            ObjectNode response = objectMapper.createObjectNode();
+            response.put("type", "notificationRead");
+            response.put("notificationId", notificationId);
+            response.put("success", true);
+
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+
+        } catch (Exception e) {
+            log.error("알림 읽음 처리 중 오류 발생", e);
+            sendError(session, "알림 읽음 처리 중 오류가 발생했습니다");
         }
     }
 
@@ -195,6 +288,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                         event.getQuantity(),
                         event.getPrice()));
                 notification.setTimestamp(System.currentTimeMillis());
+                notification.setIsRead(false);  // 추가
 
                 sendNotification(session, notification);
             }
@@ -216,6 +310,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 notification.setMessage(String.format("%s님이 %s 종목에 댓글을 작성했습니다.",
                         event.getCommenterNickname(), event.getStockName()));
                 notification.setTimestamp(System.currentTimeMillis());
+                notification.setIsRead(false);  // 추가
 
                 sendNotification(session, notification);
             }
@@ -237,6 +332,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 notification.setMessage(String.format("%s님이 %s 종목의 댓글에 좋아요를 눌렀습니다.",
                         event.getLikerNickname(), event.getStockName()));
                 notification.setTimestamp(System.currentTimeMillis());
+                notification.setIsRead(false);  // 추가
 
                 sendNotification(session, notification);
             }
@@ -245,7 +341,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    // 미확인 알림 전송
     private void sendUnreadNotifications(Long memberId, WebSocketSession session) {
         try {
             List<Notification> unreadNotifications = notificationRepository
@@ -258,6 +353,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 message.setMessage(notification.getMessage());
                 message.setTimestamp(notification.getCreatedAt().toEpochSecond(java.time.ZoneOffset.UTC) * 1000);
                 message.setNotificationId(notification.getId());
+                message.setIsRead(notification.isRead());
+                message.setRelatedId(notification.getRelatedId());
 
                 sendNotification(session, message);
             }
@@ -378,7 +475,15 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 message.put("notificationId", notification.getNotificationId());
             }
 
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
+            if (notification.getIsRead() != null) {
+                message.put("isRead", notification.getIsRead());
+            }
+
+            if (notification.getRelatedId() != null) {  // 추가
+                message.put("relatedId", notification.getRelatedId());
+            }
+
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));  // response가 아니라 message
         } catch (Exception e) {
             log.error("알림 전송 실패", e);
         }

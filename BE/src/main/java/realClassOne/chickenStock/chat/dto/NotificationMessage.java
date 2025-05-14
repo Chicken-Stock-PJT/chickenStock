@@ -9,4 +9,6 @@ public class NotificationMessage {
     private String message;
     private Long timestamp;
     private Long notificationId;
+    private Boolean isRead;
+    private Long relatedId;
 }
