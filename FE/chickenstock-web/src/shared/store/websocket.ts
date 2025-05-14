@@ -1,24 +1,31 @@
 import { create } from "zustand";
 import { OrderBookData, RealTimeOrderBook } from "@/features/stocks/orderBook/model/types";
-import { StockPriceData, WebSocketResponse } from "@/features/stocks/chart/model/types";
+import {
+  StockPriceData,
+  TradeExecutionData,
+  WebSocketResponse,
+} from "@/features/stocks/chart/model/types";
 import apiClient from "@/shared/api/axios";
 
 interface WebSocketState {
   ws: WebSocket | null;
   orderBookData: OrderBookData | null;
   stockPriceData: StockPriceData | null;
+  tradeExecutionData: TradeExecutionData | null;
   connect: (stockCode: string) => void;
   disconnect: () => void;
   subscribedList: string[];
   getSubscribedList: () => Promise<void>;
   setStockPriceData: (data: StockPriceData) => void;
   setOrderBookData: (data: OrderBookData) => void;
+  setTradeExecutionData: (data: TradeExecutionData) => void;
 }
 
 export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
   ws: null,
   orderBookData: null,
   stockPriceData: null,
+  tradeExecutionData: null,
   subscribedList: [],
 
   getSubscribedList: async () => {
@@ -40,6 +47,13 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
         return state;
       }
       return { orderBookData: data };
+    }),
+  setTradeExecutionData: (data) =>
+    set((state) => {
+      if (JSON.stringify(state.tradeExecutionData) === JSON.stringify(data)) {
+        return state;
+      }
+      return { tradeExecutionData: data };
     }),
 
   connect: (stockCode: string) => {
@@ -75,6 +89,10 @@ export const useWebSocketStore = create<WebSocketState>()((set, get) => ({
           }
           case "stockPrice": {
             get().setStockPriceData(data as StockPriceData);
+            break;
+          }
+          case "tradeExecution": {
+            get().setTradeExecutionData(data as TradeExecutionData);
             break;
           }
         }

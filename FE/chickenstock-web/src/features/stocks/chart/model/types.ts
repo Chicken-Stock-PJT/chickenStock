@@ -16,6 +16,16 @@ export interface StockPriceData extends WebSocketMessage {
   timestamp: string;
 }
 
+export interface TradeExecutionData extends WebSocketMessage {
+  type: "tradeExecution";
+  price: number;
+  quantity: number;
+  stockCode: string;
+  timestamp: string;
+  totalAmount: number;
+  tradeType: string;
+}
+
 export interface StockBidAskData extends WebSocketMessage {
   type: "stockBidAsk";
   timestamp: string;
@@ -70,7 +80,7 @@ export interface ChartHeaderProps {
 
 // 차트 바디
 export interface ChartData {
-  date: string;
+  date: string | number;
   currentPrice: string;
   openPrice: string;
   highPrice: string;
