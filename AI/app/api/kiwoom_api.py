@@ -332,6 +332,93 @@ class KiwoomAPI:
         except Exception as e:
             logger.error(f"차트 데이터 요청 중 오류: {code} - {str(e)}")
             return []
+        
+    async def get_minute_chart(self, symbol: str, time_interval: int = 5, update_cache: bool = True):
+        try:
+            # 분봉 차트 API 호출을 위한 요청 데이터 준비
+            request_data = {
+                "stk_cd": symbol,  # 종목 코드
+                "tic_scope": str(time_interval),  # 시간 간격
+                "upd_stkpc_tp": "0",  # 수정주가구분 (0: 원주가, 1: 수정주가)
+                "api-id": "ka10080"
+            }
+            
+            api_path = "/api/dostk/chart"
+            
+            # API 호출
+            response = await self.request("POST", api_path, request_data)
+            
+            if not response or "stk_min_pole_chart_qry" not in response:
+                logger.warning(f"종목 {symbol}의 분봉 데이터 조회 실패")
+                return []
+            
+            # 분봉 데이터 파싱
+            minute_chart_data = response["stk_min_pole_chart_qry"]
+            
+            # 필요한 경우 데이터 변환 (API 응답 형식에 따라 조정)
+            processed_data = []
+            for item in minute_chart_data:
+                processed_item = {
+                    "time": item.get("cntr_tm", ""),  # 체결시간
+                    "open": float(item.get("open_pric", 0)),  # 시가
+                    "high": float(item.get("high_pric", 0)),  # 고가
+                    "low": float(item.get("low_pric", 0)),  # 저가
+                    "close": float(item.get("cur_prc", 0)),  # 종가 (현재가)
+                    "volume": float(item.get("trde_qty", 0))  # 거래량
+                }
+                processed_data.append(processed_item)
+            
+            # 캐시 업데이트
+            if update_cache and self.stock_cache:
+                self.stock_cache.add_minute_chart_data(symbol, processed_data)
+            
+            logger.info(f"종목 {symbol}의 {time_interval}분봉 데이터 조회 성공: {len(processed_data)}개")
+            return processed_data
+            
+        except Exception as e:
+            logger.error(f"종목 {symbol}의 분봉 데이터 조회 중 오류: {str(e)}")
+            return []
+    
+    async def initialize_minute_chart_data(self, symbols: List[str], time_interval: int = 5):
+        """
+        여러 종목의 분봉 차트 데이터 초기화
+        
+        :param symbols: 종목 코드 리스트
+        :param time_interval: 시간 간격 (분)
+        :return: 성공 여부
+        """
+        logger.info(f"{len(symbols)}개 종목의 {time_interval}분봉 데이터 초기화 시작")
+        
+        success_count = 0
+        
+        # 여러 종목을 병렬로 처리하기 위한 코루틴 함수
+        async def fetch_minute_chart(symbol):
+            try:
+                result = await self.get_minute_chart(symbol, time_interval)
+                return len(result) > 0
+            except Exception as e:
+                logger.error(f"종목 {symbol}의 분봉 데이터 초기화 중 오류: {str(e)}")
+                return False
+        
+        # 동시 요청 수 제한 (너무 많은 동시 요청은 API 제한에 걸릴 수 있음)
+        batch_size = 5
+        
+        # 종목을 배치로 나누어 처리
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            
+            # 배치 내 종목들을 병렬로 처리
+            tasks = [fetch_minute_chart(symbol) for symbol in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 성공 횟수 계산
+            success_count += sum(1 for result in results if result == True)
+            
+            # API 호출 제한을 고려한 딜레이
+            await asyncio.sleep(1)
+        
+        logger.info(f"{time_interval}분봉 데이터 초기화 완료: {success_count}/{len(symbols)}개 성공")
+        return success_count > 0
     
     async def prepare_subscription_groups(self, filtered_stock_list, group_size: int = 30):
         """구독 그룹 준비"""

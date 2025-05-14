@@ -21,6 +21,7 @@ class StockCache:
         
         # 차트 데이터 캐시
         self.chart_cache = {}
+        self.minute_chart_cache = {}
         
         # Envelope 지표 캐시
         self.envelope_cache = {}
@@ -116,6 +117,15 @@ class StockCache:
     def get_chart_data(self, symbol: str):
         """차트 데이터 조회"""
         return self.chart_cache.get(symbol, [])
+    
+    def add_minute_chart_data(self, symbol: str, minute_chart_data: List[Dict]):
+        """분봉 차트 데이터 추가/업데이트"""
+        self.minute_chart_cache[symbol] = minute_chart_data
+        logger.debug(f"종목 {symbol} 분봉 데이터 업데이트: {len(minute_chart_data)}개")
+
+    def get_minute_chart_data(self, symbol: str, time_interval: int = 5):
+        # 현재는 5분봉만 지원
+        return self.minute_chart_cache.get(symbol, [])
     
     # Envelope 지표 관련 메서드
     def calculate_envelope_indicators(self):
