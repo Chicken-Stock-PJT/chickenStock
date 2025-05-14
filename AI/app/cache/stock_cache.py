@@ -119,9 +119,12 @@ class StockCache:
         return self.chart_cache.get(symbol, [])
     
     def add_minute_chart_data(self, symbol: str, minute_chart_data: List[Dict]):
-        """분봉 차트 데이터 추가/업데이트"""
+        """분봉 차트 데이터 추가/업데이트 - 최근 50개만 유지"""
+        # 최근 50개 데이터만 유지
+        if len(minute_chart_data) > 50:
+            minute_chart_data = minute_chart_data[:50]
+        
         self.minute_chart_cache[symbol] = minute_chart_data
-        logger.debug(f"종목 {symbol} 분봉 데이터 업데이트: {len(minute_chart_data)}개")
 
     def get_minute_chart_data(self, symbol: str, time_interval: int = 5):
         # 현재는 5분봉만 지원
