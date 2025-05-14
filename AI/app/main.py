@@ -234,6 +234,9 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
         logger.info(f"모든 종목({len(filtered_stockcode_list)}개)의 120일 차트 데이터 초기화 완료")
 
+        await kiwoom_api.initialize_minute_chart_data(filtered_stockcode_list, time_interval=5)
+        logger.info(f"모든 종목({len(filtered_stockcode_list)}개)의 5분봉 차트 데이터 초기화 완료")
+
         # 모든 전략의 지표 계산 (두 전략 모두 미리 계산)
         # Envelope 지표 계산
         logger.info("Envelope 지표 계산 시작")
@@ -487,6 +490,9 @@ async def scheduler_task():
                 filtered_stockcode_list = kiwoom_api.stock_cache.filtered_stockcode_list
                 await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
                 logger.info(f"차트 데이터 업데이트 완료: {len(filtered_stockcode_list)}개 종목")
+
+                await kiwoom_api.initialize_minute_chart_data(filtered_stockcode_list, time_interval=5)
+                logger.info(f"5분봉 차트 데이터 업데이트 완료: {len(filtered_stockcode_list)}개 종목")
                 
                 # 모든 봇의 개별 지표 새로고침 (각자의 전략에 맞게)
                 if bot_manager:
@@ -620,197 +626,3 @@ async def shutdown_event():
             logger.warning("일부 태스크가 5초 이내에 종료되지 않았습니다.")
     
     logger.info("애플리케이션 종료 완료")
-
-# 모니터링 전용 엔드포인트
-
-@app.get("/status")
-async def get_status():
-    """서비스 상태 확인"""
-    global kiwoom_api, bot_manager
-    
-    status_response = {
-        "is_running": service_status.get("is_running", False),
-        "connected_to_api": False,
-        "subscribed_symbols": 0,
-        "start_time": service_status.get("start_time").isoformat() if service_status.get("start_time") else None,
-        "last_data_update": service_status.get("last_data_update").isoformat() if service_status.get("last_data_update") else None,
-        "active_strategy": service_status.get("active_strategy", "").value if service_status.get("active_strategy") else None,
-        "account_info": None
-    }
-    
-    # 키움 API 상태 확인
-    if kiwoom_api:
-        # is_connected 대신 websocket이 있는지 확인하는 방식으로 수정
-        status_response["connected_to_api"] = kiwoom_api.websocket is not None and not kiwoom_api.websocket.closed if hasattr(kiwoom_api, 'websocket') else False
-        
-        # 구독된 종목 수 가져오기
-        if hasattr(kiwoom_api, 'stock_cache') and hasattr(kiwoom_api.stock_cache, 'get_subscribed_symbols_count'):
-            status_response["subscribed_symbols"] = kiwoom_api.stock_cache.get_subscribed_symbols_count()
-        else:
-            # 메소드가 없으면 구독된 종목 목록의 길이로 대체
-            subscribed_symbols = getattr(kiwoom_api.stock_cache, 'subscribed_symbols', []) if hasattr(kiwoom_api, 'stock_cache') else []
-            status_response["subscribed_symbols"] = len(subscribed_symbols)
-        
-        # 계좌 정보 확인
-        account_info = kiwoom_api.get_account_info() if hasattr(kiwoom_api, 'get_account_info') else None
-        if account_info:
-            status_response["account_info"] = account_info
-    
-    # 실행 중인 봇 정보 추가
-    if bot_manager:
-        running_bots = bot_manager.get_running_bots() if hasattr(bot_manager, 'get_running_bots') else {}
-        status_response["running_bots_count"] = len(running_bots)
-            
-    return status_response
-
-@app.get("/prices")
-async def get_prices():
-    """실시간 종목 가격 정보 조회"""
-    global kiwoom_api
-    
-    if not kiwoom_api:
-        raise HTTPException(
-            status_code=503,
-            detail="서비스가 아직 초기화되지 않았습니다."
-        )
-    
-    try:
-        # 구독 중인 종목 목록 가져오기
-        subscribed_symbols = []
-        if hasattr(kiwoom_api.stock_cache, 'subscribed_symbols'):
-            subscribed_symbols = kiwoom_api.stock_cache.subscribed_symbols
-        
-        # 필터링된 종목 목록 (subscribed_symbols이 비어있으면 이것을 사용)
-        filtered_symbols = []
-        if hasattr(kiwoom_api.stock_cache, 'filtered_stockcode_list'):
-            filtered_symbols = kiwoom_api.stock_cache.filtered_stockcode_list
-            
-        # 사용할 종목 목록 결정 (구독 중인 종목이 있으면 그것을 사용, 없으면 필터링된 종목 목록)
-        symbols_to_use = subscribed_symbols if subscribed_symbols else filtered_symbols
-        
-        # 반환할 가격 정보 객체
-        prices = {}
-        
-        # 종목별 가격 및 정보 가져오기
-        for symbol in symbols_to_use:
-            try:
-                # 기본 정보
-                stock_info = {
-                    "price": 0,
-                    "name": "",
-                    "change": 0,
-                    "changePercent": 0
-                }
-                
-                # 종목 이름 가져오기
-                if hasattr(kiwoom_api.stock_cache, 'get_stock_name'):
-                    stock_info["name"] = kiwoom_api.stock_cache.get_stock_name(symbol) or ""
-                
-                # 현재가 가져오기
-                if hasattr(kiwoom_api.stock_cache, 'get_price'):
-                    current_price = kiwoom_api.stock_cache.get_price(symbol)
-                    if current_price:
-                        stock_info["price"] = current_price
-                
-                # 전일대비 및 등락률 가져오기
-                # 이 부분은 KiwoomAPI 구현에 따라 달라질 수 있음
-                if hasattr(kiwoom_api.stock_cache, 'get_change'):
-                    change = kiwoom_api.stock_cache.get_change(symbol)
-                    if change is not None:
-                        stock_info["change"] = change
-                
-                if hasattr(kiwoom_api.stock_cache, 'get_change_percent'):
-                    change_percent = kiwoom_api.stock_cache.get_change_percent(symbol)
-                    if change_percent is not None:
-                        stock_info["changePercent"] = change_percent
-                
-                # 가격이 0보다 큰 경우에만 추가 (유효한 데이터만 포함)
-                if stock_info["price"] > 0:
-                    prices[symbol] = stock_info
-            
-            except Exception as e:
-                logger.error(f"종목 {symbol} 가격 정보 조회 중 오류: {str(e)}")
-        
-        return prices
-    
-    except Exception as e:
-        logger.error(f"가격 정보 조회 중 오류: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="가격 정보 조회 중 오류가 발생했습니다."
-        )
-
-@app.get("/account")
-async def get_account_info():
-    """계좌 정보 확인"""
-    global kiwoom_api
-    
-    if not kiwoom_api:
-        raise HTTPException(
-            status_code=503,
-            detail="서비스가 아직 초기화되지 않았습니다."
-        )
-    
-    account_info = kiwoom_api.get_account_info()
-    
-    if not account_info:
-        raise HTTPException(
-            status_code=404,
-            detail="계좌 정보를 찾을 수 없습니다."
-        )
-    
-    return account_info
-
-@app.get("/bots/active")
-async def get_active_bots():
-    """실행 중인 봇 목록 확인"""
-    global bot_manager
-    
-    if not bot_manager:
-        raise HTTPException(
-            status_code=503,
-            detail="봇 관리자가 초기화되지 않았습니다."
-        )
-    
-    # 실행 중인 봇 가져오기
-    running_bots = bot_manager.get_running_bots()
-    
-    # 응답 형식에 맞게 변환
-    response = []
-    for email, bot in running_bots.items():
-        bot_status = bot.get_status()
-        response.append(bot_status)
-    
-    return response
-
-@app.post("/refresh")
-async def refresh_data():
-    """데이터 새로고침"""
-    global kiwoom_api, backend_client
-    
-    if not kiwoom_api or not backend_client:
-        raise HTTPException(
-            status_code=503,
-            detail="서비스가 아직 초기화되지 않았습니다."
-        )
-    
-    try:
-        # 계좌 정보 업데이트
-        account_info = await backend_client.request_account_info()
-        if account_info:
-            kiwoom_api.update_account_info(account_info)
-            
-        # 현재 시간 기록
-        refresh_time = datetime.now()
-        
-        return {
-            "success": True,
-            "message": "데이터가 성공적으로 새로고침되었습니다.",
-            "refresh_time": refresh_time.isoformat()
-        }
-    except Exception as e:
-        logger.error(f"데이터 새로고침 중 오류: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"데이터 새로고침 중 오류: {str(e)}"
-        )
