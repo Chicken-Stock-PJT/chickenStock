@@ -9,6 +9,7 @@ from app.api.backend_client import BackendClient
 from app.models.trade_models import TradingStrategy
 from app.strategies.bollinger import BollingerBandTradingModel
 from app.strategies.envelope import EnvelopeTradingModel
+from app.strategies.short_term import ShortTermTradingModel
 from app.bot.bot_stock_cache import BotStockCache  # 새로운 BotStockCache 임포트
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,9 @@ class BotInstance:
             elif self.strategy == TradingStrategy.BOLLINGER:
                 self.trading_model = BollingerBandTradingModel(self.bot_stock_cache)  # 봇별 캐시 전달
                 self.trading_model.set_backend_client(self.backend_client)
+            elif self.strategy == TradingStrategy.SHORT_TERM:
+                    self.trading_model = ShortTermTradingModel(self.bot_stock_cache)
+                    self.trading_model.set_backend_client(self.backend_client)
             
             # 봇별 지표 초기 계산
             if self.bot_stock_cache:
@@ -139,16 +143,22 @@ class BotInstance:
             if self.bot_stock_cache:
                 if self.strategy == TradingStrategy.ENVELOPE:
                     indicators = self.bot_stock_cache.get_envelope_indicators(symbol, price)
-                else:
+                elif self.strategy == TradingStrategy.BOLLINGER:
                     indicators = self.bot_stock_cache.get_bollinger_bands(symbol, price)
-            
+                elif self.strategy == TradingStrategy.SHORT_TERM:
+                    indicators = self.bot_stock_cache.get_short_term_indicators(symbol, price)
+                
             # 트레이딩 모델에 전달 (각 봇 전략에 맞는 지표만 전달)
             if indicators:
                 # 지표 객체를 트레이딩 모델 호환 형식으로 변환
-                indicator_package = {
-                    'envelope' if self.strategy == TradingStrategy.ENVELOPE else 'bollinger_bands': indicators
-                }
-                
+                indicator_package = {}
+                if self.strategy == TradingStrategy.ENVELOPE:
+                    indicator_package = {'envelope': indicators}
+                elif self.strategy == TradingStrategy.BOLLINGER:
+                    indicator_package = {'bollinger_bands': indicators}
+                elif self.strategy == TradingStrategy.SHORT_TERM:
+                    indicator_package = {'short_term': indicators}
+                    
                 # 모델에 전달
                 await self.trading_model.handle_realtime_price(symbol, price, indicator_package)
         
