@@ -74,6 +74,9 @@ public class Member {
     @Column(name = "updated_at", nullable = false, columnDefinition = "DATETIME(0)")
     private LocalDateTime updatedAt;
 
+    @Column(name = "money_initialized", nullable = false)
+    private boolean moneyInitialized = false;
+
     @Column(name = "token_expiry_date", columnDefinition = "DATETIME(0)")
     private LocalDateTime tokenExpiryDate;
 
@@ -167,5 +170,18 @@ public class Member {
 
     public void changeNickname(String nickname) {
         this.nickname = nickname;
+    }
+
+
+    public void markMoneyInitialized() {
+        this.moneyInitialized = true;
+    }
+
+    public void resetMoneyInitialized() {
+        this.moneyInitialized = false;
+    }
+
+    public boolean isMoneyInitialized() {
+        return moneyInitialized;
     }
 }
