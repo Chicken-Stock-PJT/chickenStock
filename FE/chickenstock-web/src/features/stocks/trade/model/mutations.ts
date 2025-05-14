@@ -7,12 +7,13 @@ import {
 import { LimitTradeRequest, MarketTradeRequest } from "@/features/stocks/trade/model/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-export const useBuyLimitOrder = (params: LimitTradeRequest) => {
+export const useBuyLimitOrder = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => buyLimitOrder(params),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["pendingOrders", params.stockCode] });
+    mutationFn: (params: LimitTradeRequest) => buyLimitOrder(params),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["pendingOrders", variables.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["status", variables.stockCode] });
       void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
     onError: (error) => {
@@ -21,34 +22,35 @@ export const useBuyLimitOrder = (params: LimitTradeRequest) => {
   });
 };
 
-export const useBuyMarketOrder = (params: MarketTradeRequest) => {
+export const useBuyMarketOrder = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => buyMarketOrder(params),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["status", params.stockCode] });
+    mutationFn: (params: MarketTradeRequest) => buyMarketOrder(params),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["status", variables.stockCode] });
       void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
   });
 };
 
-export const useSellLimitOrder = (params: LimitTradeRequest) => {
+export const useSellLimitOrder = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => sellLimitOrder(params),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["pendingOrders", params.stockCode] });
+    mutationFn: (params: LimitTradeRequest) => sellLimitOrder(params),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["pendingOrders", variables.stockCode] });
+      void queryClient.invalidateQueries({ queryKey: ["status", variables.stockCode] });
       void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
   });
 };
 
-export const useSellMarketOrder = (params: MarketTradeRequest) => {
+export const useSellMarketOrder = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => sellMarketOrder(params),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["status", params.stockCode] });
+    mutationFn: (params: MarketTradeRequest) => sellMarketOrder(params),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["status", variables.stockCode] });
       void queryClient.invalidateQueries({ queryKey: ["simpleProfile"] });
     },
   });

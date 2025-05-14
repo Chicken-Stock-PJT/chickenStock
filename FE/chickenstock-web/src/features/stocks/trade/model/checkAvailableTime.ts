@@ -22,7 +22,7 @@ const checkAvailableTime = (isNxt: boolean, isLimitOrder: boolean) => {
     (hour > 9 && hour < 15) ||
     (hour === 15 && minute <= 20)
   ) {
-    return { available: true, message: "정규 거래 시간입니다." };
+    return { available: true, message: "" };
   }
 
   if (isNxt) {
@@ -44,7 +44,7 @@ const checkAvailableTime = (isNxt: boolean, isLimitOrder: boolean) => {
     if (hour < 9 || hour > 15 || (hour === 15 && minute >= 30)) {
       return { available: false, message: "정규 거래가 마감되었습니다." };
     }
-    return { available: true, message: "정규 거래 시간입니다." };
+    return { available: true, message: "" };
   }
 };
 
