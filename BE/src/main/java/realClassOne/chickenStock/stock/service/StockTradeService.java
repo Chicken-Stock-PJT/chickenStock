@@ -921,6 +921,15 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         ReentrantLock memberLock = getMemberLock(memberId);
         memberLock.lock();
         try {
+            // 회원 정보 먼저 불러와서 초기화 여부 확인
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+            // 이미 초기화를 한 경우 예외 발생
+            if (member.isMoneyInitialized()) {
+                throw new CustomException(MemberErrorCode.MONEY_ALREADY_INITIALIZED);
+            }
+
             // 1. 모든 엔티티를 JPQL을 사용하여 직접 삭제 (순서 중요: 외래 키 제약조건 고려)
 
             // 1.1 보류 중인 주문(PendingOrder) 삭제
@@ -954,11 +963,12 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             entityManager.clear();
 
             // 2. 새로운 상태로 회원 정보 다시 로드
-            Member member = memberRepository.findById(memberId)
+            member = memberRepository.findById(memberId)
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
             // 3. 회원 자금 초기화 (1억원)
             member.updateMemberMoney(100_000_000L);
+            member.markMoneyInitialized(); // 초기화 여부 true로 변경
 
             // 4. 새로운 투자 요약 생성
             InvestmentSummary summary = InvestmentSummary.of(
