@@ -8,7 +8,7 @@ export const QueryClientProvider = ({ children }: PropsWithChildren) => {
   return (
     <TanStackQueryClientProvider client={queryClient}>
       {children}
-      {/* <ReactQueryDevtools
+      <ReactQueryDevtools
         errorTypes={[
           {
             name: "Error",
@@ -19,7 +19,7 @@ export const QueryClientProvider = ({ children }: PropsWithChildren) => {
             initializer: errorInitializer(new AxiosError("Axios error")),
           },
         ]}
-      /> */}
+      />
     </TanStackQueryClientProvider>
   );
 };
