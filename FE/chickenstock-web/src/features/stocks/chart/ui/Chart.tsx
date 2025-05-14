@@ -106,7 +106,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         color: Number(tradeExecutionData.price) >= lastOpenPrice ? "#FD4141" : "#4170FD",
       };
       setPrevVolume({ time: Number(newData.time), value: newData.value, color: newData.color });
-      volumeSeriesRef.current.update(newData);
+      volumeSeriesRef.current.update(newData as HistogramData<Time>);
     }
   }, [tradeExecutionData, chartData]);
 
