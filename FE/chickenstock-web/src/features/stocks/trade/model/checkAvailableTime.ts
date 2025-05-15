@@ -42,7 +42,10 @@ const checkAvailableTime = (isNxt: boolean, isLimitOrder: boolean) => {
     }
     // 일반 종목 거래 가능 시간: 오전 9시~오후 3시 30분
     if (hour < 9 || hour > 15 || (hour === 15 && minute >= 30)) {
-      return { available: false, message: "정규 거래가 마감되었습니다." };
+      return {
+        available: false,
+        message: "NXT에 상장 되어있지 않은 종목이라 거래가 마감되었습니다.",
+      };
     }
     return { available: true, message: "" };
   }
