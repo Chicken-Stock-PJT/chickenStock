@@ -23,7 +23,7 @@ export interface TradeExecutionData extends WebSocketMessage {
   stockCode: string;
   timestamp: string;
   totalAmount: number;
-  tradeType: string;
+  tradeType: "BUY" | "SELL";
 }
 
 export interface StockBidAskData extends WebSocketMessage {
