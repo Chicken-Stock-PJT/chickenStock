@@ -18,6 +18,9 @@ COPY FE/chickenstock-web/ ./
 # 빌드
 RUN pnpm build
 
+# public 폴더에서 favicon.ico를 dist로 복사 (안전장치)
+RUN cp public/favicon.ico dist/ || true
+
 # 실행 단계
 FROM nginx:alpine
 

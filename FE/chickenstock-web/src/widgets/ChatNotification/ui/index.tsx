@@ -14,41 +14,32 @@ export default function ChatNotification() {
       {/* 플로팅 버튼 */}
       <FloatingButton onClick={() => setOpen(!isOpen)} unreadCount={unreadCount} />
 
-      {/* 채팅/알림 패널 */}
+      {/* 채팅/알림 패널 - 크기 증가, 여백 추가 */}
       {isOpen && (
-        <div className="fixed bottom-20 right-5 z-50 h-[700px] w-[500px] rounded-lg bg-white shadow-2xl">
+        <div className="fixed bottom-24 right-5 z-50 h-[650px] w-[450px] overflow-hidden rounded-xl bg-white shadow-2xl">
           <div className="flex h-full flex-col">
-            {/* 헤더 */}
-            <div className="flex items-center justify-between rounded-t-lg border-b bg-amber-50 p-4">
-              <h3 className="font-semibold text-gray-800">채팅 & 알림</h3>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-gray-500 transition-colors hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* 탭 버튼 */}
-            <div className="flex border-b bg-gray-50">
-              <TabButton active={activeTab === "chat"} onClick={() => setActiveTab("chat")}>
-                채팅
-              </TabButton>
-              <TabButton
-                active={activeTab === "notification"}
-                onClick={() => setActiveTab("notification")}
-              >
-                알림
-                {unreadCount > 0 && (
-                  <span className="ml-2 rounded-full bg-red-500 px-2 py-0.5 text-xs text-white">
-                    {unreadCount}
-                  </span>
-                )}
-              </TabButton>
+            {/* 탭 버튼 - 상단 여백 추가 */}
+            <div className="bg-white px-4 pt-4">
+              <div className="flex rounded-lg bg-gray-100 p-1">
+                <TabButton active={activeTab === "chat"} onClick={() => setActiveTab("chat")}>
+                  채팅
+                </TabButton>
+                <TabButton
+                  active={activeTab === "notification"}
+                  onClick={() => setActiveTab("notification")}
+                >
+                  알림
+                  {unreadCount > 0 && (
+                    <span className="ml-2 rounded-full bg-red-500 px-2 py-0.5 text-xs text-white">
+                      {unreadCount}
+                    </span>
+                  )}
+                </TabButton>
+              </div>
             </div>
 
             {/* 콘텐츠 영역 */}
-            <div className="flex-1 overflow-hidden bg-gray-50">
+            <div className="flex-1 overflow-hidden">
               {activeTab === "chat" ? <ChatTab /> : <NotificationTab />}
             </div>
           </div>
@@ -58,7 +49,7 @@ export default function ChatNotification() {
   );
 }
 
-// 탭 버튼 컴포넌트
+// 탭 버튼 컴포넌트 - 더 부드러운 스타일
 function TabButton({
   children,
   active,
@@ -72,12 +63,10 @@ function TabButton({
     <button
       onClick={onClick}
       className={cn(
-        "flex-1 px-4 py-3",
+        "flex-1 rounded-md px-4 py-2",
         "text-sm font-medium",
-        "transition-colors",
-        active
-          ? "border-b-2 border-amber-500 text-amber-600"
-          : "text-gray-600 hover:bg-gray-100 hover:text-gray-800",
+        "transition-all",
+        active ? "bg-white text-amber-600 shadow-sm" : "text-gray-600 hover:text-gray-800",
       )}
     >
       {children}
