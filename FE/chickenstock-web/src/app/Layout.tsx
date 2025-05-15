@@ -3,6 +3,7 @@ import Header from "../widgets/Header";
 import { Toaster } from "@/shared/libs/ui/toaster";
 import ChatNotification from "../widgets/ChatNotification/ui";
 import { useWebSocket } from "@/widgets/ChatNotification/hooks/useWebSocket";
+import GoToTop from "@/widgets/GoToTop";
 function Layout() {
   // 여기서 WebSocket 연결을 관리
   useWebSocket();
@@ -13,6 +14,7 @@ function Layout() {
         <Outlet />
       </div>
       <Toaster />
+      <GoToTop />
       <ChatNotification />
     </div>
   );
