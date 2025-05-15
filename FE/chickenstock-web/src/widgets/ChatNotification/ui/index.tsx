@@ -1,4 +1,3 @@
-import { useWebSocket } from "../hooks/useWebSocket";
 import { useChatNotificationStore } from "../model/store";
 import { cn } from "@/shared/libs/utils";
 import ChatTab from "./ChatTab";
@@ -7,7 +6,6 @@ import FloatingButton from "./FloatingButton";
 
 export default function ChatNotification() {
   const { isOpen, setOpen, notifications, activeTab, setActiveTab } = useChatNotificationStore();
-  useWebSocket();
 
   const unreadCount = notifications.length;
 
@@ -18,7 +16,7 @@ export default function ChatNotification() {
 
       {/* 채팅/알림 패널 */}
       {isOpen && (
-        <div className="fixed bottom-20 right-5 z-50 h-[600px] w-96 rounded-lg bg-white shadow-2xl">
+        <div className="fixed bottom-20 right-5 z-50 h-[700px] w-[500px] rounded-lg bg-white shadow-2xl">
           <div className="flex h-full flex-col">
             {/* 헤더 */}
             <div className="flex items-center justify-between rounded-t-lg border-b bg-amber-50 p-4">
