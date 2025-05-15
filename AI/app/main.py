@@ -235,7 +235,6 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
                                 if symbol.get('code') in filtered_stockcode_list}
 
         for code in filtered_stockcode_list:
-            logger.info(code)
             if code in final_kospi_symbols:
                 kiwoom_api.stock_cache.update_price(code, int(current_price_kospi.get(code)))
             elif code in final_kosdaq_symbols:
