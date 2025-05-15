@@ -73,6 +73,17 @@ class Settings(BaseSettings):
                 password=password2,
                 strategy=strategy2
             ))
+
+        email3 = os.getenv("ACCOUNT_3_EMAIL")
+        password3 = os.getenv("ACCOUNT_3_PASSWORD")
+        strategy3 = os.getenv("ACCOUNT_3_STRATEGY")
+        
+        if email3 and password3 and strategy3:
+            accounts.append(AccountConfig(
+                email=email3,
+                password=password3,
+                strategy=strategy3
+            ))
             
         self.ADDITIONAL_ACCOUNTS = accounts
 

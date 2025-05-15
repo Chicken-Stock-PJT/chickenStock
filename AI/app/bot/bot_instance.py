@@ -9,6 +9,7 @@ from app.api.backend_client import BackendClient
 from app.models.trade_models import TradingStrategy
 from app.strategies.bollinger import BollingerBandTradingModel
 from app.strategies.envelope import EnvelopeTradingModel
+from app.strategies.short_term import ShortTermTradingModel
 from app.bot.bot_stock_cache import BotStockCache  # 새로운 BotStockCache 임포트
 
 logger = logging.getLogger(__name__)
@@ -77,14 +78,39 @@ class BotInstance:
             self.backend_client = BackendClient()
             self.backend_client.set_auth_client(self.auth_client)
             await self.backend_client.start()
-            
-            # 전략에 따른 트레이딩 모델 초기화 (봇별 StockCache 전달)
-            if self.strategy == TradingStrategy.ENVELOPE:
-                self.trading_model = EnvelopeTradingModel(self.bot_stock_cache)  # 봇별 캐시 전달
-                self.trading_model.set_backend_client(self.backend_client)
-            elif self.strategy == TradingStrategy.BOLLINGER:
-                self.trading_model = BollingerBandTradingModel(self.bot_stock_cache)  # 봇별 캐시 전달
-                self.trading_model.set_backend_client(self.backend_client)
+
+            # 문자열 전략을 Enum으로 변환
+            try:
+                # 문자열인 경우 Enum으로 변환
+                if isinstance(self.strategy, str):
+                    strategy_enum = TradingStrategy[self.strategy]
+                else:
+                    # 이미 Enum인 경우 그대로 사용
+                    strategy_enum = self.strategy
+                
+                # Enum 기반으로 비교
+                if strategy_enum == TradingStrategy.ENVELOPE:
+                    logger.info(f"봇 {self.email} ENVELOPE 전략 모델 생성 시도")
+                    self.trading_model = EnvelopeTradingModel(self.bot_stock_cache)
+                    logger.info(f"봇 {self.email} ENVELOPE 전략 모델 생성 성공")
+                    self.trading_model.set_backend_client(self.backend_client)
+                elif strategy_enum == TradingStrategy.BOLLINGER:
+                    logger.info(f"봇 {self.email} BOLLINGER 전략 모델 생성 시도")
+                    self.trading_model = BollingerBandTradingModel(self.bot_stock_cache)
+                    logger.info(f"봇 {self.email} BOLLINGER 전략 모델 생성 성공")
+                    self.trading_model.set_backend_client(self.backend_client)
+                elif strategy_enum == TradingStrategy.SHORT_TERM:
+                    logger.info(f"봇 {self.email} SHORT_TERM 전략 모델 생성 시도")
+                    self.trading_model = ShortTermTradingModel(self.bot_stock_cache)
+                    logger.info(f"봇 {self.email} SHORT_TERM 전략 모델 생성 성공")
+                    self.trading_model.set_backend_client(self.backend_client)
+                else:
+                    logger.warning(f"봇 {self.email} 알 수 없는 전략: {strategy_enum}")
+                    
+            except (KeyError, ValueError) as e:
+                # Enum 변환 실패 시 로그 기록
+                logger.error(f"봇 {self.email} 전략을 Enum으로 변환 실패: {str(e)}")
+                logger.warning(f"봇 {self.email} 알 수 없는 전략: {self.strategy}")
             
             # 봇별 지표 초기 계산
             if self.bot_stock_cache:
@@ -135,26 +161,57 @@ class BotInstance:
         
         try:
             # 각 봇의 전략에 맞는 지표 계산
+            strategy_enum = None
+            if isinstance(self.strategy, str):
+                # 대소문자 문제 해결 - 항상 TradingStrategy 열거형과 문자열로 비교
+                strategy_str = self.strategy.upper()  # 항상 대문자로 변환
+                try:
+                    strategy_enum = TradingStrategy[strategy_str]
+                except KeyError:
+                    logger.error(f"전략 변환 실패 - 존재하지 않는 전략: {strategy_str}")
+                    return
+            else:
+                strategy_enum = self.strategy
+            
             indicators = None
             if self.bot_stock_cache:
-                if self.strategy == TradingStrategy.ENVELOPE:
+                # BotStockCache 메서드 호출 확인
+                if strategy_enum == TradingStrategy.ENVELOPE:
                     indicators = self.bot_stock_cache.get_envelope_indicators(symbol, price)
-                else:
+                    if indicators is None:
+                        logger.error(f"ENVELOPE 지표 계산 실패: 메서드가 None을 반환했습니다.")
+                        # BotStockCache의 envelope 지표 계산 메서드 확인 필요
+                    
+                elif strategy_enum == TradingStrategy.BOLLINGER:
                     indicators = self.bot_stock_cache.get_bollinger_bands(symbol, price)
-            
+                    if indicators is None:
+                        logger.error(f"BOLLINGER 지표 계산 실패: 메서드가 None을 반환했습니다.")
+                        # BotStockCache의 bollinger 지표 계산 메서드 확인 필요
+                    
+                elif strategy_enum == TradingStrategy.SHORT_TERM:
+                    indicators = self.bot_stock_cache.get_short_term_indicators(symbol, price)
+                
             # 트레이딩 모델에 전달 (각 봇 전략에 맞는 지표만 전달)
             if indicators:
                 # 지표 객체를 트레이딩 모델 호환 형식으로 변환
-                indicator_package = {
-                    'envelope' if self.strategy == TradingStrategy.ENVELOPE else 'bollinger_bands': indicators
-                }
+                indicator_package = {}
+                
+                # Enum 문자열 비교 대신 열거형 멤버 비교
+                if strategy_enum == TradingStrategy.ENVELOPE:
+                    indicator_package = {'envelope': indicators}
+                elif strategy_enum == TradingStrategy.BOLLINGER:
+                    indicator_package = {'bollinger_bands': indicators}
+                elif strategy_enum == TradingStrategy.SHORT_TERM:
+                    indicator_package = {'short_term': indicators}
                 
                 # 모델에 전달
                 await self.trading_model.handle_realtime_price(symbol, price, indicator_package)
+            else:
+                logger.warning(f"봇 {self.email} - {symbol}에 대한 지표가 None입니다. 처리 건너뜀.")
         
         except Exception as e:
-            logger.error(f"봇 {self.email} 실시간 가격 처리 중 오류: {str(e)}")
-    
+            logger.error(f"봇 {self.email} 실시간 가격 처리 중 오류: {str(e)}", exc_info=True)
+        
     async def refresh_indicators(self):
         """봇의 전략별 지표 새로고침"""
         if not self.bot_stock_cache:

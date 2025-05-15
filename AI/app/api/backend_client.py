@@ -241,3 +241,12 @@ class BackendClient:
         except Exception as e:
             logger.error(f"매도 요청 처리 중 오류: {str(e)}")
             return False
+        
+    async def stop(self):
+        """백엔드 클라이언트 정지"""
+        logger.info("백엔드 클라이언트 정지")
+        
+        # 실행 중인 세션이 있으면 닫기
+        if hasattr(self, 'session') and self.session and not self.session.closed:
+            await self.session.close()
+            logger.info("백엔드 클라이언트 세션 닫힘")

@@ -9,6 +9,7 @@ class TradingStrategy(str, Enum):
     """트레이딩 전략 유형"""
     ENVELOPE = "envelope"
     BOLLINGER = "bollinger"
+    SHORT_TERM = "SHORT_TERM"
 
 class TradeDecision:
     """매매 결정 모델"""
