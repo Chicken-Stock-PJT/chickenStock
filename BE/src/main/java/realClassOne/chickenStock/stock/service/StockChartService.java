@@ -210,7 +210,7 @@ public class StockChartService {
 
         // 최종 응답 생성
         ChartResponseDTO finalResponse = ChartResponseDTO.builder()
-                .stockCode(stockCode)
+                .stockCode(revertStockCode(stockCode)) // ✅ 여기서 _AL 제거
                 .chartType(chartType)
                 .chartData(allChartData)
                 .hasNext(false)
@@ -270,17 +270,19 @@ public class StockChartService {
      */
     private String buildRequestBody(ChartRequestDTO request) {
         try {
+            String stockCodeWithAL = convertStockCode(request.getStockCode()); // ✅ 여기서 _AL 붙이기
+
             if ("MINUTE".equalsIgnoreCase(request.getChartType())) {
                 return String.format(
                         "{\"stk_cd\":\"%s\",\"tic_scope\":\"%s\",\"upd_stkpc_tp\":\"%s\"}",
-                        request.getStockCode(),
+                        stockCodeWithAL,
                         request.getTimeInterval() != null ? request.getTimeInterval() : "1",
                         request.getModifiedPriceType() != null ? request.getModifiedPriceType() : "1"
                 );
             } else {
                 return String.format(
                         "{\"stk_cd\":\"%s\",\"base_dt\":\"%s\",\"upd_stkpc_tp\":\"%s\"}",
-                        request.getStockCode(),
+                        stockCodeWithAL,
                         request.getBaseDate() != null ? request.getBaseDate() : getTodayDate(),
                         request.getModifiedPriceType() != null ? request.getModifiedPriceType() : "1"
                 );
@@ -511,4 +513,14 @@ public class StockChartService {
             log.warn("Redis 캐시 저장 실패: {}", e.getMessage());
         }
     }
+
+    // _AL 붙이는 함수 추가
+    private String convertStockCode(String code) {
+        return code.endsWith("_AL") ? code : code + "_AL";
+    }
+
+    private String revertStockCode(String code) {
+        return code.endsWith("_AL") ? code.replace("_AL", "") : code;
+    }
+
 }
