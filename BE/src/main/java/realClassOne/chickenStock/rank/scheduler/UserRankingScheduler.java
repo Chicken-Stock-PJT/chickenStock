@@ -32,7 +32,7 @@ public class UserRankingScheduler {
     /**
      * 매 1시간마다 회원별 총자산 기준 Redis 랭킹 갱신
      */
-    @Scheduled(cron = "0 0 * * * *") // 매 정시마다 실행 (ex. 12:00, 13:00, ...)
+    @Scheduled(cron = "0 */5 * * * *") // 매 정시마다 실행 (ex. 12:00, 13:00, ...)
     public void updateRanking() {
         log.info("🔄 [랭킹 스케줄러] Redis에 총자산 랭킹 갱신 시작");
 
@@ -77,7 +77,11 @@ public class UserRankingScheduler {
                 JsonNode stockInfo = priceMap.get(code + "_AL"); // _AL 붙여주기
                 long price = 0L;
                 if (stockInfo != null && stockInfo.has("cur_prc")) {
-                    price = Long.parseLong(stockInfo.get("cur_prc").asText());
+                    String rawPrice = stockInfo.get("cur_prc").asText();
+                    rawPrice = rawPrice.replaceAll("[^0-9]", ""); // 여기서 문자열 필터링
+                    if (!rawPrice.isEmpty()) {
+                        price = Long.parseLong(rawPrice);
+                    }
                 }
                 totalAsset += price * holding.getQuantity();
             }
