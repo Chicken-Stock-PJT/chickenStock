@@ -73,7 +73,6 @@ public class StockChartService {
         // 2. 캐시에서 조회
         ChartResponseDTO cachedResponse = getCachedResponse(cacheKey);
         if (cachedResponse != null && ("N".equals(request.getContYn()) || request.getContYn() == null)) {
-            log.info("차트 데이터 캐시 히트: {}", cacheKey);
             return cachedResponse;
         }
 
@@ -149,7 +148,6 @@ public class StockChartService {
         // 캐시에서 조회
         ChartResponseDTO cachedResponse = getCachedResponse(cacheKey);
         if (cachedResponse != null) {
-            log.info("모든 차트 데이터 캐시 히트: {}", cacheKey);
             return cachedResponse;
         }
 
@@ -551,7 +549,6 @@ public class StockChartService {
                         CACHE_TTL_MINUTES,
                         TimeUnit.MINUTES
                 );
-                log.debug("Redis 캐시 저장 성공 (분봉, TTL: {}분): {}", CACHE_TTL_MINUTES, cacheKey);
             } else {
                 redisTemplate.opsForValue().set(
                         cacheKey,
@@ -559,7 +556,6 @@ public class StockChartService {
                         CACHE_TTL_HOURS,
                         TimeUnit.HOURS
                 );
-                log.debug("Redis 캐시 저장 성공 (TTL: {}시간): {}", CACHE_TTL_HOURS, cacheKey);
             }
         } catch (Exception e) {
             log.warn("Redis 캐시 저장 실패: {}", e.getMessage());
