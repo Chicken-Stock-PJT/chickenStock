@@ -1,3 +1,4 @@
+import nxtStocksUrl from "@/assets/nxtStocks.csv?url";
 // NXT 상장 종목 코드 목록
 let nxtStockCodes: Set<string> | null = null;
 
@@ -6,7 +7,7 @@ const parseNxtStocks = async () => {
   if (nxtStockCodes) return nxtStockCodes;
 
   try {
-    const response = await fetch("/nxtStocks.csv");
+    const response = await fetch(nxtStocksUrl);
     const text = await response.text();
     const lines = text.split("\n");
 
@@ -24,6 +25,7 @@ const parseNxtStocks = async () => {
       }
     }
 
+    console.log(nxtStockCodes);
     return nxtStockCodes;
   } catch (error) {
     console.error("NXT 상장 종목 목록 파싱 중 오류 발생:", error);

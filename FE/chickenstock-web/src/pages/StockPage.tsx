@@ -75,17 +75,17 @@ const StockPage = () => {
   }, [stockPriceData]);
 
   return (
-    <div className="absolute left-0 top-[60px] flex max-h-[calc(90vh)] w-screen flex-col overflow-hidden overflow-x-auto px-[10px]">
-      <div className="flex grid flex-1 grid-cols-12 gap-2 overflow-hidden">
-        <div className="col-span-8 flex flex-col gap-2 overflow-hidden">
+    <div className="absolute left-0 top-[60px] flex w-screen flex-col px-[10px]">
+      <div className="mb-4 flex grid flex-1 grid-cols-12 gap-2">
+        <div className="col-span-8 flex flex-col gap-2">
           <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
             <Chart stockName={stockName} stockCode={stockCode} priceData={priceData} />
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1">
             <OrderBook stockCode={stockCode ?? ""} currentPrice={currentPriceNumber} />
           </div>
         </div>
-        <div className="col-span-4 flex flex-col gap-2 overflow-hidden">
+        <div className="col-span-4 flex flex-col gap-2">
           <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
             <Trade currentPrice={currentPriceNumber} stockCode={stockCode ?? ""} />
           </div>
