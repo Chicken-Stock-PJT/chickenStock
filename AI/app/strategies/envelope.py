@@ -16,8 +16,7 @@ class EnvelopeTradingModel(BaseTradingModel):
         # 매매 관련 설정
         self.max_positions = 20  # 최대 보유 종목 수
         self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (500만원)
-        self.min_holding_period = 1  # 최소 보유 기간 (일)
-        
+
         # 매매 신호 저장 딕셔너리
         self.trading_signals = {}  # {symbol: {"signal": "lower", "price": price, "timestamp": datetime}}
         
@@ -104,19 +103,13 @@ class EnvelopeTradingModel(BaseTradingModel):
             last_action = last_trade.get("last_action", "")
             last_trade_time = last_trade.get("last_trade", None)
             
-            # 마지막 거래 이후 최소 보유 기간(일)이 지났는지 확인
-            min_holding_passed = True
-            if last_trade_time:
-                seconds_passed = (now - last_trade_time).total_seconds()
-                min_holding_passed = seconds_passed >= (self.min_holding_period * 86400)
-            
             # 계좌 정보에서 보유 종목 확인 - 매도 신호는 보유 종목에 대해서만 발생
             is_holding = symbol in self.positions
             
             # 상한선 (전량 매도 신호) - 보유 종목인 경우에만
             if price >= upper_band and is_holding:
                 # 이미 상한선에서 전량 매도한 종목이면 신호 무시
-                if last_action == "sell_all" and not min_holding_passed:
+                if last_action == "sell_all":
                     logger.debug(f"이미 상한선에서 매도한 종목: {symbol}, 신호 무시")
                     return
                 
@@ -135,7 +128,7 @@ class EnvelopeTradingModel(BaseTradingModel):
             # 중앙선 (절반 매도 신호) - 이동평균선, 보유 종목인 경우에만
             elif price >= middle_band and price < upper_band and is_holding:
                 # 이미 중앙선에서 절반 매도한 종목이거나 상한선에서 전량 매도한 종목이면 신호 무시
-                if (last_action == "sell_half" or last_action == "sell_all") and not min_holding_passed:
+                if (last_action == "sell_half" or last_action == "sell_all"):
                     logger.debug(f"이미 중앙선 또는 상한선에서 매도한 종목: {symbol}, 신호 무시")
                     return
                 
@@ -159,7 +152,7 @@ class EnvelopeTradingModel(BaseTradingModel):
                     return
                     
                 # 이미 하한선에서 매수한 종목이면 신호 무시
-                if last_action == "buy" and not min_holding_passed:
+                if last_action == "buy":
                     logger.debug(f"이미 하한선에서 매수한 종목: {symbol}, 신호 무시")
                     return
                 
