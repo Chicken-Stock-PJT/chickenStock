@@ -46,6 +46,7 @@ const isErrorMessage = (msg: WebSocketMessage): msg is ErrorMessage => msg.type 
 // WebSocket 연결
 export const connect = () => {
   if (ws?.readyState === WebSocket.OPEN) {
+    console.log("이미 연결되어 있음, 재연결 시도 중단");
     return;
   }
 
