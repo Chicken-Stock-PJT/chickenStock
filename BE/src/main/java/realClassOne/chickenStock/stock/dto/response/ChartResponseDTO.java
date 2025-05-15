@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import realClassOne.chickenStock.stock.dto.common.ChartDataDTO;
+import realClassOne.chickenStock.stock.dto.common.StockRankingItemDTO;
 
 import java.io.Serializable;
 import java.util.List;

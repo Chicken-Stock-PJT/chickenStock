@@ -184,4 +184,6 @@ public class Member {
     public boolean isMoneyInitialized() {
         return moneyInitialized;
     }
+
+
 }

@@ -36,4 +36,13 @@ public class StockRankingRequestDTO {
     private String priceType; // 가격구분
     private String tradeAmountType; // 거래대금구분
     private String marketOpenType; // 장운영구분
+
+    // StockRankingRequestDTO.java에 추가할 setter 메서드들
+    public void setContYn(String contYn) {
+        this.contYn = contYn;
+    }
+
+    public void setNextKey(String nextKey) {
+        this.nextKey = nextKey;
+    }
 }
