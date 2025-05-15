@@ -157,3 +157,9 @@ export interface CancelOrderResponse {
   success: boolean;
   message: string;
 }
+
+export interface InitializeMoneyResponse {
+  status: string;
+  message: string;
+  memberId: number;
+}
