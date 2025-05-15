@@ -34,7 +34,7 @@ public class TotalAssetCalculator {
 
         Set<String> allCodes = members.stream()
                 .flatMap(m -> holdingPositionRepository.findByMember(m).stream())
-                .map(h -> h.getStockData().getShortCode())
+                .map(h -> h.getStockData().getShortCode() + "_AL")
                 .collect(Collectors.toSet());
 
         Map<String, JsonNode> priceMap = new HashMap<>();
@@ -59,13 +59,24 @@ public class TotalAssetCalculator {
             long totalAsset = member.getMemberMoney();
 
             for (HoldingPosition h : holdings) {
-                String code = h.getStockData().getShortCode();
-                JsonNode priceData = priceMap.get(code);
+                String originalCode = h.getStockData().getShortCode();
+                String codeWithAL = originalCode + "_AL";
+                JsonNode priceData = priceMap.get(codeWithAL);
                 if (priceData != null && priceData.has("cur_prc")) {
                     try {
-                        long price = Long.parseLong(priceData.get("cur_prc").asText());
-                        totalAsset += price * h.getQuantity();
-                    } catch (NumberFormatException ignored) {}
+                        String rawPrice = priceData.get("cur_prc").asText();             // ex: "-123,000"
+                        String cleanPrice = rawPrice.replaceAll("[^0-9]", "");
+                        if (!cleanPrice.isEmpty()) {
+                            long price = Long.parseLong(cleanPrice);
+                            totalAsset += price * h.getQuantity();
+                        } else {
+                            log.warn("'{}' 종목의 cur_prc 값이 비어 있음: {}", codeWithAL, rawPrice);
+                        }
+                    } catch (NumberFormatException e) {
+                        log.warn("'{}' 종목의 가격 파싱 실패: {}", codeWithAL, priceData.get("cur_prc"));
+                    }
+                } else {
+                    log.warn("'{}' 종목의 cur_prc 데이터 없음 or null", codeWithAL);
                 }
             }
 
