@@ -7,6 +7,7 @@ import aiohttp
 from typing import Dict, List, Callable, Optional, Any
 from datetime import datetime
 from app.auth.token_manager import TokenManager
+from app.auth.kiwoom_auth import KiwoomAuthClient
 from app.cache.stock_cache import StockCache
 from app.api.kiwoom_websocket import KiwoomWebSocket
 from app.config import settings
@@ -24,6 +25,7 @@ class KiwoomAPI:
         
         # 토큰 관리자
         self.token_manager = token_manager
+        self.kiwoom_auth = KiwoomAuthClient()
         
         # 키움 API 토큰
         self.kiwoom_token = ""
@@ -182,7 +184,8 @@ class KiwoomAPI:
                                       'code': stock.get('code'),
                                       'name': stock.get('name'),
                                       'market_cap': market_cap,
-                                      'market_type': market_name
+                                      'market_type': market_name,
+                                      'lastPrice': stock.get('lastPrice')
                                   })
                               except (ValueError, TypeError) as e:
                                   logger.warning(f"종목({stock.get('code', 'unknown')}) 처리 중 오류: {e}")
@@ -198,7 +201,7 @@ class KiwoomAPI:
                           
                           # 시장별로 저장 - 종목 코드와 시장 유형 함께 저장
                           filtered_stocks[market_name] = [
-                              {'code': stock['code'], 'market_type': market_name}
+                              {'code': stock['code'], 'market_type': market_name, 'lastPrice': stock['lastPrice']}
                               for stock in selected_stocks
                           ]
                           
@@ -221,6 +224,80 @@ class KiwoomAPI:
       except Exception as e:
           logger.error(f"종목 필터링 중 오류: {str(e)}", exc_info=True)
           return {"KOSPI": [], "KOSDAQ": []}
+      
+    async def get_top_trading_amount(self, market_type="0", include_managed=0, exchange_type="3", limit=100):
+        try:
+            # 세션 확인
+            if not self.session:
+                self.session = aiohttp.ClientSession()
+
+            self.kiwoom_token = await self.kiwoom_auth.get_access_token()
+                
+            # 키움 API 요청 헤더 구성
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.kiwoom_token}",
+                "api-id": "ka10032"  # 거래대금상위요청 API ID
+            }
+            
+            # API 요청 파라미터 구성
+            params = {
+                "mrkt_tp": market_type,  # 시장구분
+                "mang_stk_incls": str(include_managed),  # 관리종목 포함 여부
+                "stex_tp": exchange_type  # 거래소구분
+            }
+            
+            # API 요청
+            async with self.session.post(
+                f"{self.base_url}/api/dostk/rkinfo",
+                json=params,
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+
+                    # 응답 데이터 처리
+                    top_stocks = []
+                    
+                    if "trde_prica_upper" in data and isinstance(data["trde_prica_upper"], list):
+                        stocks = data["trde_prica_upper"][:limit]  # 상위 limit개만 가져오기
+                        
+                        for stock in stocks:
+                            stock_info = {
+                                "code": stock.get("stk_cd", ""),  # 종목 코드
+                                "name": stock.get("stk_nm", ""),  # 종목명
+                                "rank": int(stock.get("now_rank", "0") or "0"),  # 현재 순위
+                                "price": float(stock.get("cur_prc", "0").replace(",", "") or "0"),  # 현재가
+                                "change_rate": float(stock.get("flu_rt", "0").replace("%", "") or "0"),  # 등락률
+                                "volume": int(stock.get("now_trde_qty", "0").replace(",", "") or "0"),  # 거래량
+                                "trading_amount": float(stock.get("trde_prica", "0").replace(",", "") or "0"),  # 거래대금
+                                "market_type": "KOSPI" if market_type == "001" else "KOSDAQ" if market_type == "101" else "ALL"
+                            }
+                            top_stocks.append(stock_info)
+                    
+                    logger.info(f"거래 대금 상위 종목 조회 성공: {len(top_stocks)}개")
+                    return top_stocks
+                else:
+                    logger.error(f"거래 대금 상위 종목 조회 실패: HTTP {response.status}")
+                    return []
+        
+        except Exception as e:
+            logger.error(f"거래 대금 상위 종목 조회 중 오류: {str(e)}")
+            return []
+
+    async def get_all_top_trading_amount(self, limit=100):
+        kospi_top = await self.get_top_trading_amount(market_type="001", limit=limit)
+        kosdaq_top = await self.get_top_trading_amount(market_type="101", limit=limit)
+        
+        # 코스피와 코스닥 종목 통합
+        all_top = kospi_top + kosdaq_top
+        
+        # 거래대금 기준으로 내림차순 정렬
+        all_top.sort(key=lambda x: x.get("trading_amount", 0), reverse=True)
+        
+        # 상위 limit개만 선택
+        return all_top
             
     async def initialize_chart_data(self, symbols, from_date=None, period=90):
         """여러 종목의 차트 데이터를 한 번에 초기화하고 캐싱"""
@@ -335,58 +412,71 @@ class KiwoomAPI:
         
     async def get_minute_chart(self, symbol: str, time_interval: int = 5, update_cache: bool = True):
         try:
-            # 분봉 차트 API 호출을 위한 요청 데이터 준비
+            # 세션 확인
+            if not self.session:
+                self.session = aiohttp.ClientSession()
+                
+            # 키움 API 요청 헤더 구성
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.kiwoom_token}",
+                "api-id": "ka10080"  # 분봉 차트 API ID
+            }
+            
+            # API 요청 파라미터 구성
             request_data = {
                 "stk_cd": symbol,  # 종목 코드
                 "tic_scope": str(time_interval),  # 시간 간격
-                "upd_stkpc_tp": "0",  # 수정주가구분 (0: 원주가, 1: 수정주가)
-                "api-id": "ka10080"
+                "upd_stkpc_tp": "0"  # 수정주가구분 (0: 원주가, 1: 수정주가)
             }
             
-            api_path = "/api/dostk/chart"
-            
-            # API 호출
-            response = await self.request("POST", api_path, request_data)
-            
-            if not response or "stk_min_pole_chart_qry" not in response:
-                logger.warning(f"종목 {symbol}의 분봉 데이터 조회 실패")
-                return []
-            
-            # 분봉 데이터 파싱
-            minute_chart_data = response["stk_min_pole_chart_qry"]
-            
-            # 필요한 경우 데이터 변환 (API 응답 형식에 따라 조정)
-            processed_data = []
-            for item in minute_chart_data:
-                processed_item = {
-                    "time": item.get("cntr_tm", ""),  # 체결시간
-                    "open": float(item.get("open_pric", 0)),  # 시가
-                    "high": float(item.get("high_pric", 0)),  # 고가
-                    "low": float(item.get("low_pric", 0)),  # 저가
-                    "close": float(item.get("cur_prc", 0)),  # 종가 (현재가)
-                    "volume": float(item.get("trde_qty", 0))  # 거래량
-                }
-                processed_data.append(processed_item)
-            
-            # 캐시 업데이트
-            if update_cache and self.stock_cache:
-                self.stock_cache.add_minute_chart_data(symbol, processed_data)
-            
-            logger.info(f"종목 {symbol}의 {time_interval}분봉 데이터 조회 성공: {len(processed_data)}개")
-            return processed_data
-            
+            # API 요청
+            async with self.session.post(
+                f"{self.base_url}/api/dostk/chart",
+                json=request_data,
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    response_data = await response.json()
+                    
+                    if "stk_min_pole_chart_qry" not in response_data:
+                        logger.warning(f"종목 {symbol}의 분봉 데이터 응답 형식 오류")
+                        return []
+                    
+                    # 분봉 데이터 파싱
+                    minute_chart_data = response_data["stk_min_pole_chart_qry"]
+                    
+                    # 필요한 경우 데이터 변환 (API 응답 형식에 따라 조정)
+                    processed_data = []
+                    for item in minute_chart_data:
+                        processed_item = {
+                            "time": item.get("cntr_tm", ""),  # 체결시간
+                            "open": float(item.get("open_pric", 0) or 0),  # 시가
+                            "high": float(item.get("high_pric", 0) or 0),  # 고가
+                            "low": float(item.get("low_pric", 0) or 0),  # 저가
+                            "close": float(item.get("cur_prc", 0) or 0),  # 종가 (현재가)
+                            "volume": float(item.get("trde_qty", 0) or 0)  # 거래량
+                        }
+                        processed_data.append(processed_item)
+                    
+                    # 최근 50개만 유지
+                    if len(processed_data) > 50:
+                        processed_data = processed_data[:50]
+                    
+                    # 캐시 업데이트
+                    if update_cache and self.stock_cache:
+                        self.stock_cache.add_minute_chart_data(symbol, processed_data)
+                    
+                    return processed_data
+                else:
+                    logger.error(f"종목 {symbol}의 분봉 데이터 요청 실패: HTTP {response.status}")
+                    return []
         except Exception as e:
             logger.error(f"종목 {symbol}의 분봉 데이터 조회 중 오류: {str(e)}")
             return []
     
     async def initialize_minute_chart_data(self, symbols: List[str], time_interval: int = 5):
-        """
-        여러 종목의 분봉 차트 데이터 초기화
-        
-        :param symbols: 종목 코드 리스트
-        :param time_interval: 시간 간격 (분)
-        :return: 성공 여부
-        """
         logger.info(f"{len(symbols)}개 종목의 {time_interval}분봉 데이터 초기화 시작")
         
         success_count = 0

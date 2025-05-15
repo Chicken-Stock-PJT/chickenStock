@@ -68,12 +68,23 @@ class BotStockCache:
     
     def calculate_strategy_indicators(self):
         """봇의 전략에 따라 지표 계산"""
-        if self.strategy == TradingStrategy.ENVELOPE:
+        strategy_enum = self.strategy
+        if isinstance(self.strategy, str):
+            try:
+                strategy_enum = TradingStrategy[self.strategy.upper()]
+            except KeyError:
+                logger.error(f"알 수 없는 전략 문자열: {self.strategy}")
+                return 0
+        
+        if strategy_enum == TradingStrategy.ENVELOPE:
             return self.calculate_envelope_indicators()
-        elif self.strategy == TradingStrategy.BOLLINGER:
+        elif strategy_enum == TradingStrategy.BOLLINGER:
             return self.calculate_bollinger_bands()
-        elif self.strategy == TradingStrategy.SHORT_TERM:
+        elif strategy_enum == TradingStrategy.SHORT_TERM:
             return self.calculate_short_term_indicators()
+        else:
+            logger.warning(f"지원되지 않는 전략: {self.strategy}")
+            return 0
     
     def calculate_envelope_indicators(self):
         """Envelope 지표 계산 - 봇에 특화된 버전"""

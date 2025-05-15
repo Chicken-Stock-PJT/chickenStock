@@ -14,8 +14,9 @@ from app.auth.auth_client import AuthClient
 
 from app.api.backend_client import BackendClient
 from app.api.kiwoom_api import KiwoomAPI
-
 from app.bot.bot_manager import BotManager
+
+from app.monitor.cache_monitor import add_monitor_to_app
 
 # 설정 파일 import
 from app.config import settings
@@ -223,8 +224,23 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         ]
 
         # StockCache에 필터링된 종목 리스트 설정
-        kiwoom_api.stock_cache.set_filtered_stocks(filtered_stockcode_list)                     
+        kiwoom_api.stock_cache.set_filtered_stocks(filtered_stockcode_list)    
 
+        filtered_symbols_by_market_kospi = filtered_symbols_by_market.get("KOSPI")
+        filtered_symbols_by_market_kosdaq = filtered_symbols_by_market.get("KOSDAQ")
+
+        current_price_kospi = {symbol.get("code"): symbol.get("lastPrice") for symbol in filtered_symbols_by_market_kospi
+                                if symbol.get('code') in filtered_stockcode_list}
+        current_price_kosdaq = {symbol.get("code"): symbol.get("lastPrice") for symbol in filtered_symbols_by_market_kosdaq
+                                if symbol.get('code') in filtered_stockcode_list}
+
+        for code in filtered_stockcode_list:
+            logger.info(code)
+            if code in final_kospi_symbols:
+                kiwoom_api.stock_cache.update_price(code, int(current_price_kospi.get(code)))
+            elif code in final_kosdaq_symbols:
+                kiwoom_api.stock_cache.update_price(code, int(current_price_kosdaq.get(code)))
+        
         # 계좌 정보 초기화
         account_info = await backend_client.request_account_info()
         if account_info:
@@ -247,9 +263,6 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         logger.info("볼린저 밴드 지표 계산 시작")
         kiwoom_api.stock_cache.calculate_bollinger_bands()
         logger.info("볼린저 밴드 지표 계산 완료")
-            
-        # 전략에 따른 트레이딩 모델 초기화는 제거
-        # 공통 API 및 서비스 초기화만 여기서 진행
         
         # 마지막 데이터 업데이트 시간 기록
         service_status["last_data_update"] = datetime.now()
@@ -384,10 +397,11 @@ async def trading_loop():
                         if bot.trading_model:
                             # 현재가 정보는 bot_stock_cache를 통해 가져오도록 수정
                             prices = {}
-                            if hasattr(bot.trading_model, 'get_current_prices'):
-                                prices = await bot.trading_model.get_current_prices()
-                                price_count = len(prices) if prices else 0
-                                logger.info(f"봇 [{email}] 캐싱된 현재가 종목 수: {price_count}")
+                            filtered_symbols = bot.bot_stock_cache.get_filtered_stocks()
+                            for symbol in filtered_symbols:
+                                price = bot.bot_stock_cache.get_price(symbol)
+                                if price:
+                                    prices[symbol] = price
                             
                             # 매매 결정 요청
                             logger.info(f"봇 [{email}] 매매 결정 요청 중...")
@@ -462,61 +476,60 @@ async def trading_loop():
             await asyncio.sleep(30)  # 오류 시 30초 후 재시도
 
 async def scheduler_task():
-    """매일 오전 8시에 실행되는 작업 스케줄러"""
+    """매일 오전 7시에 서버 초기화 및 데이터 갱신을 실행하는 스케줄러"""
     global kiwoom_api, service_status, bot_manager
     
     logger.info("스케줄러 작업 시작됨")
     
     while True:
         try:
-            # 서비스가 실행 중인지 확인
-            if not service_status.get("is_running", False):
-                logger.info("서비스가 실행 중이 아니므로 스케줄러 작업을 일시 중지합니다.")
-                await asyncio.sleep(60)  # 1분마다 서비스 상태 확인
-                continue
-            
-            # 다음 실행 시간까지 대기할 시간 계산 (오전 8시)
-            wait_seconds = await get_next_run_time(8, 0, 0)
-            logger.info(f"다음 차트 데이터 수집 및 지표 계산까지 {wait_seconds:.2f}초 남음")
+            # 다음 실행 시간까지 대기할 시간 계산 (오전 7시)
+            wait_seconds = await get_next_run_time(7, 0, 0)
+            logger.info(f"다음 서버 초기화 및 데이터 갱신까지 {wait_seconds:.2f}초 남음")
             
             # 다음 실행 시간까지 대기
             await asyncio.sleep(wait_seconds)
             
-            # 서비스가 여전히 실행 중이면 작업 수행
-            if service_status.get("is_running", False) and kiwoom_api:
-                logger.info("정기 스케줄에 따른 차트 데이터 수집 및 지표 계산 시작")
+            logger.info("정기 스케줄에 따른 서버 초기화 시작")
+            
+            # 서비스 상태 초기화
+            service_status["is_running"] = False
+            
+            # 현재 활성화된 전략 확인
+            current_strategy = service_status.get("active_strategy", TradingStrategy.ENVELOPE)
+            
+            # 모든 봇 정리
+            if bot_manager:
+                await bot_manager.cleanup()
+                logger.info("봇 매니저 리소스 정리 완료")
+            
+            # 키움 API 연결 종료
+            if kiwoom_api:
+                await kiwoom_api.close()
+                logger.info("키움 API 연결 종료 완료")
+            
+            # 잠시 대기 (리소스 정리를 위한 시간)
+            await asyncio.sleep(5)
+            
+            # 서비스 다시 초기화
+            logger.info(f"서비스 재초기화 시작 (전략: {current_strategy})")
+            service_initialized = await initialize_service(current_strategy)
+            
+            if not service_initialized:
+                logger.error("서비스 재초기화 실패")
+                # 실패 시 30분 후 재시도
+                await asyncio.sleep(1800)
+                continue
                 
-                # 공유 캐시 차트 데이터 업데이트 (120일 - 모든 전략을 위한 충분한 데이터)
-                filtered_stockcode_list = kiwoom_api.stock_cache.filtered_stockcode_list
-                await kiwoom_api.initialize_chart_data(filtered_stockcode_list, period=120)
-                logger.info(f"차트 데이터 업데이트 완료: {len(filtered_stockcode_list)}개 종목")
-
-                await kiwoom_api.initialize_minute_chart_data(filtered_stockcode_list, time_interval=5)
-                logger.info(f"5분봉 차트 데이터 업데이트 완료: {len(filtered_stockcode_list)}개 종목")
-                
-                # 모든 봇의 개별 지표 새로고침 (각자의 전략에 맞게)
-                if bot_manager:
-                    logger.info("모든 봇의 지표 새로고침 시작")
-                    refresh_results = await bot_manager.refresh_all_bot_indicators()
-                    
-                    # 결과 로깅
-                    for email, count in refresh_results.items():
-                        logger.info(f"봇 [{email}] 지표 새로고침 결과: {count}개 종목 성공")
-                    
-                    logger.info(f"모든 봇({len(refresh_results)}개)의 지표 새로고침 완료")
-                
-                # 마지막 데이터 업데이트 시간 기록
-                service_status["last_data_update"] = datetime.now()
-                
-                logger.info("정기 스케줄에 따른 차트 데이터 수집 및 지표 계산 완료")
+            logger.info("서비스 재초기화 성공")
             
         except asyncio.CancelledError:
             logger.info("스케줄러 작업이 취소되었습니다.")
             break
         except Exception as e:
             logger.error(f"스케줄러 작업 중 오류 발생: {str(e)}")
-            # 30분 후 재시도
-            await asyncio.sleep(1800)
+            # 10분 후 재시도
+            await asyncio.sleep(600)
 
 
 @app.on_event("startup")
@@ -543,6 +556,10 @@ async def startup_event():
             return
             
         logger.info("서비스 초기화 성공")
+
+        # 모니터링 기능 추가 - 이 부분이 중요합니다!
+        add_monitor_to_app(app, kiwoom_api, bot_manager)
+        logger.info("모니터링 기능 추가 완료")
         
     except Exception as e:
         logger.error(f"애플리케이션 시작 중 오류 발생: {str(e)}", exc_info=True)
