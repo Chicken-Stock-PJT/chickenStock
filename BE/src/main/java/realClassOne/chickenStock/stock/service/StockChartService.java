@@ -17,6 +17,7 @@ import realClassOne.chickenStock.stock.dto.response.ChartResponseDTO;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,8 +44,9 @@ public class StockChartService {
 
     // Redis 캐시 키 접두사
     private static final String REDIS_CHART_KEY_PREFIX = "chart:";
-    // 캐시 만료 시간 (1시간)
-    private static final long CACHE_TTL_HOURS = 1;
+    // 캐시 만료 시간
+    private static final long CACHE_TTL_HOURS = 1; // 일반 차트: 1시간
+    private static final long CACHE_TTL_MINUTES = 1; // 분봉: 1분
 
     /**
      * 주식 차트 데이터를 조회합니다.
@@ -92,7 +94,7 @@ public class StockChartService {
 
             // 4. 캐시에 저장 (연속조회가 아닐 경우에만)
             if (("N".equals(request.getContYn()) || request.getContYn() == null) && response.getCode() == 0) {
-                cacheResponse(cacheKey, response);
+                cacheResponse(cacheKey, response, request.getChartType());
             }
 
             return response;
@@ -169,7 +171,7 @@ public class StockChartService {
         // 연속조회가 없으면 바로 반환
         if (!firstResponse.isHasNext()) {
             // 캐시에 저장
-            cacheResponse(cacheKey, firstResponse);
+            cacheResponse(cacheKey, firstResponse, chartType);
             return firstResponse;
         }
 
@@ -220,7 +222,7 @@ public class StockChartService {
                 .build();
 
         // 캐시에 저장
-        cacheResponse(cacheKey, finalResponse);
+        cacheResponse(cacheKey, finalResponse, chartType);
 
         return finalResponse;
     }
@@ -270,17 +272,20 @@ public class StockChartService {
      */
     private String buildRequestBody(ChartRequestDTO request) {
         try {
+            // 15시 30분 이후인지 확인하고 종목코드에 _AL 붙이기
+            String processedStockCode = processStockCodeForAfterHours(request.getStockCode());
+
             if ("MINUTE".equalsIgnoreCase(request.getChartType())) {
                 return String.format(
                         "{\"stk_cd\":\"%s\",\"tic_scope\":\"%s\",\"upd_stkpc_tp\":\"%s\"}",
-                        request.getStockCode(),
+                        processedStockCode,
                         request.getTimeInterval() != null ? request.getTimeInterval() : "1",
                         request.getModifiedPriceType() != null ? request.getModifiedPriceType() : "1"
                 );
             } else {
                 return String.format(
                         "{\"stk_cd\":\"%s\",\"base_dt\":\"%s\",\"upd_stkpc_tp\":\"%s\"}",
-                        request.getStockCode(),
+                        processedStockCode,
                         request.getBaseDate() != null ? request.getBaseDate() : getTodayDate(),
                         request.getModifiedPriceType() != null ? request.getModifiedPriceType() : "1"
                 );
@@ -289,6 +294,23 @@ public class StockChartService {
             log.error("요청 바디 생성 중 오류 발생", e);
             throw new CustomException(StockErrorCode.INVALID_STOCK_CODE, "요청 바디 생성 실패");
         }
+    }
+
+    /**
+     * 15시 30분 이후일 경우 종목코드에 _AL을 붙입니다.
+     */
+    private String processStockCodeForAfterHours(String stockCode) {
+        LocalTime currentTime = LocalTime.now();
+        LocalTime marketCloseTime = LocalTime.of(15, 30);
+
+        // 15시 30분 이후거나 주말/공휴일인 경우 _AL 붙이기
+        if (currentTime.isAfter(marketCloseTime)) {
+            if (!stockCode.endsWith("_AL")) {
+                return stockCode + "_AL";
+            }
+        }
+
+        return stockCode;
     }
 
     /**
@@ -332,6 +354,7 @@ public class StockChartService {
                             result.put("_contYn", contYnHeader != null ? contYnHeader : "N");
                             result.put("_nextKey", nextKeyHeader != null ? nextKeyHeader : "");
 
+                            log.debug("API 응답: {}", result);
                             return result;
                         } catch (Exception e) {
                             throw new CustomException(StockErrorCode.API_REQUEST_FAILED, "API 응답 처리 실패");
@@ -350,8 +373,11 @@ public class StockChartService {
      */
     private ChartResponseDTO processResponse(Map<String, Object> response, String stockCode, String chartType) {
         try {
-            int returnCode = (int) response.get("return_code");
-            String returnMsg = (String) response.get("return_msg");
+            // return_code가 없을 경우를 대비한 처리
+            int returnCode = response.containsKey("return_code") ?
+                    (int) response.get("return_code") : 0;
+            String returnMsg = response.containsKey("return_msg") ?
+                    (String) response.get("return_msg") : "정상적으로 처리되었습니다";
 
             if (returnCode != 0) {
                 log.error("키움 API 오류: {} - {}", returnCode, returnMsg);
@@ -425,21 +451,21 @@ public class StockChartService {
         try {
             ChartDataDTO.ChartDataDTOBuilder builder = ChartDataDTO.builder();
 
-            // 공통 필드
-            builder.currentPrice(getString(item, "cur_prc"));
-            builder.openPrice(getString(item, "open_pric"));
-            builder.highPrice(getString(item, "high_pric"));
-            builder.lowPrice(getString(item, "low_pric"));
-            builder.volume(getString(item, "trde_qty"));
-            builder.tradingValue(getString(item, "trde_prica"));
-            builder.modifiedRatio(getString(item, "upd_rt"));
-            builder.previousClosePrice(getString(item, "pred_close_pric"));
+            // 공통 필드 - 값이 없거나 null인 경우 빈 문자열 대신 원본 값 사용
+            builder.currentPrice(getStringValue(item.get("cur_prc")));
+            builder.openPrice(getStringValue(item.get("open_pric")));
+            builder.highPrice(getStringValue(item.get("high_pric")));
+            builder.lowPrice(getStringValue(item.get("low_pric")));
+            builder.volume(getStringValue(item.get("trde_qty")));
+            builder.tradingValue(getStringValue(item.get("trde_prica")));
+            builder.modifiedRatio(getStringValue(item.get("upd_rt")));
+            builder.previousClosePrice(getStringValue(item.get("pred_close_pric")));
 
             // 차트 타입에 따른 날짜/시간 필드 설정
             if ("MINUTE".equalsIgnoreCase(chartType)) {
-                builder.date(getString(item, "cntr_tm")); // YYYYMMDDHHmmss
+                builder.date(getStringValue(item.get("cntr_tm"))); // YYYYMMDDHHmmss
             } else {
-                builder.date(getString(item, "dt")); // YYYYMMDD
+                builder.date(getStringValue(item.get("dt"))); // YYYYMMDD
             }
 
             return builder.build();
@@ -447,6 +473,16 @@ public class StockChartService {
             log.error("차트 데이터 매핑 중 오류: {}", e.getMessage(), e);
             throw new CustomException(StockErrorCode.CHART_DATA_PROCESSING_FAILED, "차트 데이터 변환 중 오류 발생");
         }
+    }
+
+    /**
+     * Object 값을 String으로 변환하되, null인 경우 빈 문자열 대신 원본 값 반환
+     */
+    private String getStringValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toString();
     }
 
     /**
@@ -463,9 +499,12 @@ public class StockChartService {
      * 요청에 대한 캐시 키를 생성합니다.
      */
     private String buildCacheKey(ChartRequestDTO request) {
+        // 15시 30분 이후를 고려한 종목코드 처리
+        String processedStockCode = processStockCodeForAfterHours(request.getStockCode());
+
         return REDIS_CHART_KEY_PREFIX +
                 request.getChartType() + ":" +
-                request.getStockCode() + ":" +
+                processedStockCode + ":" +
                 (request.getBaseDate() != null ? request.getBaseDate() : getTodayDate()) + ":" +
                 (request.getTimeInterval() != null ? request.getTimeInterval() : "") + ":" +
                 (request.getModifiedPriceType() != null ? request.getModifiedPriceType() : "1");
@@ -475,9 +514,12 @@ public class StockChartService {
      * 전체 데이터 조회에 대한 캐시 키를 생성합니다.
      */
     private String buildAllDataCacheKey(String stockCode, String baseDate, String chartType, String modifiedPriceType) {
+        // 15시 30분 이후를 고려한 종목코드 처리
+        String processedStockCode = processStockCodeForAfterHours(stockCode);
+
         return REDIS_CHART_KEY_PREFIX + "all:" +
                 chartType + ":" +
-                stockCode + ":" +
+                processedStockCode + ":" +
                 (baseDate != null ? baseDate : getTodayDate()) + ":" +
                 (modifiedPriceType != null ? modifiedPriceType : "1");
     }
@@ -497,16 +539,28 @@ public class StockChartService {
 
     /**
      * Redis 캐시에 데이터를 저장합니다.
+     * 차트 타입에 따라 TTL을 다르게 설정합니다.
      */
-    private void cacheResponse(String cacheKey, ChartResponseDTO response) {
+    private void cacheResponse(String cacheKey, ChartResponseDTO response, String chartType) {
         try {
-            redisTemplate.opsForValue().set(
-                    cacheKey,
-                    response,
-                    CACHE_TTL_HOURS,
-                    TimeUnit.HOURS
-            );
-            log.debug("Redis 캐시 저장 성공: {}", cacheKey);
+            // 분봉인 경우 1분, 그 외는 1시간
+            if ("MINUTE".equalsIgnoreCase(chartType)) {
+                redisTemplate.opsForValue().set(
+                        cacheKey,
+                        response,
+                        CACHE_TTL_MINUTES,
+                        TimeUnit.MINUTES
+                );
+                log.debug("Redis 캐시 저장 성공 (분봉, TTL: {}분): {}", CACHE_TTL_MINUTES, cacheKey);
+            } else {
+                redisTemplate.opsForValue().set(
+                        cacheKey,
+                        response,
+                        CACHE_TTL_HOURS,
+                        TimeUnit.HOURS
+                );
+                log.debug("Redis 캐시 저장 성공 (TTL: {}시간): {}", CACHE_TTL_HOURS, cacheKey);
+            }
         } catch (Exception e) {
             log.warn("Redis 캐시 저장 실패: {}", e.getMessage());
         }
