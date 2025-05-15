@@ -7,6 +7,7 @@ import aiohttp
 from typing import Dict, List, Callable, Optional, Any
 from datetime import datetime
 from app.auth.token_manager import TokenManager
+from app.auth.kiwoom_auth import KiwoomAuthClient
 from app.cache.stock_cache import StockCache
 from app.api.kiwoom_websocket import KiwoomWebSocket
 from app.config import settings
@@ -24,6 +25,7 @@ class KiwoomAPI:
         
         # 토큰 관리자
         self.token_manager = token_manager
+        self.kiwoom_auth = KiwoomAuthClient()
         
         # 키움 API 토큰
         self.kiwoom_token = ""
@@ -182,7 +184,8 @@ class KiwoomAPI:
                                       'code': stock.get('code'),
                                       'name': stock.get('name'),
                                       'market_cap': market_cap,
-                                      'market_type': market_name
+                                      'market_type': market_name,
+                                      'lastPrice': stock.get('lastPrice')
                                   })
                               except (ValueError, TypeError) as e:
                                   logger.warning(f"종목({stock.get('code', 'unknown')}) 처리 중 오류: {e}")
@@ -198,7 +201,7 @@ class KiwoomAPI:
                           
                           # 시장별로 저장 - 종목 코드와 시장 유형 함께 저장
                           filtered_stocks[market_name] = [
-                              {'code': stock['code'], 'market_type': market_name}
+                              {'code': stock['code'], 'market_type': market_name, 'lastPrice': stock['lastPrice']}
                               for stock in selected_stocks
                           ]
                           
@@ -227,6 +230,8 @@ class KiwoomAPI:
             # 세션 확인
             if not self.session:
                 self.session = aiohttp.ClientSession()
+
+            self.kiwoom_token = await self.kiwoom_auth.get_access_token()
                 
             # 키움 API 요청 헤더 구성
             headers = {
@@ -251,7 +256,7 @@ class KiwoomAPI:
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    
+
                     # 응답 데이터 처리
                     top_stocks = []
                     
@@ -292,7 +297,7 @@ class KiwoomAPI:
         all_top.sort(key=lambda x: x.get("trading_amount", 0), reverse=True)
         
         # 상위 limit개만 선택
-        return all_top[:limit]
+        return all_top
             
     async def initialize_chart_data(self, symbols, from_date=None, period=90):
         """여러 종목의 차트 데이터를 한 번에 초기화하고 캐싱"""
@@ -472,7 +477,6 @@ class KiwoomAPI:
             return []
     
     async def initialize_minute_chart_data(self, symbols: List[str], time_interval: int = 5):
-
         logger.info(f"{len(symbols)}개 종목의 {time_interval}분봉 데이터 초기화 시작")
         
         success_count = 0

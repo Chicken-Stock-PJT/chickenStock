@@ -4,6 +4,8 @@ from typing import Dict, List, Any
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+from app.auth.token_manager import TokenManager
+from app.api.kiwoom_api import KiwoomAPI
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,8 @@ class ShortTermTradingModel:
         self.stock_cache = stock_cache
         self.backend_client = backend_client
         self.is_running = False
+        self.token_manager = TokenManager()
+        self.kiwoom_api = KiwoomAPI(self.token_manager)
         
         # 매매 관련 설정
         self.max_positions = 5  # 최대 보유 종목 수
@@ -66,7 +70,7 @@ class ShortTermTradingModel:
         # 거래 대금 상위 종목 캐시
         self.top_trading_amount_stocks = []  # 거래 대금 상위 종목 리스트
         self.last_top_amount_update = datetime.min  # 마지막 업데이트 시간
-        self.top_amount_update_interval = 300  # 업데이트 간격 (초)
+        self.top_amount_update_interval = 3600  # 업데이트 간격 (초) - 1시간으로 변경
         
         # 교차 검증된 매매 대상 종목 리스트
         self.potential_targets = []  # 실제 매매 대상 후보 종목
@@ -90,14 +94,41 @@ class ShortTermTradingModel:
                 self.update_account_info(account_info)
                 logger.info("계좌 정보 초기 동기화 완료")
         
+        # 서버 시작 시 초기 데이터 로드 - 추가된 부분
+        await self.initial_data_load()
+        
         # 매매 신호 모니터링 시작
         asyncio.create_task(self.monitor_signals())
         
         # 거래대금 상위 종목 모니터링 시작
         asyncio.create_task(self.monitor_top_volume_stocks())
         
-        # 거래 대금 상위 종목 모니터링 시작 (새로 추가)
+        # 거래 대금 상위 종목 모니터링 시작 (1시간 주기로 변경)
         asyncio.create_task(self.monitor_top_trading_amount_stocks())
+    
+    async def initial_data_load(self):
+        """서버 시작 시 초기 데이터 로드 - 새로 추가된 메서드"""
+        logger.info("서버 시작 시 초기 데이터 로드 시작")
+        
+        try:
+            # 거래 대금 상위 종목 초기 로드
+            if self.kiwoom_api and hasattr(self.kiwoom_api, "get_all_top_trading_amount"):
+                top_stocks = await self.kiwoom_api.get_all_top_trading_amount(limit=100)
+                
+                if top_stocks and len(top_stocks) > 0:
+                    self.top_trading_amount_stocks = top_stocks
+                    self.last_top_amount_update = datetime.now()
+                    
+                    # 교차 검증 실행
+                    await self.cross_verify_target_stocks()
+                    
+                    logger.info(f"초기 거래 대금 상위 종목 로드 완료: {len(top_stocks)}개")
+                    logger.info(f"초기 교차 검증된 매매 대상 종목: {len(self.potential_targets)}개")
+            
+            # 필요한 경우 여기에 추가 초기 데이터 로드 코드 추가
+            
+        except Exception as e:
+            logger.error(f"초기 데이터 로드 중 오류: {str(e)}", exc_info=True)
     
     async def stop(self):
         """트레이딩 모델 중지"""
@@ -141,18 +172,18 @@ class ShortTermTradingModel:
             return refreshed_count
     
     async def monitor_top_trading_amount_stocks(self):
-        """거래 대금 상위 종목 모니터링 (새로 추가된 메서드)"""
-        logger.info("거래 대금 상위 종목 모니터링 시작")
+        """거래 대금 상위 종목 모니터링 (1시간 주기로 변경)"""
+        logger.info("거래 대금 상위 종목 모니터링 시작 (1시간 주기)")
         
         while self.is_running:
             try:
                 now = datetime.now()
                 
-                # 업데이트 필요 여부 확인 (5분 간격)
+                # 업데이트 필요 여부 확인 (1시간 간격으로 변경)
                 if (now - self.last_top_amount_update).total_seconds() >= self.top_amount_update_interval:
                     # 거래 대금 상위 종목 가져오기
-                    if self.backend_client and hasattr(self.backend_client, "get_all_top_trading_amount"):
-                        top_stocks = await self.backend_client.get_all_top_trading_amount(limit=100)
+                    if self.kiwoom_api and hasattr(self.kiwoom_api, "get_all_top_trading_amount"):
+                        top_stocks = await self.kiwoom_api.get_all_top_trading_amount(limit=100)
                         
                         if top_stocks and len(top_stocks) > 0:
                             self.top_trading_amount_stocks = top_stocks
@@ -164,58 +195,64 @@ class ShortTermTradingModel:
                             logger.info(f"거래 대금 상위 종목 업데이트 완료: {len(top_stocks)}개")
                             logger.info(f"교차 검증된 매매 대상 종목: {len(self.potential_targets)}개")
                 
-                # 1분 단위로 체크
-                await asyncio.sleep(60)
+                # 10분 단위로 체크 (1시간마다 업데이트하므로 자주 확인할 필요 없음)
+                await asyncio.sleep(600)
                 
             except Exception as e:
                 logger.error(f"거래 대금 상위 종목 모니터링 중 오류: {str(e)}", exc_info=True)
-                await asyncio.sleep(60)
+                await asyncio.sleep(600)  # 오류 시 10분 후 재시도
     
     async def cross_verify_target_stocks(self):
-        try:
-            # 1. 필터링된 종목 목록 가져오기 (코스피 450, 코스닥 150)
-            filtered_stocks = self.get_filtered_stocks()
-            filtered_set = set(filtered_stocks)
-            
-            if not filtered_stocks:
-                logger.warning("필터링된 종목 목록을 가져올 수 없습니다.")
-                return
-                
-            # 2. 거래 대금 상위 종목 중 필터링된 종목에 포함된 것만 선택
-            verified_targets = {}
-            potential_targets = []
-            
-            for rank, stock in enumerate(self.top_trading_amount_stocks, 1):
-                symbol = stock.get("code", "")
-                if symbol in filtered_set:
-                    # 교차 검증 통과한 종목 추가
-                    potential_targets.append(symbol)
-                    verified_targets[symbol] = {
-                        "rank": rank,  # 순위
-                        "trading_amount": stock.get("trading_amount", 0),  # 거래대금
-                        "price": stock.get("price", 0),  # 현재가
-                        "change_rate": stock.get("change_rate", 0),  # 등락률
-                        "market_type": stock.get("market_type", "")  # 시장 구분
-                    }
-            
-            # 3. 결과 저장
-            self.potential_targets = potential_targets
-            self.verified_targets = verified_targets
-            
-            logger.info(f"교차 검증 완료: 거래 대금 상위 {len(self.top_trading_amount_stocks)}개 종목 중 " 
-                      f"필터링된 종목({len(filtered_stocks)}개)과 교차 검증 결과 {len(potential_targets)}개 선택")
-            
-            return potential_targets
-            
-        except Exception as e:
-            logger.error(f"종목 교차 검증 중 오류: {str(e)}", exc_info=True)
-            return []
+      try:
+          # 1. 필터링된 종목 목록 가져오기 (코스피 450, 코스닥 150)
+          filtered_stocks = self.get_filtered_stocks()
+          filtered_set = set(filtered_stocks)
+          
+          if not filtered_stocks:
+              logger.warning("필터링된 종목 목록을 가져올 수 없습니다.")
+              return
+                  
+          # 2. 거래 대금 상위 종목 중 필터링된 종목에 포함된 것만 선택
+          verified_targets = {}
+          potential_targets = []
+          
+          for rank, stock in enumerate(self.top_trading_amount_stocks, 1):
+              symbol = stock.get("code", "")
+              
+              # '_AL' 접미사가 있으면 제거
+              if symbol.endswith('_AL'):
+                  symbol = symbol[:-3]  # 마지막 3글자('_AL') 제거
+              
+              # 필터링된 종목 집합에 있는지 확인
+              if symbol in filtered_set:
+                  # 교차 검증 통과한 종목 추가
+                  potential_targets.append(symbol)
+                  verified_targets[symbol] = {
+                      "rank": rank,  # 순위
+                      "trading_amount": stock.get("trading_amount", 0),  # 거래대금
+                      "price": stock.get("price", 0),  # 현재가
+                      "change_rate": stock.get("change_rate", 0),  # 등락률
+                      "market_type": stock.get("market_type", "")  # 시장 구분
+                  }
+          
+          # 3. 결과 저장
+          self.potential_targets = potential_targets
+          self.verified_targets = verified_targets
+          
+          logger.info(f"교차 검증 완료: 거래 대금 상위 {len(self.top_trading_amount_stocks)}개 종목 중 " 
+                    f"필터링된 종목({len(filtered_stocks)}개)과 교차 검증 결과 {len(potential_targets)}개 선택")
+          
+          return potential_targets
+              
+      except Exception as e:
+          logger.error(f"종목 교차 검증 중 오류: {str(e)}", exc_info=True)
+          return []
     
     async def get_cross_verified_target_stocks(self, limit=30):
         # 현재 시간 확인
         now = datetime.now()
         
-        # 마지막 업데이트로부터 5분 이상 지났으면 재검증
+        # 마지막 업데이트로부터 1시간 이상 지났으면 재검증
         if (now - self.last_top_amount_update).total_seconds() >= self.top_amount_update_interval:
             await self.cross_verify_target_stocks()
         
@@ -831,3 +868,221 @@ class ShortTermTradingModel:
         except Exception as e:
             logger.error(f"계좌 정보 업데이트 중 오류: {str(e)}")
             return False
+        
+    def _should_process_price_update(self, symbol: str, price: float) -> bool:
+      """중복 메시지 필터링 - 최소 가격 변동 비율 또는 최소 처리 간격 이내면 처리하지 않음"""
+      now = datetime.now()
+      
+      # 이전 처리 가격 및 시간 가져오기
+      last_price = self.last_processed_prices.get(symbol, 0)
+      last_time = self.last_processed_times.get(symbol, datetime.min)
+      
+      # 최소 처리 간격 확인 (초 단위)
+      if (now - last_time).total_seconds() < self.min_process_interval:
+          return False
+      
+      # 최소 가격 변동 비율 확인 (백분율)
+      if last_price > 0:
+          price_change_pct = abs(price - last_price) / last_price * 100
+          if price_change_pct < self.min_price_change_pct:
+              return False
+      
+      # 처리 가격 및 시간 업데이트
+      self.last_processed_prices[symbol] = price
+      self.last_processed_times[symbol] = now
+      
+      return True
+
+    def set_backend_client(self, backend_client):
+        """백엔드 클라이언트 설정"""
+        self.backend_client = backend_client
+        logger.info("단타 매매 모델 백엔드 클라이언트 설정 완료")
+
+    def _check_volume_surge(self, candle_data):
+      """거래량 급증 확인"""
+      try:
+          if not candle_data or len(candle_data) < 5:
+              return False, None
+          
+          # 캔들 데이터 형식 확인 및 변환
+          recent_candles = candle_data[:5]  # 최근 5개 캔들
+          previous_candles = candle_data[5:15]  # 이전 10개 캔들 (평균 계산용)
+          
+          # 거래량 데이터 추출 (데이터 형식에 따라 처리)
+          recent_volumes = []
+          for candle in recent_candles:
+              if isinstance(candle, dict) and 'volume' in candle:
+                  recent_volumes.append(candle['volume'])
+              elif isinstance(candle, list) and len(candle) > 5:
+                  recent_volumes.append(candle[5])  # 거래량 인덱스
+          
+          previous_volumes = []
+          for candle in previous_candles:
+              if isinstance(candle, dict) and 'volume' in candle:
+                  previous_volumes.append(candle['volume'])
+              elif isinstance(candle, list) and len(candle) > 5:
+                  previous_volumes.append(candle[5])  # 거래량 인덱스
+          
+          # 이전 10개 캔들의 평균 거래량 계산
+          if not previous_volumes:
+              return False, None
+          
+          avg_volume = sum(previous_volumes) / len(previous_volumes)
+          
+          # 최근 5개 캔들 중 급증 여부 확인
+          for i, volume in enumerate(recent_volumes):
+              # 최소 5배 이상 급증
+              if volume > avg_volume * 5:
+                  # 가격 상승 확인
+                  candle = recent_candles[i]
+                  open_price = 0
+                  close_price = 0
+                  
+                  if isinstance(candle, dict):
+                      open_price = float(candle.get('open', 0))
+                      close_price = float(candle.get('close', 0))
+                  elif isinstance(candle, list) and len(candle) > 4:
+                      open_price = float(candle[1])  # open 인덱스
+                      close_price = float(candle[4])  # close 인덱스
+                  
+                  # 가격 상승 여부 확인
+                  if close_price > open_price:
+                      price_increase_pct = ((close_price / open_price) - 1) * 100
+                      # 최소 1% 이상 상승했는지 확인
+                      if price_increase_pct >= 1.0:
+                          return True, candle
+          
+          return False, None
+      except Exception as e:
+          logger.error(f"거래량 급증 확인 중 오류: {str(e)}")
+          return False, None
+
+    def _check_pullback_pattern(self, candle_data, surge_candle):
+      """눌림목 패턴 확인"""
+      try:
+          if not candle_data or len(candle_data) < 3 or not surge_candle:
+              return False
+          
+          # 급등 캔들 이후의 캔들 추출
+          surge_index = -1
+          for i, candle in enumerate(candle_data):
+              if candle == surge_candle:
+                  surge_index = i
+                  break
+          
+          if surge_index < 0 or surge_index >= len(candle_data) - 1:
+              return False
+          
+          # 급등 캔들의 정보
+          surge_high = 0
+          surge_close = 0
+          
+          if isinstance(surge_candle, dict):
+              surge_high = float(surge_candle.get('high', 0))
+              surge_close = float(surge_candle.get('close', 0))
+          elif isinstance(surge_candle, list) and len(surge_candle) > 4:
+              surge_high = float(surge_candle[2])  # high 인덱스
+              surge_close = float(surge_candle[4])  # close 인덱스
+          
+          # 이후 캔들들의 정보
+          after_candles = candle_data[surge_index + 1:surge_index + 3]  # 2개 캔들 확인
+          
+          lowest_after = float('inf')
+          for candle in after_candles:
+              low_price = 0
+              
+              if isinstance(candle, dict):
+                  low_price = float(candle.get('low', 0))
+              elif isinstance(candle, list) and len(candle) > 3:
+                  low_price = float(candle[3])  # low 인덱스
+              
+              lowest_after = min(lowest_after, low_price)
+          
+          # 눌림목 패턴: 이후 캔들에서 최저가가 급등 캔들의 고가보다 낮고, 
+          # 급등 캔들 종가의 0.5%~3% 이내로 내려왔는지 확인
+          if lowest_after < surge_high:
+              price_decrease_pct = ((surge_close - lowest_after) / surge_close) * 100
+              return 0.5 <= price_decrease_pct <= 3.0
+          
+          return False
+      except Exception as e:
+          logger.error(f"눌림목 패턴 확인 중 오류: {str(e)}")
+          return False
+
+    def _check_ichimoku_baseline(self, candle_data, current_price):
+      """일목균형표 기준선 확인"""
+      try:
+          if not candle_data or len(candle_data) < 26:
+              return False
+          
+          # 26일 기준선 계산 데이터 추출
+          period_candles = candle_data[:26]
+          
+          # 고가와 저가 추출
+          highs = []
+          lows = []
+          
+          for candle in period_candles:
+              high_price = 0
+              low_price = 0
+              
+              if isinstance(candle, dict):
+                  high_price = float(candle.get('high', 0))
+                  low_price = float(candle.get('low', 0))
+              elif isinstance(candle, list) and len(candle) > 3:
+                  high_price = float(candle[2])  # high 인덱스
+                  low_price = float(candle[3])  # low 인덱스
+              
+              highs.append(high_price)
+              lows.append(low_price)
+          
+          # 기준선 계산 (26일 고가와 저가의 평균)
+          highest = max(highs)
+          lowest = min(lows)
+          
+          kijun_sen = (highest + lowest) / 2
+          
+          # 현재가가 기준선 근처인지 확인 (±0.5%)
+          price_diff_pct = abs((current_price - kijun_sen) / kijun_sen) * 100
+          
+          return price_diff_pct <= 0.5
+      except Exception as e:
+          logger.error(f"일목균형표 기준선 확인 중 오류: {str(e)}")
+          return False
+
+    def _check_take_profit(self, candle_data, current_price, avg_price):
+      """이익 실현 조건 확인"""
+      try:
+          if not candle_data or len(candle_data) < 5 or avg_price <= 0:
+              return False
+          
+          # 수익률 계산
+          profit_pct = ((current_price / avg_price) - 1) * 100
+          
+          # 최소 5% 이상 수익 발생 확인
+          if profit_pct < 5.0:
+              return False
+          
+          # 최근 고점 확인
+          recent_candles = candle_data[:5]
+          highest = 0
+          
+          for candle in recent_candles:
+              high_price = 0
+              
+              if isinstance(candle, dict):
+                  high_price = float(candle.get('high', 0))
+              elif isinstance(candle, list) and len(candle) > 2:
+                  high_price = float(candle[2])  # high 인덱스
+              
+              highest = max(highest, high_price)
+          
+          # 고점에서 2% 이상 하락 확인
+          if highest > current_price:
+              drop_pct = ((highest - current_price) / highest) * 100
+              return drop_pct >= 2.0
+          
+          return False
+      except Exception as e:
+          logger.error(f"이익 실현 조건 확인 중 오류: {str(e)}")
+          return False
