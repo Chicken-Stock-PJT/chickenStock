@@ -926,8 +926,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
             // 이미 초기화를 한 경우 예외 발생
-            if (member.isMoneyInitialized()) {
-                throw new CustomException(MemberErrorCode.MONEY_ALREADY_INITIALIZED);
+            if (!List.of(1L, 2L, 3L, 4L).contains(member.getMemberId())) { // BOT일 경우 초기화 무제한
+                if (member.isMoneyInitialized()) {
+                    throw new CustomException(MemberErrorCode.MONEY_ALREADY_INITIALIZED);
+                }
             }
 
             // 1. 모든 엔티티를 JPQL을 사용하여 직접 삭제 (순서 중요: 외래 키 제약조건 고려)
