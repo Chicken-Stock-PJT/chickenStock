@@ -1,11 +1,7 @@
 import PortfolioChart from "./ui/PortfolioChart";
-import HoldingsList from "./ui/HoldingsList";
-import PortfolioOverview from "./ui/PortfolioOverview";
-import { useGetPortfolio } from "./model/queries";
-import {
-  PortfolioResponse,
-  // PortfolioSocketResponse
-} from "./model/types";
+import HoldingsList from "../dashboard/ui/HoldingsList";
+import PortfolioOverview from "../dashboard/PortfolioOverview";
+import { useMemberDashboardQuery } from "./model/queries";
 // import { useEffect } from "react";
 // import { useAuthStore } from "@/shared/store/auth";
 
@@ -56,13 +52,12 @@ const Portfolio = () => {
   //   };
   // }, []);
 
-  const { data, isLoading, error, refetch } = useGetPortfolio();
+  const { data, isLoading, error, refetch } = useMemberDashboardQuery();
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error: {error.message}</div>;
 
-  const portfolio = data as PortfolioResponse;
-  const sectors = portfolio.positions.length;
+  const portfolio = data!;
 
   return (
     <div className="space-y-6 text-left">
@@ -70,20 +65,22 @@ const Portfolio = () => {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <PortfolioChart
           memberMoney={portfolio.memberMoney}
-          positions={portfolio.positions}
-          totalValuation={portfolio.totalValuation}
+          holdings={portfolio.holdings}
+          stockValuation={portfolio.stockValuation}
         />
         <PortfolioOverview
           totalAsset={portfolio.totalAsset}
           memberMoney={portfolio.memberMoney}
           totalProfitLoss={portfolio.totalProfitLoss}
           totalReturnRate={portfolio.totalReturnRate}
-          sectors={sectors}
+          todayProfitLoss={portfolio.todayProfitLoss}
+          todayReturnRate={portfolio.todayReturnRate}
+          sectors={portfolio.holdingStockCount}
         />
       </div>
       <div>
         <HoldingsList
-          holdings={portfolio.positions}
+          holdings={portfolio.holdings}
           onClick={() => void refetch()}
           isLoading={isLoading}
         />

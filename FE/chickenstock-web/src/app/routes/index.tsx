@@ -4,7 +4,7 @@ import HomePage from "@/pages/HomePage";
 import Layout from "../Layout";
 import StockPage from "@/pages/StockPage";
 import StockList from "@/pages/StockList";
-import Profile from "@/features/mypage/Profile";
+import Profile from "@/features/mypage/ProfileLayout";
 import MyPage from "@/pages/mypage";
 import ProfileEdit from "@/features/mypage/ProfileEdit";
 import Portfolio from "@/features/mypage/Portfolio";
@@ -16,6 +16,7 @@ import LoginPage from "@/pages/LoginPage";
 import LoginRedirect from "@/pages/LoginRedirect";
 import FindPasswordPage from "@/pages/FindPasswordPage";
 import ProtectedRoute from "./ProtectedRoute";
+import AiBotPage from "@/pages/AiBotPage";
 
 const router = createBrowserRouter([
   {
@@ -105,6 +106,10 @@ const router = createBrowserRouter([
             element: <StockPage />,
           },
         ],
+      },
+      {
+        path: "ai-bot",
+        element: <AiBotPage />,
       },
     ],
   },

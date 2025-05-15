@@ -1,12 +1,25 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
-import { useGetTransactions } from "../model/queries";
-import { TradeHistory } from "@/features/mypage/model/types";
+import { TradeHistory, TransactionResponse } from "@/features/mypage/model/types";
 import { useEffect, useRef } from "react";
+import { InfiniteData } from "@tanstack/react-query";
 
-const TransactionsList = () => {
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useGetTransactions();
+interface TransactionsListProps {
+  data: InfiniteData<TransactionResponse>;
+  isLoading: boolean;
+  error: Error | null;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+}
 
+const TransactionsList = ({
+  data,
+  isLoading,
+  error,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
+}: TransactionsListProps) => {
   // 무한 스크롤 state
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);

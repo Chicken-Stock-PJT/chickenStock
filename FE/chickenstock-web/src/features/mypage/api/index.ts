@@ -18,6 +18,7 @@ import axios, { AxiosError } from "axios";
 import { toast } from "@/shared/libs/hooks/use-toast";
 import { useAuthStore } from "@/shared/store/auth";
 import { InitializeMoneyResponse } from "../model/types";
+import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 
 export const getUserInfo = async () => {
   const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
@@ -138,5 +139,10 @@ export const cancelOrder = async (request: CancelOrderRequest): Promise<CancelOr
 
 export const initializeMoney = async (): Promise<InitializeMoneyResponse> => {
   const response = await apiClient.post<InitializeMoneyResponse>("/members/initialize-money");
+  return response.data;
+};
+
+export const getMemberDashboard = async (): Promise<MemberDashboardResponse> => {
+  const response = await apiClient.get<MemberDashboardResponse>("/members/dashboard");
   return response.data;
 };
