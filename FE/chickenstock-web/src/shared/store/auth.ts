@@ -82,14 +82,23 @@ export const useAuthStore = create<AuthState>()(
         },
         logout: async () => {
           useWatchlistStore.getState().setWatchlist([]);
-          const res = await apiClient.post(`${baseURL}/auth/logout`, {}, { withCredentials: true });
-          console.log("logout", res);
-          set({
-            accessToken: null,
-            isLoggedIn: false,
-            simpleProfile: null,
-          });
-          void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
+          try {
+            const res = await apiClient.post(
+              `${baseURL}/auth/logout`,
+              {},
+              { withCredentials: true },
+            );
+            console.log("logout", res);
+          } catch (error) {
+            console.log("logout 실패", error);
+          } finally {
+            set({
+              accessToken: null,
+              isLoggedIn: false,
+              simpleProfile: null,
+            });
+            void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
+          }
         },
       }),
       {
