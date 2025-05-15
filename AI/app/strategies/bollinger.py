@@ -16,7 +16,6 @@ class BollingerBandTradingModel(BaseTradingModel):
         # 매매 관련 설정
         self.max_positions = 15  # 최대 보유 종목 수 (Envelope 모델보다 적게 설정)
         self.trade_amount_per_stock = 6000000  # 종목당 매매 금액 (600만원)
-        self.min_holding_period = 1  # 최소 보유 기간 (일)
         
         # 볼린저 밴드 설정 (StockCache와 동일하게 유지)
         self.bb_period = 26  # 기간 (26일)
@@ -118,12 +117,7 @@ class BollingerBandTradingModel(BaseTradingModel):
             last_trade = self.trade_history.get(symbol, {})
             last_action = last_trade.get("last_action", "")
             last_trade_time = last_trade.get("last_trade", None)
-            
-            # 마지막 거래 이후 최소 보유 기간(일)이 지났는지 확인
-            min_holding_passed = True
-            if last_trade_time:
-                seconds_passed = (now - last_trade_time).total_seconds()
-                min_holding_passed = seconds_passed >= (self.min_holding_period * 86400)
+
             
             # 계좌 정보에서 보유 종목 확인 - 독립적인 positions 사용
             is_holding = symbol in self.positions
@@ -132,7 +126,7 @@ class BollingerBandTradingModel(BaseTradingModel):
             # 1. 매수 신호: %B가 0.1 이하 (하단 밴드 아래거나 근처)
             if percent_b <= 0.1 and not is_holding:
                 # 이미 매수한 종목이면 신호 무시
-                if last_action == "buy" and not min_holding_passed:
+                if last_action == "buy":
                     logger.debug(f"이미 매수한 종목: {symbol}, 신호 무시")
                     return
                 
@@ -152,7 +146,7 @@ class BollingerBandTradingModel(BaseTradingModel):
             # 2. 매도 신호: %B가 0.9 이상 (상단 밴드 위거나 근처)
             elif percent_b >= 0.9 and is_holding:
                 # 이미 매도한 종목이면 신호 무시
-                if last_action == "sell" and not min_holding_passed:
+                if last_action == "sell":
                     logger.debug(f"이미 매도한 종목: {symbol}, 신호 무시")
                     return
                 
