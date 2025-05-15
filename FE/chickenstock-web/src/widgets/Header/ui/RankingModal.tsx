@@ -31,7 +31,7 @@ const RankingModal = ({ open, onOpenChange }: RankingModalProps) => {
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="max-w-md">
+      <ModalContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <ModalHeader>
           <ModalTitle className="flex items-center gap-2">
             <div className="size-2 text-yellow-500" />

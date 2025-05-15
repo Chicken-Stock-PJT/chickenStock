@@ -12,11 +12,33 @@ import { Link } from "react-router-dom";
 import { SIDEBAR_CONFIG } from "@/widgets/sidebar/model/config";
 import { useAuthStore } from "@/shared/store/auth";
 import { LogOut } from "lucide-react";
+import { LogoutModal } from "./ui/LogoutModal";
 
 const HeaderDropdown = ({ nickname }: { nickname: string }) => {
   const [open, setOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const dropdownMenu = SIDEBAR_CONFIG;
   const logout = useAuthStore((state) => state.logout);
+
+  const handleLogoutClick = () => {
+    setOpen(false);
+    setShowLogoutModal(true);
+  };
+
+  const handleLogoutConfirm = () => {
+    // 비동기 함수를 래핑해서 void 반환
+    const doLogout = async () => {
+      await logout();
+      setShowLogoutModal(false);
+      window.location.reload();
+    };
+
+    void doLogout();
+  };
+
+  const handleLogoutCancel = () => {
+    setShowLogoutModal(false);
+  };
 
   return (
     <div>
@@ -44,10 +66,7 @@ const HeaderDropdown = ({ nickname }: { nickname: string }) => {
           ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={() => {
-              void logout();
-              setOpen(false);
-            }}
+            onClick={handleLogoutClick}
             className="cursor-pointer hover:text-primary-400"
           >
             <LogOut className="size-4" />
@@ -55,6 +74,13 @@ const HeaderDropdown = ({ nickname }: { nickname: string }) => {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* 로그아웃 확인 모달 */}
+      <LogoutModal
+        show={showLogoutModal}
+        onConfirm={handleLogoutConfirm}
+        onCancel={handleLogoutCancel}
+      />
     </div>
   );
 };
