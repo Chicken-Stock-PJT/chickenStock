@@ -27,7 +27,16 @@ public enum StockErrorCode implements ErrorCode {
     INVALID_ORDER_OPERATION(HttpStatus.BAD_REQUEST, "STOCK-E017", "유효하지 않은 주문 처리입니다"),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "STOCK-E018", "유효하지 않은 요청입니다."),
     POSITION_UPDATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E019", "포지션 업데이트에 실패했습니다"),
-    OPERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E020", "관심종목 삭제 중 오류가 발생했습니다");
+    OPERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E020", "관심종목 삭제 중 오류가 발생했습니다"),
+    INVALID_PRICE(HttpStatus.BAD_REQUEST, "STOCK-E021", "유효하지 않은 가격입니다"),
+    INVALID_QUANTITY(HttpStatus.BAD_REQUEST, "STOCK-E022", "유효하지 않은 수량입니다"),
+    TRADE_PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E023", "거래 처리 중 오류가 발생했습니다"),
+    INSUFFICIENT_FUNDS(HttpStatus.BAD_REQUEST, "STOCK-E024", "잔액이 부족합니다"),
+    NO_HOLDING_POSITION(HttpStatus.NOT_FOUND, "STOCK-E025", "보유하지 않은 종목입니다"),
+    INSUFFICIENT_STOCK_QUANTITY(HttpStatus.BAD_REQUEST, "STOCK-E026", "보유 수량이 부족합니다"),
+    UNAUTHORIZED_ORDER_ACCESS(HttpStatus.FORBIDDEN, "STOCK-E027", "해당 주문에 접근 권한이 없습니다"),
+    ORDER_NOT_CANCELABLE(HttpStatus.BAD_REQUEST, "STOCK-E028", "취소할 수 없는 주문입니다"),
+    ORDER_INQUIRY_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E029", "주문 조회 중 오류가 발생했습니다");
 
     private final HttpStatus httpStatus;
     private final String code;
