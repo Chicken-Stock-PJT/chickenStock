@@ -4,6 +4,7 @@ import apiClient from "@/shared/api/axios";
 import { AuthState, SimpleProfile } from "@/shared/store/types";
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
+import { queryClient } from "../api/queryClient";
 
 const baseURL = import.meta.env.VITE_BASE_URL;
 
@@ -37,11 +38,13 @@ export const useAuthStore = create<AuthState>()(
             return response;
           } catch (error) {
             if (error instanceof Error) {
-              alert(`프로필 정보 조회 실패 ${error.message}`);
+              console.log(`프로필 정보 조회 실패 ${error.message}`);
             } else {
-              alert("프로필 정보 조회 실패");
+              console.log("프로필 정보 조회 실패");
             }
             set({ simpleProfile: null });
+            void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
+            window.location.href = "/login";
             throw error;
           }
         },
@@ -81,13 +84,23 @@ export const useAuthStore = create<AuthState>()(
         },
         logout: async () => {
           useWatchlistStore.getState().setWatchlist([]);
-          const res = await apiClient.post(`${baseURL}/auth/logout`, {}, { withCredentials: true });
-          console.log("logout", res);
-          set({
-            accessToken: null,
-            isLoggedIn: false,
-            simpleProfile: null,
-          });
+          try {
+            const res = await apiClient.post(
+              `${baseURL}/auth/logout`,
+              {},
+              { withCredentials: true },
+            );
+            console.log("logout", res);
+          } catch (error) {
+            console.log("logout 실패", error);
+          } finally {
+            set({
+              accessToken: null,
+              isLoggedIn: false,
+              simpleProfile: null,
+            });
+            void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
+          }
         },
       }),
       {
