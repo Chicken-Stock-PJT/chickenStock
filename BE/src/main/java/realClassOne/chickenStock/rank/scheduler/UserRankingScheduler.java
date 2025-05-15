@@ -69,15 +69,12 @@ public class UserRankingScheduler {
                 }
             }
         }
-
-
         for (Member member : members) {
             List<HoldingPosition> holdings = holdingPositionRepository.findByMember(member);
-
             long totalAsset = member.getMemberMoney();
             for (HoldingPosition holding : holdings) {
                 String code = holding.getStockData().getShortCode();
-                JsonNode stockInfo = priceMap.get(code);
+                JsonNode stockInfo = priceMap.get(code + "_AL"); // _AL 붙여주기
                 long price = 0L;
                 if (stockInfo != null && stockInfo.has("cur_prc")) {
                     price = Long.parseLong(stockInfo.get("cur_prc").asText());
