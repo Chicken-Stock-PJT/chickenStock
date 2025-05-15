@@ -60,6 +60,9 @@ public class KiwoomWebSocketClient {
     // 재연결 시도 카운터
     private int reconnectAttempts = 0;
 
+    // 완전 재연결 시도 카운터 추가
+    private int fullReconnectAttempts = 0;
+
     // API 호출 타임아웃 설정
     private static final int API_TIMEOUT_SECONDS = 10;
 
@@ -73,6 +76,279 @@ public class KiwoomWebSocketClient {
         void onStockBidAskUpdate(String stockCode, JsonNode data);
     }
 
+    @PostConstruct
+    public void init() {
+        connect();
+
+        // 메시지 처리 스레드 시작
+        startMessageProcessingThread();
+
+        // 주기적인 연결 상태 확인 스케줄링
+        scheduler.scheduleAtFixedRate(this::checkConnectionStatus, 30, 30, TimeUnit.SECONDS);
+
+        // 주기적인 토큰 갱신 스케줄링
+        scheduler.scheduleAtFixedRate(this::refreshTokenIfNeeded, 1, 1, TimeUnit.HOURS);
+    }
+
+    // 연결 상태 확인 및 필요시 재연결
+    private void checkConnectionStatus() {
+        if (!isConnected() && !reconnecting.get()) {
+            log.warn("연결 상태 확인: 연결이 끊어져 있음, 재연결 시도");
+            reconnect();
+        }
+    }
+
+    // 지수 백오프 방식의 재연결 메서드 - 수정됨
+    private void reconnect() {
+        if (reconnecting.compareAndSet(false, true)) {
+            try {
+                if (client != null) {
+                    try {
+                        client.close();
+                    } catch (Exception e) {
+                        log.warn("WebSocket 닫기 중 오류 발생", e);
+                    }
+                }
+
+                connected.set(false);
+
+                // 재연결 시도가 2번을 초과하면 완전 재연결 수행
+                if (reconnectAttempts >= 2) {
+                    log.warn("재연결 {}번 실패, 완전 재연결 시작", reconnectAttempts);
+                    performFullReconnection();
+                    return;
+                }
+
+                // 일반 재연결 시도
+                int delay = Math.min(60, (int) Math.pow(2, reconnectAttempts));
+                reconnectAttempts++;
+
+                log.info("키움증권 WebSocket {}초 후 재연결 시도 (시도 횟수: {})", delay, reconnectAttempts);
+
+                // 별도 스레드에서 지연 후 재연결
+                scheduler.schedule(() -> {
+                    try {
+                        log.info("재연결 시도 중...");
+                        connect();
+                    } finally {
+                        reconnecting.set(false);
+                    }
+                }, delay, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.error("재연결 스케줄링 중 오류 발생", e);
+                reconnecting.set(false);
+            }
+        }
+    }
+
+    // 완전 재연결 메서드 - 새로 추가
+    private void performFullReconnection() {
+        try {
+            log.info("완전 재연결 시작: 토큰 재발급부터 시작");
+
+            // 1. 메시지 큐 초기화
+            messageQueue.clear();
+
+            // 2. 토큰 재발급
+            try {
+                log.info("새로운 토큰 발급 시도");
+                authService.fetchNewAccessToken();
+                log.info("새로운 토큰 발급 성공");
+            } catch (Exception e) {
+                log.error("토큰 재발급 실패", e);
+                scheduleNextFullReconnectAttempt();
+                return;
+            }
+
+            // 3. 웹소켓 클라이언트 완전히 재생성
+            createNewWebSocketClient();
+
+            // 4. 재연결 카운터 리셋
+            reconnectAttempts = 0;
+            fullReconnectAttempts++;
+
+            log.info("완전 재연결 성공 (시도 횟수: {})", fullReconnectAttempts);
+
+        } catch (Exception e) {
+            log.error("완전 재연결 중 오류 발생", e);
+            scheduleNextFullReconnectAttempt();
+        } finally {
+            reconnecting.set(false);
+        }
+    }
+
+    // 다음 완전 재연결 시도 스케줄링
+    private void scheduleNextFullReconnectAttempt() {
+        int delay = Math.min(120, 30 * (fullReconnectAttempts + 1)); // 최대 2분까지 대기
+        log.info("{}초 후 다시 완전 재연결 시도 예정", delay);
+
+        scheduler.schedule(() -> {
+            if (!isConnected()) {
+                performFullReconnection();
+            }
+        }, delay, TimeUnit.SECONDS);
+    }
+
+    // 새로운 웹소켓 클라이언트 생성 메서드
+    private void createNewWebSocketClient() {
+        try {
+            log.info("새로운 WebSocket 클라이언트 생성 시작");
+
+            client = new WebSocketClient(new URI(websocketUrl)) {
+                @Override
+                public void onOpen(ServerHandshake handshake) {
+                    log.info("키움증권 WebSocket 서버 연결 성공 (완전 재연결)");
+                    connected.set(true);
+                    reconnectAttempts = 0;
+                    fullReconnectAttempts = 0;
+                    login();
+                }
+
+                @Override
+                public void onMessage(String message) {
+                    try {
+                        JsonNode response = objectMapper.readTree(message);
+                        String trnm = response.has("trnm") ? response.get("trnm").asText() : "";
+
+                        if ("LOGIN".equals(trnm)) {
+                            if ("0".equals(response.get("return_code").asText())) {
+                                log.info("키움증권 WebSocket 로그인 성공 (완전 재연결)");
+
+//                                // 로그인 성공 후 기존 구독된 종목 재등록
+//                                if (!subscribedStockCodes.isEmpty()) {
+//                                    reregisterAllStocks();
+//                                }
+                            } else {
+                                log.error("키움증권 WebSocket 로그인 실패: {}", response.get("return_msg").asText());
+                                reconnect();
+                            }
+                        } else if ("PING".equals(trnm)) {
+                            // PING 메시지에 그대로 응답
+                            messageQueue.offer(message);
+                        } else if ("REAL".equals(trnm)) {
+                            processRealTimeData(response);
+                        }
+
+                        if (!"PING".equals(trnm) && log.isDebugEnabled()) {
+                            log.debug("키움증권 WebSocket 메시지 수신: {}", message);
+                        }
+                    } catch (Exception e) {
+                        log.error("WebSocket 메시지 처리 중 오류 발생", e);
+                    }
+                }
+
+                @Override
+                public void onClose(int code, String reason, boolean remote) {
+                    log.info("키움증권 WebSocket 연결 종료: code={}, reason={}, remote={}", code, reason, remote);
+                    connected.set(false);
+                    reconnect();
+                }
+
+                @Override
+                public void onError(Exception ex) {
+                    log.error("키움증권 WebSocket 오류 발생", ex);
+                    connected.set(false);
+                    reconnect();
+                }
+            };
+
+            client.connect();
+            log.info("새로운 WebSocket 클라이언트 연결 시도");
+
+        } catch (Exception e) {
+            log.error("새로운 WebSocket 클라이언트 생성 중 오류 발생", e);
+            reconnecting.set(false);
+            scheduleNextFullReconnectAttempt();
+        }
+    }
+
+    public void connect() {
+        if (reconnecting.get()) {
+            log.info("이미 재연결 중입니다. 중복 연결 시도 방지");
+            return;
+        }
+
+        reconnecting.set(true);
+
+        try {
+            if (isConnected()) {
+                log.info("WebSocket 이미 연결 중입니다.");
+                reconnecting.set(false);
+                return;
+            }
+
+            log.info("키움증권 WebSocket 서버 연결 시도 중...");
+
+            client = new WebSocketClient(new URI(websocketUrl)) {
+                @Override
+                public void onOpen(ServerHandshake handshake) {
+                    log.info("키움증권 WebSocket 서버 연결 성공");
+                    connected.set(true);
+                    reconnectAttempts = 0;
+                    fullReconnectAttempts = 0; // 완전 재연결 카운터도 리셋
+                    login();
+                }
+
+                @Override
+                public void onMessage(String message) {
+                    try {
+                        JsonNode response = objectMapper.readTree(message);
+                        String trnm = response.has("trnm") ? response.get("trnm").asText() : "";
+
+                        if ("LOGIN".equals(trnm)) {
+                            if ("0".equals(response.get("return_code").asText())) {
+                                log.info("키움증권 WebSocket 로그인 성공");
+
+//                                // 로그인 성공 후 기존 구독된 종목 재등록
+//                                if (!subscribedStockCodes.isEmpty()) {
+//                                    reregisterAllStocks();
+//                                }
+                            } else {
+                                log.error("키움증권 WebSocket 로그인 실패: {}", response.get("return_msg").asText());
+                                reconnect();
+                            }
+                        } else if ("PING".equals(trnm)) {
+                            // PING 메시지에 그대로 응답
+                            messageQueue.offer(message);
+                        } else if ("REAL".equals(trnm)) {
+                            processRealTimeData(response);
+                        }
+
+                        if (!"PING".equals(trnm) && log.isDebugEnabled()) {
+                            log.debug("키움증권 WebSocket 메시지 수신: {}", message);
+                        }
+                    } catch (Exception e) {
+                        log.error("WebSocket 메시지 처리 중 오류 발생", e);
+                    }
+                }
+
+                @Override
+                public void onClose(int code, String reason, boolean remote) {
+                    log.info("키움증권 WebSocket 연결 종료: code={}, reason={}, remote={}", code, reason, remote);
+                    connected.set(false);
+                    reconnect();
+                }
+
+                @Override
+                public void onError(Exception ex) {
+                    log.error("키움증권 WebSocket 오류 발생", ex);
+                    connected.set(false);
+                    reconnect();
+                }
+            };
+
+            client.connect();
+        } catch (Exception e) {
+            log.error("키움증권 WebSocket 연결 시도 중 오류 발생", e);
+            connected.set(false);
+            reconnect();
+        } finally {
+            reconnecting.set(false);
+        }
+    }
+
+
+    // 리스너 관련 메서드들
     public void addListener(StockDataListener listener) {
         listeners.add(listener);
         log.info("리스너 추가: 현재 리스너 수={}", listeners.size());
@@ -159,20 +435,6 @@ public class KiwoomWebSocketClient {
         }
     }
 
-    @PostConstruct
-    public void init() {
-        connect();
-
-        // 메시지 처리 스레드 시작
-        startMessageProcessingThread();
-
-        // 주기적인 연결 상태 확인 스케줄링
-        scheduler.scheduleAtFixedRate(this::checkConnectionStatus, 30, 30, TimeUnit.SECONDS);
-
-        // 주기적인 토큰 갱신 스케줄링
-        scheduler.scheduleAtFixedRate(this::refreshTokenIfNeeded, 1, 1, TimeUnit.HOURS);
-    }
-
     private void startMessageProcessingThread() {
         Thread messageProcessor = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
@@ -210,14 +472,6 @@ public class KiwoomWebSocketClient {
         messageProcessor.start();
     }
 
-    // 연결 상태 확인 및 필요시 재연결
-    private void checkConnectionStatus() {
-        if (!isConnected() && !reconnecting.get()) {
-            log.warn("연결 상태 확인: 연결이 끊어져 있음, 재연결 시도");
-            reconnect();
-        }
-    }
-
     // 토큰 갱신 필요 시 갱신
     private void refreshTokenIfNeeded() {
         try {
@@ -235,86 +489,6 @@ public class KiwoomWebSocketClient {
             }
         } catch (Exception e) {
             log.error("토큰 갱신 중 오류 발생", e);
-        }
-    }
-
-    public void connect() {
-        try {
-            if (isConnected()) {
-                log.info("WebSocket 이미 연결 중입니다.");
-                return;
-            }
-
-            if (reconnecting.compareAndSet(false, true)) {
-                try {
-                    log.info("키움증권 WebSocket 서버 연결 시도 중...");
-
-                    client = new WebSocketClient(new URI(websocketUrl)) {
-                        @Override
-                        public void onOpen(ServerHandshake handshake) {
-                            log.info("키움증권 WebSocket 서버 연결 성공");
-                            connected.set(true);
-                            reconnectAttempts = 0;
-                            login();
-                        }
-
-                        @Override
-                        public void onMessage(String message) {
-                            try {
-                                JsonNode response = objectMapper.readTree(message);
-                                String trnm = response.has("trnm") ? response.get("trnm").asText() : "";
-
-                                if ("LOGIN".equals(trnm)) {
-                                    if ("0".equals(response.get("return_code").asText())) {
-                                        log.info("키움증권 WebSocket 로그인 성공");
-
-                                        // 로그인 성공 후 기존 구독된 종목 재등록
-                                        if (!subscribedStockCodes.isEmpty()) {
-                                            reregisterAllStocks();
-                                        }
-                                    } else {
-                                        log.error("키움증권 WebSocket 로그인 실패: {}", response.get("return_msg").asText());
-                                        reconnect();
-                                    }
-                                } else if ("PING".equals(trnm)) {
-                                    // PING 메시지에 그대로 응답
-                                    messageQueue.offer(message);
-                                } else if ("REAL".equals(trnm)) {
-                                    processRealTimeData(response);
-                                }
-
-                                if (!"PING".equals(trnm) && log.isDebugEnabled()) {
-                                    log.debug("키움증권 WebSocket 메시지 수신: {}", message);
-                                }
-                            } catch (Exception e) {
-                                log.error("WebSocket 메시지 처리 중 오류 발생", e);
-                            }
-                        }
-
-                        @Override
-                        public void onClose(int code, String reason, boolean remote) {
-                            log.info("키움증권 WebSocket 연결 종료: code={}, reason={}, remote={}", code, reason, remote);
-                            connected.set(false);
-                            reconnect();
-                        }
-
-                        @Override
-                        public void onError(Exception ex) {
-                            log.error("키움증권 WebSocket 오류 발생", ex);
-                            connected.set(false);
-                            reconnect();
-                        }
-                    };
-
-                    client.connect();
-                } finally {
-                    reconnecting.set(false);
-                }
-            }
-        } catch (Exception e) {
-            log.error("키움증권 WebSocket 연결 시도 중 오류 발생", e);
-            connected.set(false);
-            reconnect();
         }
     }
 
@@ -578,28 +752,28 @@ public class KiwoomWebSocketClient {
         return normalized + "_AL";
     }
 
-    // 연결 재시작시 모든 구독 종목 재등록
-    private void reregisterAllStocks() {
-        subscriptionLock.readLock().lock();
-        try {
-            if (subscribedStockCodes.isEmpty()) {
-                return;
-            }
-
-            List<String> stockCodes = new ArrayList<>(subscribedStockCodes);
-            log.info("기존 구독 종목 재등록: {} 종목", stockCodes.size());
-
-            // 최대 100개씩 나누어 등록 (API 한계 고려)
-            int batchSize = 100;
-            for (int i = 0; i < stockCodes.size(); i += batchSize) {
-                List<String> batch = stockCodes.subList(i, Math.min(i + batchSize, stockCodes.size()));
-                registerRealTimeDataAsync("0B", batch, null); // 주식체결
-                registerRealTimeDataAsync("0D", batch, null); // 주식호가잔량
-            }
-        } finally {
-            subscriptionLock.readLock().unlock();
-        }
-    }
+    // 연결 재시작시 모든 구독 종목 재등록 (현재 재등록은 고려중이므로 주석 진행)
+//    private void reregisterAllStocks() {
+//        subscriptionLock.readLock().lock();
+//        try {
+//            if (subscribedStockCodes.isEmpty()) {
+//                return;
+//            }
+//
+//            List<String> stockCodes = new ArrayList<>(subscribedStockCodes);
+//            log.info("기존 구독 종목 재등록: {} 종목", stockCodes.size());
+//
+//            // 최대 100개씩 나누어 등록 (API 한계 고려)
+//            int batchSize = 100;
+//            for (int i = 0; i < stockCodes.size(); i += batchSize) {
+//                List<String> batch = stockCodes.subList(i, Math.min(i + batchSize, stockCodes.size()));
+//                registerRealTimeDataAsync("0B", batch, null); // 주식체결
+//                registerRealTimeDataAsync("0D", batch, null); // 주식호가잔량
+//            }
+//        } finally {
+//            subscriptionLock.readLock().unlock();
+//        }
+//    }
 
     // 포트폴리오용 연결 재시작시 구독 종목 재등록 (주식체결만 구독)
     public void reregisterPortfolioStocks(String purpose) {
@@ -685,42 +859,6 @@ public class KiwoomWebSocketClient {
         }
     }
 
-    // 지수 백오프 방식의 재연결 메서드
-    private void reconnect() {
-        if (reconnecting.compareAndSet(false, true)) {
-            try {
-                if (client != null) {
-                    try {
-                        client.close();
-                    } catch (Exception e) {
-                        log.warn("WebSocket 닫기 중 오류 발생", e);
-                    }
-                }
-
-                connected.set(false);
-
-                // 지수 백오프 (최대 60초)
-                int delay = Math.min(60, (int) Math.pow(2, reconnectAttempts));
-                reconnectAttempts++;
-
-                log.info("키움증권 WebSocket {}초 후 재연결 시도 (시도 횟수: {})", delay, reconnectAttempts);
-
-                // 별도 스레드에서 지연 후 재연결
-                scheduler.schedule(() -> {
-                    try {
-                        log.info("재연결 시도 중...");
-                        connect();
-                    } finally {
-                        reconnecting.set(false);
-                    }
-                }, delay, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                log.error("재연결 스케줄링 중 오류 발생", e);
-                reconnecting.set(false);
-            }
-        }
-    }
-
     // 목적을 지정하여 구독하는 메서드
     public boolean subscribeStockWithPurpose(String stockCode, String purpose) {
         if (stockCode == null || stockCode.trim().isEmpty()) {
@@ -788,7 +926,6 @@ public class KiwoomWebSocketClient {
                 }
 
                 return unsubscribeStock(normalizedCode);
-                // unsubscribeStock 내부에서 disconnectIfNoSubscriptions()를 호출하므로 여기서는 호출하지 않음
             }
 
             // 다른 목적이 남아있으면 구독 유지, 성공 반환

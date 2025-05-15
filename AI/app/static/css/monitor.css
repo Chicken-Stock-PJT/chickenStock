@@ -1,0 +1,129 @@
+
+    body {
+        background-color: #f8f9fa;
+    }
+
+    .card {
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        margin-bottom: 1rem;
+    }
+
+    .navbar {
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+    }
+
+    .section-content {
+        animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    table.table thead th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+
+    .badge {
+        font-size: 85%;
+    }
+
+    .card-header h5, .card-header h6 {
+        margin-bottom: 0;
+    }
+
+    #last-update {
+        color: rgba(255, 255, 255, 0.8);
+    }
+
+    .table-responsive {
+        overflow-x: auto;
+    }
+
+    /* 반응형 조정 */
+    @media (max-width: 768px) {
+        .card-body {
+            padding: 1rem;
+        }
+        
+        .navbar-text {
+            display: none;
+        }
+    }
+
+    /* 테이블 스타일 개선 */
+    .table-striped tbody tr:nth-of-type(odd) {
+        background-color: rgba(0, 0, 0, 0.03);
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: rgba(0, 0, 0, 0.06);
+    }
+
+    /* 차트 컨테이너 스타일 */
+    .chart-container {
+        position: relative;
+        height: 300px;
+        width: 100%;
+    }
+
+    /* 알림 스타일 개선 */
+    .alert {
+        border-radius: 0.25rem;
+        margin-bottom: 1rem;
+    }
+
+    /* 봇 카드 스타일 */
+    .bot-card {
+        transition: transform 0.2s ease-in-out;
+    }
+
+    .bot-card:hover {
+        transform: translateY(-5px);
+    }
+
+    /* 상세 모달 스타일 */
+    .modal-content {
+        border-radius: 0.5rem;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    .modal-header {
+        border-top-left-radius: 0.5rem;
+        border-top-right-radius: 0.5rem;
+    }
+
+    /* 검색 필드 스타일 */
+    #stock-search {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    #stock-search-btn {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+
+    /* 신호 배지 스타일 */
+    .badge.bg-success {
+        background-color: #28a745 !important;
+    }
+
+    .badge.bg-danger {
+        background-color: #dc3545 !important;
+    }
+
+    .badge.bg-secondary {
+        background-color: #6c757d !important;
+    }
+
+    /* 로딩 스피너 스타일 */
+    .spinner-border {
+        width: 3rem;
+        height: 3rem;
+        margin: 2rem auto;
+    }
+    

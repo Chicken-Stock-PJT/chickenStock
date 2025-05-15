@@ -17,8 +17,10 @@ public class CommentResponseDTO {
     private LocalDateTime updatedAt;
     private boolean isDeleted;
     private List<CommentResponseDTO> children;
+    private long likeCount;
+    private boolean likedByMe;
 
-    public static CommentResponseDTO from(StockComment comment, List<CommentResponseDTO> children) {
+    public static CommentResponseDTO from(StockComment comment, List<CommentResponseDTO> children, long likeCount, boolean likedByMe) {
         return new CommentResponseDTO(
                 comment.getId(),
                 comment.getContent(),
@@ -26,7 +28,9 @@ public class CommentResponseDTO {
                 comment.getCreatedAt(),
                 comment.getUpdatedAt(),
                 comment.isDeleted(),
-                children
+                children,
+                likeCount,
+                likedByMe
         );
     }
 }

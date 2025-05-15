@@ -36,4 +36,15 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
     // 특정 회원의 모든 거래 내역을 조회합니다.
     @Query("SELECT t FROM TradeHistory t WHERE t.member.memberId = :memberId ORDER BY t.tradedAt ASC")
     List<TradeHistory> findByMemberId(@Param("memberId") Long memberId);
+
+    List<TradeHistory> findByMemberOrderByCreatedAtDesc(Member member);
+
+    @Query("SELECT t FROM TradeHistory t WHERE t.member = :member AND t.tradedAt >= :startDate ORDER BY t.tradedAt DESC")
+    List<TradeHistory> findTodayTradesByMember(@Param("member") Member member, @Param("startDate") LocalDateTime startDate);
+
+    @Query("SELECT t FROM TradeHistory t WHERE t.member = :member AND t.tradedAt BETWEEN :startDate AND :endDate")
+    List<TradeHistory> findByMemberAndTradedAtBetween(
+            @Param("member") Member member,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 }

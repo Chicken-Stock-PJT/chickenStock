@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 class EnvelopeTradingModel(BaseTradingModel):
     """Envelope 전략 기반 AI 트레이딩 모델"""
     
-    def __init__(self, kiwoom_api):
+    def __init__(self, stock_cache=None):
         """Envelope 전략 트레이딩 모델 초기화"""
-        super().__init__(kiwoom_api)
+        super().__init__(stock_cache)
         
         # 매매 관련 설정
         self.max_positions = 20  # 최대 보유 종목 수
@@ -30,6 +30,11 @@ class EnvelopeTradingModel(BaseTradingModel):
         self.min_price_change_pct = 0.1  # 최소 가격 변동 비율 (0.1%)
         self.min_process_interval = 5    # 최소 처리 간격 (초)
         
+        # 계좌 정보 관리 (독립적으로 관리)
+        self.account_info = {}
+        self.positions = {}
+        self.cash_balance = 0
+        
         logger.info("Envelope 트레이딩 모델 초기화 완료")
     
     async def start(self):
@@ -45,7 +50,7 @@ class EnvelopeTradingModel(BaseTradingModel):
         if self.backend_client:
             account_info = await self.backend_client.request_account_info()
             if account_info:
-                self.kiwoom_api.update_account_info(account_info)
+                self.update_account_info(account_info)
                 logger.info("계좌 정보 초기 동기화 완료")
         
         # 매매 신호 모니터링 시작
@@ -56,33 +61,13 @@ class EnvelopeTradingModel(BaseTradingModel):
         self.is_running = False
         logger.info("Envelope 트레이딩 모델 중지")
     
-    def _should_process_price_update(self, symbol: str, price: float) -> bool:
-        """가격 업데이트를 처리해야 하는지 판단 (중복 메시지 필터링)"""
-        now = datetime.now()
-        
-        # 마지막 처리 시간 확인
-        last_time = self.last_processed_times.get(symbol)
-        if last_time:
-            time_diff = (now - last_time).total_seconds()
-            # 최소 처리 간격 미만이면 처리하지 않음
-            if time_diff < self.min_process_interval:
-                return False
-        
-        # 마지막 처리 가격 확인
-        last_price = self.last_processed_prices.get(symbol)
-        if last_price:
-            # 가격 변동률 계산
-            price_change_pct = abs(price - last_price) / last_price * 100
-            # 최소 가격 변동률 미만이면 처리하지 않음
-            if price_change_pct < self.min_price_change_pct:
-                return False
-        
-        # 처리해야 할 경우 마지막 처리 정보 업데이트
-        self.last_processed_prices[symbol] = price
-        self.last_processed_times[symbol] = now
-        return True
+    async def refresh_indicators(self):
+        """지표 갱신 (데이터 갱신 후 호출)"""
+        logger.info("Envelope 지표 갱신")
+        # 필요한 경우 캐시 비우기 또는 내부 상태 초기화
+        # 현재는 구현이 필요하지 않음
     
-    async def handle_realtime_price(self, symbol, price):
+    async def handle_realtime_price(self, symbol, price, indicators=None):
         """실시간 가격 데이터 처리 - 보유 종목에 대해서만 매도 신호 발생"""
         if not self.is_running:
             return
@@ -92,11 +77,15 @@ class EnvelopeTradingModel(BaseTradingModel):
             if not self._should_process_price_update(symbol, price):
                 return
             
-            # StockCache의 현재가 업데이트
-            self.kiwoom_api.stock_cache.update_price(symbol, price)
+            # Envelope 지표 가져오기 (캐시에서 직접 조회)
+            envelope = None
             
-            # Envelope 지표 가져오기 (현재가 업데이트)
-            envelope = self.kiwoom_api.stock_cache.get_envelope_indicators(symbol, price)
+            # 1. 전달받은 indicators 사용
+            if indicators and 'envelope' in indicators:
+                envelope = indicators['envelope']
+            # 2. 또는 stock_cache에서 직접 조회
+            elif self.stock_cache:
+                envelope = self.stock_cache.get_envelope_indicators(symbol, price)
             
             if not envelope:
                 logger.warning(f"종목 {symbol}에 대한 Envelope 지표가 없습니다")
@@ -122,8 +111,7 @@ class EnvelopeTradingModel(BaseTradingModel):
                 min_holding_passed = seconds_passed >= (self.min_holding_period * 86400)
             
             # 계좌 정보에서 보유 종목 확인 - 매도 신호는 보유 종목에 대해서만 발생
-            positions = self.kiwoom_api.get_positions()
-            is_holding = symbol in positions
+            is_holding = symbol in self.positions
             
             # 상한선 (전량 매도 신호) - 보유 종목인 경우에만
             if price >= upper_band and is_holding:
@@ -202,7 +190,7 @@ class EnvelopeTradingModel(BaseTradingModel):
                 if self.backend_client:
                     account_info = await self.backend_client.request_account_info()
                     if account_info:
-                        self.kiwoom_api.update_account_info(account_info)
+                        self.update_account_info(account_info)
                         logger.debug("계좌 정보 정기 동기화 완료")
                 
                 # 매매 신호 로깅
@@ -228,7 +216,7 @@ class EnvelopeTradingModel(BaseTradingModel):
                 logger.error(f"매매 신호 모니터링 중 오류: {str(e)}", exc_info=True)
                 await asyncio.sleep(30)
     
-    async def get_trade_decisions(self) -> List[Dict[str, Any]]:
+    async def get_trade_decisions(self, prices: Dict[str, float] = None) -> List[Dict[str, Any]]:
         """매매 의사결정 목록 반환"""
         if not self.is_running:
             logger.warning("트레이딩 모델이 실행 중이지 않습니다.")
@@ -240,15 +228,12 @@ class EnvelopeTradingModel(BaseTradingModel):
             if self.backend_client:
                 account_info = await self.backend_client.request_account_info()
                 if account_info:
-                    self.kiwoom_api.update_account_info(account_info)
+                    self.update_account_info(account_info)
             
             # 계좌 정보 확인
-            if not self.kiwoom_api.account_info:
+            if not self.account_info:
                 logger.warning("계좌 정보가 없습니다.")
                 return []
-            
-            cash_balance = self.kiwoom_api.get_cash_balance()
-            positions = self.kiwoom_api.get_positions()
             
             # 현재 시간
             now = datetime.now()
@@ -269,17 +254,17 @@ class EnvelopeTradingModel(BaseTradingModel):
                 # 1. 하한선 매수 신호 처리
                 if signal == "lower":
                     # 현재 보유 종목 수 확인
-                    if len(positions) >= self.max_positions:
+                    if len(self.positions) >= self.max_positions:
                         logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
                         continue
                     
                     # 충분한 현금 확인
-                    if cash_balance < self.trade_amount_per_stock:
-                        logger.debug(f"현금 부족({cash_balance}), 매수 보류: {symbol}")
+                    if self.cash_balance < self.trade_amount_per_stock:
+                        logger.debug(f"현금 부족({self.cash_balance}), 매수 보류: {symbol}")
                         continue
                     
                     # 이미 보유 중인지 확인 (이중 체크)
-                    if symbol in positions:
+                    if symbol in self.positions:
                         logger.debug(f"이미 보유 중인 종목 매수 신호 무시: {symbol}")
                         del self.trading_signals[symbol]
                         continue
@@ -288,8 +273,13 @@ class EnvelopeTradingModel(BaseTradingModel):
                     current_price = price  # 직접 신호의 가격 사용
                     
                     if not current_price or current_price <= 0:
-                        # 백업으로 캐시에서 가격 조회
-                        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                        # 제공된 prices 딕셔너리에서 조회
+                        if prices and symbol in prices:
+                            current_price = prices[symbol]
+                        # 또는 stock_cache에서 조회
+                        elif self.stock_cache:
+                            current_price = self.stock_cache.get_price(symbol)
+                            
                         if not current_price or current_price <= 0:
                             logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
                             continue
@@ -323,12 +313,12 @@ class EnvelopeTradingModel(BaseTradingModel):
                 # 2. 중앙선 절반 매도 신호 처리
                 elif signal == "middle":
                     # 보유 중인 종목인지 확인 (이중 체크)
-                    if symbol not in positions:
+                    if symbol not in self.positions:
                         logger.debug(f"미보유 종목 매도 신호 무시: {symbol}")
                         del self.trading_signals[symbol]
                         continue
                     
-                    position = positions[symbol]
+                    position = self.positions[symbol]
                     total_quantity = position.get("quantity", 0)
                     
                     # 절반 수량 계산 (최소 1주)
@@ -342,8 +332,13 @@ class EnvelopeTradingModel(BaseTradingModel):
                     current_price = price  # 직접 신호의 가격 사용
                     
                     if not current_price or current_price <= 0:
-                        # 백업으로 캐시에서 가격 조회
-                        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                        # 제공된 prices 딕셔너리에서 조회
+                        if prices and symbol in prices:
+                            current_price = prices[symbol]
+                        # 또는 stock_cache에서 조회
+                        elif self.stock_cache:
+                            current_price = self.stock_cache.get_price(symbol)
+                            
                         if not current_price or current_price <= 0:
                             logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
                             continue
@@ -371,12 +366,12 @@ class EnvelopeTradingModel(BaseTradingModel):
                 # 3. 상한선 전량 매도 신호 처리
                 elif signal == "upper":
                     # 보유 중인 종목인지 확인 (이중 체크)
-                    if symbol not in positions:
+                    if symbol not in self.positions:
                         logger.debug(f"미보유 종목 매도 신호 무시: {symbol}")
                         del self.trading_signals[symbol]
                         continue
                     
-                    position = positions[symbol]
+                    position = self.positions[symbol]
                     total_quantity = position.get("quantity", 0)
                     
                     if total_quantity <= 0:
@@ -387,8 +382,13 @@ class EnvelopeTradingModel(BaseTradingModel):
                     current_price = price  # 직접 신호의 가격 사용
                     
                     if not current_price or current_price <= 0:
-                        # 백업으로 캐시에서 가격 조회
-                        current_price = self.kiwoom_api.stock_cache.get_price(symbol)
+                        # 제공된 prices 딕셔너리에서 조회
+                        if prices and symbol in prices:
+                            current_price = prices[symbol]
+                        # 또는 stock_cache에서 조회
+                        elif self.stock_cache:
+                            current_price = self.stock_cache.get_price(symbol)
+                            
                         if not current_price or current_price <= 0:
                             logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
                             continue

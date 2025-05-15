@@ -12,7 +12,7 @@ class KiwoomAuthClient:
     """키움 API 인증 처리"""
     
     def __init__(self):
-        self.base_url = settings.API_AUTH_URL
+        self.base_url = settings.API_BASE_URL
         self.token_manager = None
         self.session = None
     
@@ -44,14 +44,14 @@ class KiwoomAuthClient:
                 json={
                     "grant_type": "client_credentials",
                     "appkey": settings.KIWOOM_APP_KEY,
-                    "appsecret": settings.KIWOOM_APP_SECRET
+                    "secretkey": settings.KIWOOM_APP_SECRET
                 }
             ) as response:
                 if response.status == 200:
                     token_data = await response.json()
                     
                     # 토큰 정보 추출
-                    token = token_data.get("access_token")
+                    token = token_data.get("token")
                     token_type = token_data.get("token_type", "Bearer")
                     expires_in = token_data.get("expires_in", 86400)  # 기본 1일
                     
