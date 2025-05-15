@@ -381,8 +381,29 @@ async def trading_loop():
                         
                         # 인증 상태 확인
                         if not bot.auth_client or not bot.auth_client.is_authenticated:
-                            logger.warning(f"봇 [{email}]의 인증이 유효하지 않습니다. 이 봇의 거래는 건너뜁니다.")
-                            return
+                            logger.warning(f"봇 [{email}]의 인증이 유효하지 않습니다. 재로그인을 시도합니다.")
+                            
+                            # 봇의 인증 정보가 있는지 확인
+                            if hasattr(bot, 'email') and hasattr(bot, 'password') and bot.email and bot.password:
+                                # 재로그인 시도
+                                try:
+                                    logger.info(f"봇 [{email}] 재로그인 시도 중...")
+                                    login_success = await bot.auth_client.login(bot.email, bot.password)
+                                    
+                                    if login_success:
+                                        logger.info(f"봇 [{email}] 재로그인 성공")
+                                        # 백엔드 클라이언트에도 새 인증 정보 전달
+                                        if bot.backend_client:
+                                            bot.backend_client.set_auth_client(bot.auth_client)
+                                    else:
+                                        logger.error(f"봇 [{email}] 재로그인 실패. 이 봇의 거래는 건너뜁니다.")
+                                        return
+                                except Exception as e:
+                                    logger.error(f"봇 [{email}] 재로그인 중 오류 발생: {str(e)}")
+                                    return
+                            else:
+                                logger.error(f"봇 [{email}]의 인증 정보가 없습니다. 이 봇의 거래는 건너뜁니다.")
+                                return
                         
                         # 계좌 정보 업데이트
                         logger.info(f"봇 [{email}] 계좌 정보 업데이트 요청 중...")
