@@ -46,15 +46,30 @@ public class DashboardService {
      * 대시보드 데이터를 캐시에서 조회
      */
     public DashboardResponseDTO getCachedDashboard(String cacheKey) {
-        return dashboardRedisTemplate.opsForValue().get(cacheKey);
+        try {
+            DashboardResponseDTO cached = dashboardRedisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                log.info("캐시에서 대시보드 데이터 조회 성공: {}", cacheKey);
+                return cached;
+            }
+        } catch (Exception e) {
+            log.error("캐시에서 대시보드 데이터 조회 실패: {}, 오류: {}", cacheKey, e.getMessage());
+            // 캐시 조회 실패 시 에러 발생시키지 않고 null 반환
+        }
+        return null;
     }
 
     /**
      * 대시보드 데이터를 캐시에 저장
      */
     public void cacheDashboard(String cacheKey, DashboardResponseDTO dashboard) {
-        dashboardRedisTemplate.opsForValue().set(cacheKey, dashboard, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
-        log.info("대시보드 데이터 캐싱 완료: {}", cacheKey);
+        try {
+            dashboardRedisTemplate.opsForValue().set(cacheKey, dashboard, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+            log.info("대시보드 데이터 캐싱 완료: {}", cacheKey);
+        } catch (Exception e) {
+            log.error("대시보드 데이터 캐싱 실패: {}, 오류: {}", cacheKey, e.getMessage());
+            // 캐싱 실패 시 에러 처리하지 않고 계속 진행
+        }
     }
 
     /**
