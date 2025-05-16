@@ -1,7 +1,14 @@
 import { useQuery, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
-import { getDailyProfitRate, getPortfolio, getTransactions, fetchPendingOrders } from "../api";
+import {
+  getDailyProfitRate,
+  getPortfolio,
+  getTransactions,
+  fetchPendingOrders,
+  getMemberDashboard,
+} from "../api";
 import { AxiosResponse } from "axios";
 import { ErrorResponse, DailyProfitRateResponse, TransactionResponse, PendingOrder } from "./types";
+import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 
 export const useGetPortfolio = () => {
   const { data, isLoading, error, refetch } = useQuery({
@@ -49,5 +56,14 @@ export const usePendingOrdersQuery = () => {
     queryKey: ["pendingOrders"],
     queryFn: fetchPendingOrders,
     refetchInterval: 30000, // 30초마다 자동 새로고침
+  });
+};
+
+export const useMemberDashboardQuery = () => {
+  return useQuery<MemberDashboardResponse>({
+    queryKey: ["memberDashboard"],
+    queryFn: getMemberDashboard,
+    staleTime: 0,
+    gcTime: 0,
   });
 };

@@ -1,4 +1,3 @@
-import { useGetDailyProfitRate } from "@/features/mypage/model/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import { ArrowUpIcon, ArrowDownIcon } from "lucide-react";
 
@@ -7,6 +6,8 @@ interface PortfolioOverviewProps {
   memberMoney: number; // 예수금 잔고
   totalProfitLoss: number; // 총 손익 (평가금액 - 투자금액)
   totalReturnRate: number; // 총 수익률 (%)
+  todayProfitLoss: number; // 금일 손익
+  todayReturnRate: number; // 금일 수익률
   sectors: number; // 보유 종목 수
 }
 const PortfolioOverview = ({
@@ -14,14 +15,14 @@ const PortfolioOverview = ({
   memberMoney,
   totalProfitLoss,
   totalReturnRate,
+  todayProfitLoss,
+  todayReturnRate,
   sectors,
 }: PortfolioOverviewProps) => {
-  const { data: dailyProfitRate } = useGetDailyProfitRate();
-
   const sectorMention = () => {
     if (sectors === 0) {
       return "첫 투자를 시작해보세요!";
-    } else if (sectors > 1 && sectors < 3) {
+    } else if (sectors > 0 && sectors < 5) {
       return "핵심 종목에 집중하고 있어요.";
     } else if (sectors >= 5 && sectors < 10) {
       return "균형 잡힌 포트폴리오를 구성 중입니다";
@@ -66,26 +67,26 @@ const PortfolioOverview = ({
           <CardTitle>금일 수익</CardTitle>
         </CardHeader>
         <CardContent>
-          {dailyProfitRate?.periodReturns.daily ? (
+          {todayReturnRate ? (
             <>
               <div
-                className={`text-2xl font-bold ${dailyProfitRate.periodReturns.daily.profitLoss > 0 ? "text-chart-red" : dailyProfitRate.periodReturns.daily.profitLoss < 0 ? "text-chart-blue" : ""}`}
+                className={`text-2xl font-bold ${todayProfitLoss > 0 ? "text-chart-red" : todayProfitLoss < 0 ? "text-chart-blue" : ""}`}
               >
-                {dailyProfitRate.periodReturns.daily.profitLoss >= 0 ? "+" : ""}
-                {dailyProfitRate.periodReturns.daily.profitLoss.toLocaleString()}원
+                {todayProfitLoss >= 0 ? "+" : ""}
+                {todayProfitLoss.toLocaleString()}원
               </div>
               <div className="mt-2 flex items-center">
                 <div
-                  className={`flex items-center ${dailyProfitRate.periodReturns.daily.returnRate > 0 ? "text-chart-red" : dailyProfitRate.periodReturns.daily.returnRate < 0 ? "text-chart-blue" : ""}`}
+                  className={`flex items-center ${todayReturnRate > 0 ? "text-chart-red" : todayReturnRate < 0 ? "text-chart-blue" : ""}`}
                 >
-                  {dailyProfitRate.periodReturns.daily.returnRate >= 0 ? (
+                  {todayReturnRate >= 0 ? (
                     <ArrowUpIcon className="mr-1 size-4" />
                   ) : (
                     <ArrowDownIcon className="mr-1 size-4" />
                   )}
                   <span>
-                    {dailyProfitRate.periodReturns.daily.returnRate >= 0 ? "+" : ""}
-                    {dailyProfitRate.periodReturns.daily.returnRate.toFixed(2)}%
+                    {todayReturnRate >= 0 ? "+" : ""}
+                    {todayReturnRate.toFixed(2)}%
                   </span>
                 </div>
               </div>

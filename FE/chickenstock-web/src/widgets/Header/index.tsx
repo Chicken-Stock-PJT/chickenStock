@@ -49,6 +49,16 @@ const Header = () => {
           >
             주식
           </NavLink>
+          <NavLink
+            to="ai-bot"
+            className={({ isActive }) =>
+              `${
+                isActive ? "text-primary-400" : ""
+              } text-base font-semibold transition-colors duration-200`
+            }
+          >
+            AI봇
+          </NavLink>
           {/* 랭킹 버튼 추가 */}
           <div
             onClick={() => setIsRankingOpen(true)}
