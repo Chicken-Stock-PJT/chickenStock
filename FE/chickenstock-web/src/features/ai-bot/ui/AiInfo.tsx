@@ -5,11 +5,17 @@ const AiInfo = ({
   totalAsset,
   memberMoney,
   totalReturnRate,
+  totalProfitLoss,
+  todayReturnRate,
+  todayProfitLoss,
 }: {
   aiBotId: number;
   totalAsset: number;
   totalReturnRate: number;
+  totalProfitLoss: number;
   memberMoney: number;
+  todayReturnRate: number;
+  todayProfitLoss: number;
 }) => {
   const Bot = () => {
     switch (aiBotId) {
@@ -56,7 +62,7 @@ const AiInfo = ({
           </div>
         </div>
         <div>
-          <div className="mb-1 text-sm font-medium text-muted-foreground">총 수익률</div>
+          <div className="mb-1 text-sm font-medium text-muted-foreground">총 수익</div>
           <div className="flex items-center">
             <TrendingUp className="mr-2 size-4 text-green-500" />
             <span
@@ -72,8 +78,29 @@ const AiInfo = ({
               {totalReturnRate.toFixed(2)}%
             </span>
             <span className="ml-2 text-muted-foreground">
-              {totalAsset > 100000000 ? "+" : ""}({(totalAsset - 100000000).toLocaleString()}
+              {totalProfitLoss > 0 ? "+" : ""}({totalProfitLoss.toLocaleString()}
               원)
+            </span>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-sm font-medium text-muted-foreground">금일 수익</div>
+          <div className="flex items-center">
+            <TrendingUp className="mr-2 size-4 text-green-500" />
+            <span
+              className={`text-lg font-semibold ${
+                todayReturnRate > 0
+                  ? "text-chart-red"
+                  : todayReturnRate < 0
+                    ? "text-chart-blue"
+                    : ""
+              }`}
+            >
+              {todayReturnRate > 0 ? "+" : ""}
+              {todayReturnRate.toFixed(2)}%
+            </span>
+            <span className="ml-2 text-muted-foreground">
+              {todayProfitLoss > 0 ? "+" : ""}({todayProfitLoss.toLocaleString()}원)
             </span>
           </div>
         </div>
