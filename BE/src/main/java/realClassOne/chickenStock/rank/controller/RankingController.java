@@ -8,6 +8,7 @@ import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.rank.dto.response.RankingEntryDTO;
 import realClassOne.chickenStock.rank.dto.response.RankingResponseDTO;
+import realClassOne.chickenStock.rank.dto.response.ReturnRateRankingEntryDTO;
 import realClassOne.chickenStock.rank.dto.response.ReturnRateRankingResponseDTO;
 import realClassOne.chickenStock.rank.service.RankingService;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
@@ -38,5 +39,13 @@ public class RankingController {
     public ResponseEntity<ReturnRateRankingResponseDTO> getReturnRateRanking(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
         return ResponseEntity.ok(rankingService.getReturnRateRanking(authorizationHeader));
+    }
+
+    // 수익률 랭킹 조회 (AI)
+    @GetMapping("/return-rate/ai")
+    public ResponseEntity<List<ReturnRateRankingEntryDTO>> getAiGroupReturnRateRanking() {
+        List<Long> aiGroupIds = List.of(1L, 2L, 3L, 4L);
+        List<ReturnRateRankingEntryDTO> result = rankingService.getGroupMembersReturnRateRankInGlobal(aiGroupIds);
+        return ResponseEntity.ok(result);
     }
 }

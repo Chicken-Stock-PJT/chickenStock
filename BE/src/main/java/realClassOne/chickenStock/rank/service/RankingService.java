@@ -194,4 +194,47 @@ public class RankingService {
         return new ReturnRateRankingResponseDTO(topRankings, myRank);
     }
 
+
+    // 수익률 랭킹 (AI)
+    public List<ReturnRateRankingEntryDTO> getGroupMembersReturnRateRankInGlobal(List<Long> memberIds) {
+        Set<ZSetOperations.TypedTuple<String>> topSet =
+                zSetOperations.reverseRangeWithScores(RETURN_RATE_KEY, 0, -1); // 전체 조회
+
+        if (topSet == null || topSet.isEmpty()) {
+            return Collections.emptyList();  // 필요하다면 재계산 로직 추가
+        }
+
+        // 닉네임
+        Map<Long, String> nicknameMap = memberRepository.findAllById(memberIds).stream()
+                .collect(Collectors.toMap(Member::getMemberId, Member::getNickname));
+
+        List<ReturnRateRankingEntryDTO> filteredRanks = new ArrayList<>();
+
+        int rank = 0;
+        double prevScore = Double.NaN;
+        int skip = 1;
+
+        for (ZSetOperations.TypedTuple<String> tuple : topSet) {
+            Long memberId = Long.valueOf(tuple.getValue());
+            double returnRate = tuple.getScore();  // 수익률
+
+            // 공동 순위 처리 (소수점 비교 시 오차 보정)
+            if (Double.isNaN(prevScore) || Math.abs(returnRate - prevScore) > 1e-6) {
+                rank += skip;
+                skip = 1;
+            } else {
+                skip++;
+            }
+
+            // 지정된 멤버만 필터링
+            if (memberIds.contains(memberId)) {
+                String nickname = nicknameMap.getOrDefault(memberId, "탈퇴회원");
+                filteredRanks.add(new ReturnRateRankingEntryDTO(rank, nickname, returnRate));
+            }
+
+            prevScore = returnRate;
+        }
+
+        return filteredRanks;
+    }
 }
