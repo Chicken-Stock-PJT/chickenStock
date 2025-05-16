@@ -5,6 +5,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 @Getter
 public class NicknameChangeRequestDTO {
 
@@ -13,7 +16,8 @@ public class NicknameChangeRequestDTO {
     @Pattern(regexp = "^[a-zA-Z가-힣0-9]+$", message = "닉네임은 한글, 영문, 숫자만 사용할 수 있습니다.")
     private final String nickname;
 
-    private NicknameChangeRequestDTO(String nickname) {
+    @JsonCreator
+    public NicknameChangeRequestDTO(@JsonProperty("nickname") String nickname) {
         this.nickname = nickname;
     }
 
