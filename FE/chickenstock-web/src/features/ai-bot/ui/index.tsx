@@ -1,7 +1,10 @@
 import BotList from "./BotList";
 import AiBotPortfolio from "./AiBotPortfolio";
+import { useState } from "react";
 
 const AiBotLayout = () => {
+  const [selectedBot, setSelectedBot] = useState<number>(1);
+
   return (
     <div className="mb-10 text-left">
       <header className="my-10 flex flex-col gap-2">
@@ -12,10 +15,10 @@ const AiBotLayout = () => {
       </header>
       <main className="flex flex-col gap-8 lg:flex-row">
         <aside className="w-1/6">
-          <BotList />
+          <BotList selectedBot={selectedBot} setSelectedBot={setSelectedBot} />
         </aside>
         <article className="flex flex-col gap-8">
-          <AiBotPortfolio />
+          <AiBotPortfolio selectedBot={selectedBot} />
         </article>
       </main>
     </div>

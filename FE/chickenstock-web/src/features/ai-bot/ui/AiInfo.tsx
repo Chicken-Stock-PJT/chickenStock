@@ -1,24 +1,51 @@
 import { DollarSign, TrendingUp, Trophy } from "lucide-react";
 
 const AiInfo = ({
-  aiName,
+  aiBotId,
   totalAsset,
   memberMoney,
   totalReturnRate,
 }: {
-  aiName: string;
+  aiBotId: number;
   totalAsset: number;
   totalReturnRate: number;
   memberMoney: number;
 }) => {
+  const Bot = () => {
+    switch (aiBotId) {
+      case 1:
+        return {
+          name: "귀요미 AI",
+          description:
+            "귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워귀여워",
+        };
+      case 2:
+        return {
+          name: "쿨한 AI",
+          description:
+            "쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해쿨해",
+        };
+      case 3:
+        return {
+          name: "chill~AI",
+          description:
+            "칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해칠해",
+        };
+      case 4:
+        return {
+          name: "미니 AI",
+          description:
+            "조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매조그매",
+        };
+      default:
+        return { name: "귀요미 AI", description: "귀요미 AI" };
+    }
+  };
   return (
     <div className="space-y-6 rounded-xl border p-6 text-left shadow">
       <div className="grid grid-cols-2 gap-6 md:grid-cols-1">
-        <div className="text-lg font-semibold">{aiName}</div>
-        <div className="flex items-start text-sm">
-          <Trophy className="mr-2 size-4" />
-          <span>랭킹 1위</span>
-        </div>
+        <div className="text-lg font-semibold">{Bot().name}</div>
+        <div className="text-sm text-muted-foreground">{Bot().description}</div>
       </div>
       <div className="space-y-4">
         <div>

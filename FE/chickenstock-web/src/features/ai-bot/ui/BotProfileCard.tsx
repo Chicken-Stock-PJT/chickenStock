@@ -1,10 +1,21 @@
 import { Card, CardContent } from "@/shared/libs/ui/card";
 
-const BotProfileCard = ({ name, profitRate }: { name: string; profitRate: number }) => {
+const BotProfileCard = ({
+  name,
+  isSelected,
+  onClick,
+}: {
+  name: string;
+  profitRate: number;
+  isSelected: boolean;
+  onClick: () => void;
+}) => {
   return (
     <Card
-      className={`cursor-pointer transition-colors hover:bg-muted/50`}
-      // onClick={() => onSelectBot(bot.id)}
+      className={`cursor-pointer transition-colors hover:bg-gray-100 ${
+        isSelected ? "bg-gray-100" : ""
+      }`}
+      onClick={onClick}
     >
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
@@ -13,14 +24,6 @@ const BotProfileCard = ({ name, profitRate }: { name: string; profitRate: number
           </div>
           <div className="flex-1">
             <h3 className="truncate font-semibold">{name}</h3>
-            <div
-              className={`flex items-center text-sm font-medium ${
-                profitRate >= 0 ? "text-red-500" : "text-blue-500"
-              }`}
-            >
-              {profitRate >= 0 ? "+" : ""}
-              {profitRate.toFixed(1)}%
-            </div>
           </div>
         </div>
       </CardContent>

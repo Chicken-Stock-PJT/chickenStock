@@ -4,19 +4,25 @@ import AiBotAssetOverview from "./AiBotAssetOverview";
 import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 import AiInfo from "./AiInfo";
 
-const AiBotDashboard = ({ portfolio }: { portfolio: MemberDashboardResponse }) => {
+const AiBotDashboard = ({
+  portfolio,
+  aiBotId,
+}: {
+  portfolio: MemberDashboardResponse;
+  aiBotId: number;
+}) => {
   return (
     <div className="grid grid-cols-1 gap-4 text-left md:grid-cols-2">
       {/* 기본정보 -> 추후 ai봇 정보로 수정 */}
       <AiInfo
-        aiName="귀요미 AI"
+        aiBotId={aiBotId}
         totalAsset={portfolio.totalAsset}
         totalReturnRate={portfolio.totalReturnRate}
         memberMoney={portfolio.memberMoney}
       />
 
       {/* 요약 */}
-      <AiBotAssetOverview />
+      <AiBotAssetOverview portfolio={portfolio} />
 
       {/* 성과추이 */}
       <Card>
