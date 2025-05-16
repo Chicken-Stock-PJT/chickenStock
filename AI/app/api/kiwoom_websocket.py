@@ -123,6 +123,108 @@ class KiwoomWebSocket:
                 return False
         
         except Exception as e:
+            logger.error(f"웹소켓 연결 중 오류 발생: {str(e)}", exc_info=True)
+            await self.close()
+            await self.schedule_reconnect()
+            return False
+    
+    async def close_connection(self):
+        """웹소켓 연결만 종료 (태스크는 유지)"""
+        try:
+            # 웹소켓 연결 종료
+            if self.ws and not self.ws.closed:
+                await self.ws.close()
+                self.ws = None
+            
+            # 세션 종료
+            if self.session and not self.session.closed:
+                await self.session.close()
+                self.session = None
+            
+            self.is_logged_in = False
+            logger.info("웹소켓 연결 종료됨")
+        except Exception as e:
+            logger.error(f"웹소켓 연결 종료 중 오류: {str(e)}")
+    
+    async def connection_monitor(self):
+        """연결 상태 모니터링 및 자동 재연결"""
+        try:
+            reconnect_in_progress = False
+            
+            while self.running:
+                try:
+                    await asyncio.sleep(5)  # 5초마다 확인
+                    
+                    # 재연결이 이미 진행 중인 경우 스킵
+                    if reconnect_in_progress:
+                        continue
+                    
+                    # 연결 상태 확인
+                    connection_lost = (
+                        not self.ws or 
+                        (self.ws and self.ws.closed) or 
+                        not self.is_logged_in
+                    )
+                    
+                    # 활동 시간 체크 (2분 이상 활동 없으면 재연결)
+                    current_time = asyncio.get_event_loop().time()
+                    inactivity_timeout = current_time - self.last_activity_time > 120
+                    
+                    if connection_lost or inactivity_timeout:
+                        logger.warning(
+                            f"연결 상태 확인: 연결 끊김={connection_lost}, "
+                            f"활동 없음={inactivity_timeout}, "
+                            f"재연결 시도 #{self.reconnect_attempts+1}"
+                        )
+                        
+                        if self.kiwoom_token:
+                            # 재연결 플래그 설정
+                            reconnect_in_progress = True
+                            
+                            try:
+                                # 재연결 시도
+                                if self.reconnect_attempts < self.max_reconnect_attempts:
+                                    self.reconnect_attempts += 1
+                                    
+                                    # 지수 백오프 적용
+                                    delay = min(self.reconnect_delay * (2 ** (self.reconnect_attempts - 1)), self.max_reconnect_delay)
+                                    logger.info(f"재연결 지연: {delay}초 후 시도")
+                                    await asyncio.sleep(delay)
+                                    
+                                    # 재연결 시도
+                                    async with self.connection_lock:
+                                        reconnect_success = await self.connect(self.kiwoom_token)
+                                    
+                                    if reconnect_success:
+                                        logger.info("재연결 성공")
+                                        self.reconnect_attempts = 0  # 성공 시 카운터 초기화
+                                        
+                                        # 현재 그룹 재구독
+                                        if self.subscription_groups:
+                                            try:
+                                                await self.subscribe_group(self.current_group_index, self.kiwoom_token)
+                                                logger.info(f"그룹 {self.current_group_index} 재구독 성공")
+                                            except Exception as e:
+                                                logger.error(f"그룹 재구독 실패: {str(e)}")
+                                    else:
+                                        logger.error("재연결 실패")
+                                else:
+                                    logger.error(f"최대 재연결 시도 횟수({self.max_reconnect_attempts})를 초과하여 중단합니다.")
+                                    self.running = False
+                                    break
+                            finally:
+                                # 재연결 플래그 해제
+                                reconnect_in_progress = False
+                
+                except asyncio.CancelledError:
+                    raise  # 상위 예외 처리로 전달
+                except Exception as e:
+                    logger.error(f"연결 모니터링 내부 오류: {str(e)}")
+                    reconnect_in_progress = False  # 오류 발생 시 플래그 초기화
+        
+        except asyncio.CancelledError:
+            logger.info("연결 모니터링 태스크 취소됨")
+        except Exception as e:
             logger.error(f"웹소켓 연결 또는 로그인 실패: {str(e)}")
             await self.close()
             await self.schedule_reconnect()
@@ -200,13 +302,14 @@ class KiwoomWebSocket:
     async def ping_loop(self):
         """PING 메시지 주기적 전송 루프"""
         try:
-            while self.running and self.ws and not self.ws.closed:
+            while self.running:
                 await asyncio.sleep(30)  # 30초마다 PING 메시지 전송
                 
-                if self.ws and not self.ws.closed:
+                if self.ws and not self.ws.closed and self.is_logged_in:
                     try:
                         await self.ws.send_json({"trnm": "PING"})
                         logger.debug("PING 메시지 전송 완료")
+                        self.last_activity_time = asyncio.get_event_loop().time()  # 활동 시간 업데이트
                     except Exception as e:
                         logger.error(f"PING 메시지 전송 중 오류: {str(e)}")
                         # PING 전송 실패는 연결 문제의 징후일 수 있음
@@ -320,6 +423,7 @@ class KiwoomWebSocket:
     async def unsubscribe_group(self, group_index: int, retry=True):
         """특정 그룹 구독 해제"""
         try:
+            # 연결 상태 확인
             if not self.ws or self.ws.closed:
                 logger.error("웹소켓 연결이 없습니다.")
                 return False if not retry else await self.reconnect_and_unsubscribe(group_index)
@@ -365,6 +469,11 @@ class KiwoomWebSocket:
         
         except Exception as e:
             logger.error(f"그룹 구독 해제 중 오류: {str(e)}")
+            # 연결 끊김 오류인 경우 연결 상태 업데이트
+            if "Cannot write to closing transport" in str(e) or "Connection closed" in str(e):
+                logger.warning("전송 중 연결이 닫힘, 연결 상태 업데이트")
+                self.is_logged_in = False
+                self.ws = None
             return False
     
     async def reconnect_and_unsubscribe(self, group_index: int):
@@ -406,9 +515,10 @@ class KiwoomWebSocket:
         
         # 로테이션 태스크 시작
         if not self.rotation_task or self.rotation_task.done():
-            # kiwoom_token 파라미터 전달 - 뒤에서 저장된 토큰을 사용할 수 있도록 구현
-            self.rotation_task = asyncio.create_task(self.rotation_loop())
-        
+            if not self.rotation_task or self.rotation_task.done():
+                # kiwoom_token 파라미터 전달 - 뒤에서 저장된 토큰을 사용할 수 있도록 구현
+                self.rotation_task = asyncio.create_task(self.rotation_loop())
+            
         logger.info("구독 로테이션 시작")
         return True
     

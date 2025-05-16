@@ -225,7 +225,7 @@ class KiwoomAPI:
           logger.error(f"종목 필터링 중 오류: {str(e)}", exc_info=True)
           return {"KOSPI": [], "KOSDAQ": []}
       
-    async def get_top_trading_amount(self, market_type="0", include_managed=0, exchange_type="3", limit=100):
+    async def get_top_trading_amount(self, market_type="0", include_managed=0, exchange_type="3", limit=200):
         try:
             # 세션 확인
             if not self.session:
@@ -286,7 +286,7 @@ class KiwoomAPI:
             logger.error(f"거래 대금 상위 종목 조회 중 오류: {str(e)}")
             return []
 
-    async def get_all_top_trading_amount(self, limit=100):
+    async def get_all_top_trading_amount(self, limit=200):
         kospi_top = await self.get_top_trading_amount(market_type="001", limit=limit)
         kosdaq_top = await self.get_top_trading_amount(market_type="101", limit=limit)
         
@@ -296,7 +296,7 @@ class KiwoomAPI:
         # 거래대금 기준으로 내림차순 정렬
         all_top.sort(key=lambda x: x.get("trading_amount", 0), reverse=True)
         
-        # 상위 limit개만 선택
+        # 상위 2*limit개만 선택
         return all_top
             
     async def initialize_chart_data(self, symbols, from_date=None, period=90):
