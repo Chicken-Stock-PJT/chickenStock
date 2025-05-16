@@ -1,9 +1,19 @@
 import { Button } from "@/shared/libs/ui/button";
 import logo from "@/assets/logoImg.svg";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import InvestmentGuideModal from "./InvestmentGuideModal";
 
 const Banner = () => {
-  const navigate = useNavigate();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const openModal = () => {
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+  };
+
   return (
     <section className="bg-gradient-to-b from-yellow-50 to-white py-16">
       <div className="container mx-auto max-w-[1200px] px-4">
@@ -24,8 +34,8 @@ const Banner = () => {
               </span>
             </p>
 
-            <Button size="lg" className="font-bold" onClick={() => void navigate("/stocks/005930")}>
-              모의투자 시작하기
+            <Button size="lg" className="font-bold" onClick={openModal}>
+              모의투자 시작 가이드
             </Button>
           </div>
           <div className="mx-auto md:w-1/3">
@@ -33,6 +43,8 @@ const Banner = () => {
           </div>
         </div>
       </div>
+
+      <InvestmentGuideModal isOpen={isModalOpen} onClose={closeModal} />
     </section>
   );
 };
