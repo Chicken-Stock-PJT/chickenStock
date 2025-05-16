@@ -49,7 +49,6 @@ public class DashboardService {
         try {
             DashboardResponseDTO cached = dashboardRedisTemplate.opsForValue().get(cacheKey);
             if (cached != null) {
-                log.info("캐시에서 대시보드 데이터 조회 성공: {}", cacheKey);
                 return cached;
             }
         } catch (Exception e) {
@@ -65,7 +64,6 @@ public class DashboardService {
     public void cacheDashboard(String cacheKey, DashboardResponseDTO dashboard) {
         try {
             dashboardRedisTemplate.opsForValue().set(cacheKey, dashboard, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
-            log.info("대시보드 데이터 캐싱 완료: {}", cacheKey);
         } catch (Exception e) {
             log.error("대시보드 데이터 캐싱 실패: {}, 오류: {}", cacheKey, e.getMessage());
             // 캐싱 실패 시 에러 처리하지 않고 계속 진행
@@ -102,7 +100,6 @@ public class DashboardService {
         // 캐시에서 조회
         DashboardResponseDTO cachedDashboard = getCachedDashboard(cacheKey);
         if (cachedDashboard != null) {
-            log.info("캐시에서 대시보드 데이터 조회: {}", cacheKey);
             return cachedDashboard;
         }
 
@@ -127,7 +124,6 @@ public class DashboardService {
         // 캐시에서 조회
         DashboardResponseDTO cachedDashboard = getCachedDashboard(cacheKey);
         if (cachedDashboard != null) {
-            log.info("캐시에서 대시보드 데이터 조회: {}", cacheKey);
             return cachedDashboard;
         }
 
@@ -184,22 +180,16 @@ public class DashboardService {
 
         // List로 변환
         List<String> stockCodeList = new ArrayList<>(allStockCodes);
-        log.info("일괄 조회할 종목 목록: {}", stockCodeList);
 
         // 키움증권 REST API를 통해 일괄 조회 (최대 100개까지 가능)
         Map<String, JsonNode> stockDataMap = kiwoomStockApiService.getWatchListInfoMap(stockCodeList);
 
-        // 디버깅: 키움증권 API 응답 구조 확인
-        for (Map.Entry<String, JsonNode> entry : stockDataMap.entrySet()) {
-            log.info("종목코드: {}, 데이터: {}", entry.getKey(), entry.getValue().toString());
-        }
 
         // "_AL" 접미사를 제거한 맵 생성
         Map<String, JsonNode> cleanStockDataMap = new HashMap<>();
         for (Map.Entry<String, JsonNode> entry : stockDataMap.entrySet()) {
             String cleanCode = entry.getKey().replace("_AL", "");
             cleanStockDataMap.put(cleanCode, entry.getValue());
-            log.info("종목코드 매핑: {} -> {}", entry.getKey(), cleanCode);
         }
 
         if (cleanStockDataMap.isEmpty()) {
@@ -208,7 +198,6 @@ public class DashboardService {
                     "종목 정보를 조회할 수 없습니다.");
         }
 
-        log.info("키움증권 API 응답 종목 수: {}", cleanStockDataMap.size());
 
         return cleanStockDataMap;
     }
@@ -331,13 +320,10 @@ public class DashboardService {
             // 키움증권 REST API 응답 형식
             if (priceData.has("cur_prc")) {
                 String priceStr = priceData.get("cur_prc").asText();
-                log.debug("현재가 문자열: {}", priceStr);
-
                 // 부호와 쉼표를 제거하고 숫자만 추출
                 priceStr = priceStr.replaceAll("[^0-9]", "");
 
                 if (priceStr.isEmpty()) {
-                    log.warn("현재가가 비어있습니다.");
                     return 0L;
                 }
 
