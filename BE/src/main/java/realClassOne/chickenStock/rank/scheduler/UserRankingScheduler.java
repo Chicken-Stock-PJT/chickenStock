@@ -37,7 +37,7 @@ public class UserRankingScheduler {
     /**
      * 매 1시간마다 회원별 총자산 기준 Redis 랭킹 갱신
      */
-    @Scheduled(cron = "*/10 * * * * *") // 매 정시마다 실행 (ex. 12:00, 13:00, ...)
+    @Scheduled(cron = "0 */5 * * * *")
     @Transactional(readOnly = true)
     public void updateRanking() {
         log.info("🔄 [랭킹 스케줄러] Redis에 랭킹 갱신 시작");
