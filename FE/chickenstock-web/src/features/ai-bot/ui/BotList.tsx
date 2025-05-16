@@ -41,10 +41,7 @@ const BotList = ({
   ];
   return (
     <div className="flex flex-col gap-4">
-      <header>
-        <h2 className="text-lg font-semibold">AI 트레이딩 봇 목록</h2>
-      </header>
-      <main className="flex flex-col gap-4">
+      <main className="flex flex-row gap-4 lg:flex-col">
         {mock.map((bot) => (
           <BotProfileCard
             key={bot.id}

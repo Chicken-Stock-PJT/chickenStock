@@ -15,7 +15,7 @@ interface LoginResponse {
 export const useAuthStore = create<AuthState>()(
   devtools(
     persist(
-      (set, get) => ({
+      (set) => ({
         accessToken: null,
         isLoggedIn: false,
         setAccessToken: (token: string) => {
@@ -74,12 +74,12 @@ export const useAuthStore = create<AuthState>()(
               platform: "web",
             },
           );
-          console.log("socialLogin", response.data);
+          // console.log("socialLogin", response.data);
           set({
             accessToken: response.data.accessToken,
             isLoggedIn: true,
           });
-          console.log("socialLogin", get().accessToken);
+          // console.log("socialLogin", get().accessToken);
           return response.data;
         },
         logout: async () => {

@@ -7,9 +7,11 @@ import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 const AiBotTrades = ({
   portfolio,
   refetch,
+  selectedBot,
 }: {
   portfolio: MemberDashboardResponse;
   refetch: () => void;
+  selectedBot: number;
 }) => {
   const [selectedTab, setSelectedTab] = useState<"holding" | "transactions">("holding");
 
@@ -27,7 +29,7 @@ const AiBotTrades = ({
           <AiBotHoldings holdings={portfolio.holdings} onClick={() => void refetch()} />
         </TabsContent>
         <TabsContent value="transactions">
-          <AiBotTransactions />
+          <AiBotTransactions botId={selectedBot} />
         </TabsContent>
       </Tabs>
     </div>

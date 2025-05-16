@@ -14,7 +14,7 @@ const AiBotLayout = () => {
         </p>
       </header>
       <main className="flex flex-col gap-8 lg:flex-row">
-        <aside className="w-1/6">
+        <aside className="lg:w-1/6">
           <BotList selectedBot={selectedBot} setSelectedBot={setSelectedBot} />
         </aside>
         <article className="flex flex-col gap-8">
