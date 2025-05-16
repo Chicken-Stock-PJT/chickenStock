@@ -261,45 +261,53 @@ public class DashboardService {
         // 미체결 금액 계산
         Long pendingBuyAmount = calculatePendingBuyAmount(pendingOrders);
         Long pendingSellAmount = calculatePendingSellAmount(pendingOrders, stockPriceMap);
-        Long pendingOrderAmount = pendingBuyAmount;  // 매수 대기 금액
 
-        // 총 자산 계산
-        // 순자산 개념: 현금 + 주식평가금액
-        // (미체결 매수금액은 이미 member_money에서 차감되어 있음)
-        Long totalAsset = member.getMemberMoney() + totalValuation;
+        // 현금 = 순 현금성 자산 + 지정가 매수 대기중인 금액
+        Long cash = member.getMemberMoney() + pendingBuyAmount;
 
-        // --- 수정된 부분 시작 ---
-        // 1. 초기 자본금(1억) 기준 총 손익 계산
+        // 총 평가금액 = 주식 평가금액
+        Long totalValuationAmount = totalValuation;
+
+        // 총 자산 = 현금 + 총 평가금액
+        Long totalAsset = cash + totalValuationAmount;
+
+        // 초기 자본금(1억) 기준 총 손익 계산
         Long totalProfitLoss = totalAsset - INITIAL_CAPITAL;
 
-        // 2. 초기 자본금(1억) 기준 총 수익률 계산
+        // 초기 자본금(1억) 기준 총 수익률 계산
         Double totalReturnRate = (totalProfitLoss.doubleValue() / INITIAL_CAPITAL.doubleValue()) * 100;
 
-        // 3. 당일 실현 손익 계산
+        // 당일 실현 손익 계산
         Long todayProfitLoss = calculateTodayRealizedProfitLoss(todayTrades);
 
-        // 4. 당일 수익률 계산 (당일 실현 손익 / 자산 총액)
-        Double todayReturnRate = totalAsset > 0
-                ? (todayProfitLoss.doubleValue() / totalAsset.doubleValue()) * 100
+        // 당일 매매 규모 계산 (당일 매도 주식의 총 매수 비용)
+        Long todayTradeAmount = calculateTodayTradeAmount(todayTrades);
+
+        // 당일 수익률 계산 (당일 실현 손익 / 당일 매매 규모)
+        Double todayReturnRate = todayTradeAmount > 0
+                ? (todayProfitLoss.doubleValue() / todayTradeAmount.doubleValue()) * 100
                 : 0.0;
-        // --- 수정된 부분 끝 ---
 
         java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         String formattedDateTime = LocalDateTime.now().format(formatter);
 
         return DashboardResponseDTO.builder()
-                .memberMoney(member.getMemberMoney())
-                .stockValuation(totalValuation)
-                .pendingOrderAmount(pendingOrderAmount)
-                .totalAsset(totalAsset)
-                .totalInvestment(totalInvestment)
-                .totalProfitLoss(totalProfitLoss)
-                .totalReturnRate(totalReturnRate)
-                .todayProfitLoss(todayProfitLoss)
-                .todayReturnRate(todayReturnRate)
-                .holdingStockCount(holdings.size())
-                .holdings(holdingDTOs)
-                .updatedAt(formattedDateTime)
+                .memberMoney(member.getMemberMoney())  // 예수금 잔고 (순 현금성 자산)
+                .cash(cash)                            // 현금 (순 현금성 자산 + 지정가 매수 대기중인 금액)
+                .stockValuation(totalValuation)        // 보유 주식 평가금액
+                .totalValuationAmount(totalValuationAmount)  // 총 평가금액 (= 보유 주식 평가금액)
+                .pendingOrderAmount(pendingBuyAmount)  // 지정가 매수 대기중인 금액
+                .pendingSellAmount(pendingSellAmount)  // 지정가 매도 대기중인 금액 (정보 제공용)
+                .totalAsset(totalAsset)                // 총 자산
+                .totalInvestment(totalInvestment)      // 총 투자금액
+                .totalProfitLoss(totalProfitLoss)      // 총 손익
+                .totalReturnRate(totalReturnRate)      // 총 수익률
+                .todayProfitLoss(todayProfitLoss)      // 금일 수익
+                .todayReturnRate(todayReturnRate)      // 금일 수익률
+                .todayTradeAmount(todayTradeAmount)    // 금일 매매 규모
+                .holdingStockCount(holdings.size())    // 보유 종목 수
+                .holdings(holdingDTOs)                 // 보유 종목 상세 정보
+                .updatedAt(formattedDateTime)          // 업데이트 시간
                 .build();
     }
 
@@ -309,20 +317,25 @@ public class DashboardService {
     private Long calculateTodayRealizedProfitLoss(List<TradeHistory> todayTrades) {
         Long todayProfitLoss = 0L;
 
-        // 당일 매도 거래의 실현 손익을 계산
         for (TradeHistory trade : todayTrades) {
             if (trade.getTradeType() == TradeHistory.TradeType.SELL) {
                 // 매도 거래의 실제 손익 = 매도 금액 - 매수 비용 - 수수료 - 세금
-                // 실제 매도 금액 (수수료와 세금 차감 전)
-                Long sellAmount = trade.getUnitPrice() * trade.getQuantity();
+                // 매도 금액 (총 거래 금액)
+                Long sellAmount = trade.getTotalPrice();
 
-                // 평균 매입가로 계산한 매수 비용
-                Long buyAmount = findAverageCostBasis(trade);
+                // 이 매도 거래에 해당하는 평균 매입가를 기반으로 매수 비용 계산
+                // 이는 홀딩 포지션의 평균 매입가로부터 직접 계산하는 것이 아니라
+                // 해당 거래가 발생했을 때의 실제 매수 내역을 기반으로 계산해야 함
+                Long buyAmount = calculateBuyAmountForSellTrade(trade);
 
                 // 실현 손익 = 매도 금액 - 매수 비용 - 수수료 - 세금
                 Long realizedProfit = sellAmount - buyAmount - trade.getFee() - trade.getTax();
 
                 todayProfitLoss += realizedProfit;
+
+                // 로깅 추가 (디버깅 용도)
+                log.debug("매도 거래 ID: {}, 매도 금액: {}, 매수 비용: {}, 수수료: {}, 세금: {}, 실현 손익: {}",
+                        trade.getTradeHistoryId(), sellAmount, buyAmount, trade.getFee(), trade.getTax(), realizedProfit);
             }
         }
 
@@ -330,44 +343,116 @@ public class DashboardService {
     }
 
     /**
-     * 매도 거래의 원가를 계산합니다.
-     * 필요시 TradeHistoryRepository에 관련 쿼리를 추가하세요.
+     * 매도 거래에 대한 실제 매수 비용을 계산합니다.
+     * FIFO(선입선출) 방식을 사용하여 보다 정확한 매수 비용을 산출합니다.
      */
-    private Long findAverageCostBasis(TradeHistory sellTrade) {
-        // 이 메서드는 매도 시점의 평균 매입가를 사용하여 원가를 계산합니다.
-        // TradeHistory에 매도 시점의 평균 매입가가 저장되어 있지 않다면,
-        // 별도의 쿼리나 로직을 통해 매도 시점의 평균 매입가를 조회해야 합니다.
-
-        // 간단한 구현: 해당 주식의 평균 매입가를 조회
+    private Long calculateBuyAmountForSellTrade(TradeHistory sellTrade) {
         Member member = sellTrade.getMember();
         StockData stockData = sellTrade.getStockData();
         LocalDateTime sellTime = sellTrade.getTradedAt();
+        int sellQuantity = sellTrade.getQuantity();
 
-        // 매도 시점 이전의 모든 거래 내역을 조회해야 합니다.
-        // 이를 위한 새로운 쿼리 메서드가 필요할 수 있습니다.
-        List<TradeHistory> previousTrades = tradeHistoryRepository.findByMemberAndStockDataAndTradedAtBefore(
+        // 매도 거래 이전의 모든 관련 거래 내역을 시간 순으로 조회 (오래된 것부터)
+        List<TradeHistory> previousTrades = tradeHistoryRepository.findByMemberAndStockDataAndTradedAtBeforeOrderByTradedAtAsc(
                 member, stockData, sellTime);
 
-        long totalBuyAmount = 0L;
-        int totalBuyQuantity = 0;
+        if (previousTrades.isEmpty()) {
+            log.warn("매도 거래({})에 대한 이전 매수 내역이 없습니다.", sellTrade.getTradeHistoryId());
+            return 0L;
+        }
 
+        // FIFO 방식으로 매수 비용 계산
+        long totalBuyAmount = 0L;
+        int remainingSellQuantity = sellQuantity;
+
+        // 첫 매수부터 순서대로 처리 (FIFO)
         for (TradeHistory history : previousTrades) {
+            if (remainingSellQuantity <= 0) {
+                break; // 모든 매도 수량에 대한 매수 비용을 계산했으면 종료
+            }
+
             if (history.getTradeType() == TradeHistory.TradeType.BUY) {
-                totalBuyAmount += history.getUnitPrice() * history.getQuantity();
-                totalBuyQuantity += history.getQuantity();
-            } else if (history.getTradeType() == TradeHistory.TradeType.SELL) {
-                // FIFO 방식을 가정하면, 매도된 수량만큼 가장 오래된 매수 수량을 차감해야 합니다.
-                // 이 부분은 복잡하므로, 단순화를 위해 매도 수량을 전체 매수 수량에서 차감합니다.
-                totalBuyQuantity -= history.getQuantity();
+                // 이 매수 거래에서 사용 가능한 수량 계산
+                int availableBuyQuantity = history.getQuantity();
+
+                // 이전 매도 거래로 이미 매도된 수량 차감 (같은 매수 건에 대해)
+                for (TradeHistory prevSell : previousTrades) {
+                    if (prevSell.getTradeType() == TradeHistory.TradeType.SELL
+                            && prevSell.getTradedAt().isAfter(history.getTradedAt())
+                            && prevSell.getTradedAt().isBefore(sellTime)) {
+                        availableBuyQuantity -= calculateBuyQuantityUsedForSellTrade(prevSell, history, previousTrades);
+                    }
+                }
+
+                if (availableBuyQuantity <= 0) {
+                    continue; // 이 매수 거래의 모든 수량이 이미 매도되었으면 다음 거래로
+                }
+
+                // 현재 매도에 적용할 수량 계산
+                int quantityToUse = Math.min(availableBuyQuantity, remainingSellQuantity);
+
+                // 해당 수량에 대한 매수 비용 계산 및 추가
+                long buyAmountPerShare = history.getUnitPrice();
+                totalBuyAmount += buyAmountPerShare * quantityToUse;
+
+                // 남은 매도 수량 업데이트
+                remainingSellQuantity -= quantityToUse;
+
+                log.debug("매수 거래 ID: {}, 단가: {}, 사용 수량: {}, 누적 매수 비용: {}, 남은 매도 수량: {}",
+                        history.getTradeHistoryId(), buyAmountPerShare, quantityToUse, totalBuyAmount, remainingSellQuantity);
             }
         }
 
-        // 평균 매입가
-        long avgPrice = totalBuyQuantity > 0 ? totalBuyAmount / totalBuyQuantity : 0L;
+        // 모든 수량에 대한 매수 비용을 찾지 못한 경우 (비정상 케이스)
+        if (remainingSellQuantity > 0) {
+            log.warn("매도 수량({})에 대한 충분한 매수 내역을 찾지 못했습니다. 부족한 수량: {}",
+                    sellQuantity, remainingSellQuantity);
 
-        // 매도한 수량에 대한 원가 계산
-        return avgPrice * sellTrade.getQuantity();
+            // 대안: 평균 매입가를 사용하여 나머지 수량에 대한 비용 추정
+            HoldingPosition position = holdingPositionRepository.findByMemberAndStockDataAndActiveTrue(member, stockData)
+                    .orElse(null);
+            if (position != null) {
+                totalBuyAmount += position.getAveragePrice() * remainingSellQuantity;
+                log.debug("부족한 수량에 대해 현재 평균 매입가({})를 사용하여 비용 추정", position.getAveragePrice());
+            }
+        }
+
+        return totalBuyAmount;
     }
+
+    /**
+     * 특정 매도 거래에서 특정 매수 거래의 수량이 얼마나 사용되었는지 계산합니다.
+     * FIFO 방식을 고려하여 정확한 수량을 계산합니다.
+     */
+    private int calculateBuyQuantityUsedForSellTrade(TradeHistory sellTrade, TradeHistory buyTrade, List<TradeHistory> allTrades) {
+        // 이 매수 거래 이전의 모든 매수 거래들의 총 수량
+        int totalBuyQuantityBeforeThis = 0;
+        for (TradeHistory trade : allTrades) {
+            if (trade.getTradeType() == TradeHistory.TradeType.BUY
+                    && trade.getTradedAt().isBefore(buyTrade.getTradedAt())) {
+                totalBuyQuantityBeforeThis += trade.getQuantity();
+            }
+        }
+
+        // 이 매수 거래 이전의 매수 거래들이 처리한 총 매도 수량
+        int totalSellQuantityProcessedByPreviousBuys = 0;
+
+        // 이 매수 거래 자체의 수량
+        int thisBuyQuantity = buyTrade.getQuantity();
+
+        // 매도 거래의 총 수량이 이 매수 거래 이전의 모든 매수 수량보다 크면,
+        // 이 매수 거래에서 일부 수량이 사용된 것
+        if (sellTrade.getQuantity() > totalBuyQuantityBeforeThis) {
+            // 이 매수 거래에서 사용된 최대 가능 수량은 매도 수량 - 이전 매수 거래들의 총 수량
+            int maxPossibleQuantityFromThisBuy = sellTrade.getQuantity() - totalBuyQuantityBeforeThis;
+            // 실제 사용된 수량은 이 매수 거래의 수량과 최대 가능 수량 중 작은 값
+            return Math.min(thisBuyQuantity, maxPossibleQuantityFromThisBuy);
+        }
+
+        // 이 매수 거래 이전의 매수 거래들로 충분히 처리 가능하면 0 반환
+        return 0;
+    }
+
 
     /**
      * JsonNode에서 현재가를 추출합니다.
@@ -479,5 +564,22 @@ public class DashboardService {
         }
 
         return totalAmount;
+    }
+
+    /**
+     * 당일 매매 규모(매도 주식의 매수 비용 합계)를 계산합니다.
+     */
+    private Long calculateTodayTradeAmount(List<TradeHistory> todayTrades) {
+        Long todayTradeAmount = 0L;
+
+        for (TradeHistory trade : todayTrades) {
+            if (trade.getTradeType() == TradeHistory.TradeType.SELL) {
+                // 이 매도 거래에 대한 매수 비용 계산
+                Long buyAmount = calculateBuyAmountForSellTrade(trade);
+                todayTradeAmount += buyAmount;
+            }
+        }
+
+        return todayTradeAmount;
     }
 }
