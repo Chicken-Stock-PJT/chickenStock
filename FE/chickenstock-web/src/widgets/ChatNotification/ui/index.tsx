@@ -7,8 +7,8 @@ import FloatingButton from "./FloatingButton";
 export default function ChatNotification() {
   const { isOpen, setOpen, notifications, activeTab, setActiveTab } = useChatNotificationStore();
 
-  const unreadCount = notifications.length;
-
+  // 읽지 않은 알림 개수
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
   return (
     <>
       {/* 플로팅 버튼 */}

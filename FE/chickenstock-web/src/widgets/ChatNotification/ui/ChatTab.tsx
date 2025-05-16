@@ -57,8 +57,14 @@ export default function ChatTab() {
             <div className="space-y-3 py-4">
               {messages.map((msg, index) => {
                 const isMyMessage = msg.memberId === currentUser?.memberId;
-                const time = new Date(msg.timestamp ?? Date.now());
-                const timeString = `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}`;
+                // 한국 시간으로 변환 (UTC+9)
+                const timestamp = msg.timestamp ?? Date.now();
+                const koreaDate = new Date(timestamp);
+
+                // 시간 포맷팅 (시:분)
+                const hours = koreaDate.getHours().toString().padStart(2, "0");
+                const minutes = koreaDate.getMinutes().toString().padStart(2, "0");
+                const timeString = `${hours}:${minutes}`;
 
                 return (
                   <div key={index} className={cn("px-4", isMyMessage && "bg-white py-2")}>
@@ -119,7 +125,7 @@ export default function ChatTab() {
                 disabled={!authenticated || !inputMessage.trim()}
                 className={cn(
                   "absolute right-1 top-1/2 -translate-y-1/2",
-                  // "flex size-9 items-center justify-center",
+                  "flex size-9 items-center justify-center",
                   "rounded-full bg-amber-500 text-white",
                   "transition-all hover:bg-amber-600",
                   "disabled:cursor-not-allowed disabled:bg-gray-300 disabled:hover:scale-100",
