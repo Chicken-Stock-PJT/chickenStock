@@ -125,10 +125,12 @@ const handleMessage = (data: WebSocketMessage) => {
   } else if (isChatMessage(data)) {
     store.addMessage(data);
   } else if (isNotificationMessage(data)) {
+    console.log("새 알림 수신:", data);
     store.addNotification(data);
   } else if (isNotificationListMessage(data)) {
     store.setNotifications(data.notifications);
   } else if (isNotificationReadMessage(data)) {
+    console.log("알림 읽음 처리 응답:", data);
     if (data.success) {
       store.markNotificationAsRead(data.notificationId);
     }
