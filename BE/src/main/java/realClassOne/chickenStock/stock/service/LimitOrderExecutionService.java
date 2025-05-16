@@ -543,6 +543,7 @@ public class LimitOrderExecutionService {
                 Integer newQuantity = position.getQuantity() - quantity;
 
                 if (newQuantity == 0) {
+                    position.updatePosition(0, position.getAveragePrice(), 0L, 0.0); // 수량을 0으로 설정
                     position.deactivate();
                 } else {
                     position.updatePosition(newQuantity, position.getAveragePrice(), 0L, 0.0);
