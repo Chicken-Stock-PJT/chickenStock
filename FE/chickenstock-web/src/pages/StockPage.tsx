@@ -6,6 +6,7 @@ import Trade from "@/features/stocks/trade/ui/Trade";
 import Status from "@/features/stocks/status/ui/Status";
 import { getStockInfo, getStockPrice } from "@/features/stocks/api";
 import { useWebSocketStore } from "@/shared/store/websocket";
+import Transaction from "@/features/stocks/transaction/ui";
 
 const StockPage = () => {
   const stockCode = useParams().stockCode?.slice(0, 6);
@@ -81,8 +82,13 @@ const StockPage = () => {
           <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
             <Chart stockName={stockName} stockCode={stockCode} priceData={priceData} />
           </div>
-          <div className="flex-1">
-            <OrderBook stockCode={stockCode ?? ""} currentPrice={currentPriceNumber} />
+          <div className="flex w-full gap-2">
+            <div className="w-1/2">
+              <OrderBook stockCode={stockCode ?? ""} currentPrice={currentPriceNumber} />
+            </div>
+            <div className="w-1/2 overflow-auto">
+              <Transaction />
+            </div>
           </div>
         </div>
         <div className="col-span-4 flex flex-col gap-2">
