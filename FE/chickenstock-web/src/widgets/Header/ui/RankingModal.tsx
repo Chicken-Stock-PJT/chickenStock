@@ -1,4 +1,4 @@
-import { User, Trophy, Clock, RefreshCw } from "lucide-react";
+import { User, RefreshCw, Bot } from "lucide-react";
 import { useAuthStore } from "@/shared/store/auth";
 import { useRankingQuery } from "../model/queries";
 import { Modal, ModalContent, ModalHeader, ModalTitle } from "@/shared/libs/ui/modal";
@@ -11,6 +11,12 @@ interface RankingModalProps {
 const RankingModal = ({ open, onOpenChange }: RankingModalProps) => {
   const isLogin = useAuthStore((state) => state.isLoggedIn);
   const { data, isLoading, error } = useRankingQuery();
+
+  // AI 봇인지 확인하는 함수
+  const isAIBot = (nickname: string) => {
+    const aiNames = ["쿨한 AI", "귀요미 AI", "chill~AI"];
+    return aiNames.includes(nickname);
+  };
 
   // 마지막 갱신 시간 계산 (5분 간격)
   const getLastUpdateTime = () => {
@@ -44,7 +50,7 @@ const RankingModal = ({ open, onOpenChange }: RankingModalProps) => {
       <ModalContent className="max-h-[90vh] max-w-md overflow-y-auto rounded-xl bg-gradient-to-b from-white to-gray-50 shadow-lg">
         <ModalHeader className="border-b border-gray-100 pb-3">
           <ModalTitle className="flex items-center gap-2 text-xl font-bold text-gray-800">
-            <Trophy className="size-5 text-yellow-500" />
+            <div className="size-2 text-yellow-500" />
             자산 랭킹
           </ModalTitle>
         </ModalHeader>
@@ -67,23 +73,19 @@ const RankingModal = ({ open, onOpenChange }: RankingModalProps) => {
           ) : (
             <>
               {/* 랭킹 갱신 정보 */}
-              <div className="mx-4 rounded-lg bg-blue-50 p-3 text-sm">
-                <div className="flex items-center justify-between text-blue-700">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="size-4" />
-                    <span>마지막 갱신: {lastUpdate}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <RefreshCw className="size-4" />
-                    <span>다음 갱신: {nextUpdate}분 후</span>
-                  </div>
+              <div className="mx-4 mt-4 flex items-center justify-between text-sm text-gray-500">
+                <div className="flex items-center">
+                  <span>마지막 갱신: {lastUpdate}</span>
+                </div>
+                <div className="flex items-center">
+                  <span>다음 갱신까지: {nextUpdate}분</span>
                 </div>
               </div>
 
               {/* 상위 랭킹 */}
               <div className="px-4">
                 <h3 className="mb-3 text-lg font-bold text-gray-700">
-                  <span className="mr-2 text-yellow-500">TOP</span>
+                  <span className="mr-2 text-yellow-600">TOP</span>
                   <span>100</span>
                 </h3>
               </div>
@@ -94,6 +96,7 @@ const RankingModal = ({ open, onOpenChange }: RankingModalProps) => {
                   {data?.topRankings.map((ranking, index) => {
                     const isMyRanking =
                       isLogin && data.myRank && ranking.nickname === data.myRank.nickname;
+                    const isBot = isAIBot(ranking.nickname);
 
                     return (
                       <div
@@ -101,9 +104,11 @@ const RankingModal = ({ open, onOpenChange }: RankingModalProps) => {
                         className={`flex items-center justify-between rounded-xl p-3.5 shadow-sm transition-all hover:shadow-md ${
                           isMyRanking
                             ? "border-2 border-orange-300 bg-gradient-to-r from-orange-50 to-orange-100"
-                            : ranking.rank <= 3
-                              ? "bg-gradient-to-r from-yellow-50 to-yellow-100 shadow-yellow-100"
-                              : "bg-white"
+                            : isBot
+                              ? "border-2 border-blue-300 bg-gradient-to-r from-blue-50 to-blue-100"
+                              : ranking.rank <= 3
+                                ? "bg-gradient-to-r from-yellow-50 to-yellow-100 shadow-yellow-100"
+                                : "bg-white"
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -127,11 +132,23 @@ const RankingModal = ({ open, onOpenChange }: RankingModalProps) => {
                                 <User className="size-3.5 text-orange-600" />
                               </div>
                             )}
+                            {isBot && (
+                              <div className="rounded-full bg-blue-100 p-0.5">
+                                <Bot className="size-3.5 text-blue-600" />
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <span className="font-semibold text-gray-900">
-                          ₩{ranking.totalAsset.toLocaleString()}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-900">
+                            ₩{ranking.totalAsset.toLocaleString()}
+                          </span>
+                          {/* {isBot && (
+                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                              AI
+                            </span>
+                          )} */}
+                        </div>
                       </div>
                     );
                   })}
