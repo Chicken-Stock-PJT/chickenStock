@@ -29,6 +29,9 @@ import realClassOne.chickenStock.notification.repository.NotificationRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 
 import java.io.IOException;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +47,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final ChatService chatService;
     private final NotificationRepository notificationRepository;
+    private static final DateTimeFormatter formatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                    .withZone(ZoneId.of("Asia/Seoul"));
 
     // 세션별 회원 정보 관리
     private final Map<String, Long> sessionMemberMap = new ConcurrentHashMap<>();
@@ -65,6 +71,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             ObjectNode message = objectMapper.createObjectNode();
             message.put("type", "connected");
             message.put("message", "채팅 및 알림 서버에 연결되었습니다. 인증이 필요합니다.");
+            message.put("timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter));
 
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
         } catch (Exception e) {
@@ -139,7 +146,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 notificationNode.put("notificationType", notification.getType());
                 notificationNode.put("title", notification.getTitle());
                 notificationNode.put("message", notification.getMessage());
-                notificationNode.put("timestamp", notification.getCreatedAt().toEpochSecond(java.time.ZoneOffset.UTC) * 1000);
+                ZonedDateTime createdAtKST = notification.getCreatedAt().atZone(ZoneId.of("Asia/Seoul")); // 🌐 [KST 적용]
+                notificationNode.put("timestamp", createdAtKST.format(formatter)); // 🌐 [KST 적용]
                 notificationNode.put("isRead", notification.isRead());
 
                 // relatedId 추가 (댓글 ID)
@@ -381,7 +389,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             chatMessage.setMemberId(memberId);
             chatMessage.setNickname(nickname);
             chatMessage.setMessage(message);
-            chatMessage.setTimestamp(System.currentTimeMillis());
+            chatMessage.setTimestamp(ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)); // 🌐 [KST 적용]
 
             // 채팅 메시지 저장
             chatService.saveChatMessage(chatMessage);
@@ -430,7 +438,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
             ObjectNode pong = objectMapper.createObjectNode();
             pong.put("type", "pong");
-            pong.put("timestamp", System.currentTimeMillis());
+            pong.put("timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)); // 🌐 [KST 적용]
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(pong)));
         } catch (Exception e) {
             log.error("Ping 응답 중 오류 발생", e);
@@ -494,7 +502,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             ObjectNode message = objectMapper.createObjectNode();
             message.put("type", "userJoined");
             message.put("nickname", member.getNickname());
-            message.put("timestamp", System.currentTimeMillis());
+            message.put("timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)); // 🌐 [KST 적용]
 
             String messageStr = objectMapper.writeValueAsString(message);
 
@@ -515,7 +523,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 ObjectNode message = objectMapper.createObjectNode();
                 message.put("type", "userLeft");
                 message.put("nickname", nickname);
-                message.put("timestamp", System.currentTimeMillis());
+                message.put("timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)); // 🌐 [KST 적용]
 
                 String messageStr = objectMapper.writeValueAsString(message);
 
