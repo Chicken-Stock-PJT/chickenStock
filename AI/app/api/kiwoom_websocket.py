@@ -391,7 +391,7 @@ class KiwoomWebSocket:
                         for symbol in symbols:
                             self.stock_cache.add_subscribed_symbol(symbol)
                         
-                        logger.info(f"그룹 {group_index} 구독 성공 (시도 {attempt+1}/{max_retries})")
+                        logger.info(f"그룹 {group_index} 구독 성공")
                         return True
                     else:
                         # 소켓이 닫힌 경우 재연결 시도
