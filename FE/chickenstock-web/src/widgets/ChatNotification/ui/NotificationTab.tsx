@@ -16,6 +16,7 @@ export default function NotificationTab() {
   const handleNotificationClick = (notificationId: number, isRead: boolean) => {
     if (!isRead) {
       webSocketManager.markAsRead(notificationId);
+      console.log("알림 읽음 처리 요청:", notificationId);
     }
   };
 
@@ -36,7 +37,7 @@ export default function NotificationTab() {
   return (
     <div className="h-full overflow-y-auto p-4">
       {notifications.length === 0 ? (
-        <div className="text-center text-gray-500">새로운 알림이 없습니다</div>
+        <div className="text-center text-gray-500">새로운 알림이 없습니다.</div>
       ) : (
         <div className="space-y-3">
           {notifications.map((notif) => (
