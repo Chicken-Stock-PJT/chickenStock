@@ -161,7 +161,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
             showAlert("success", "매수 완료", "매수가 되었습니다.");
           },
           onError: () => {
-            showAlert("error", "매수 실패", "잔고가 부족하거나 일시적인 오류가 발생했습니다.");
+            showAlert("error", "매수 실패", "잔고가 부족합니다다.");
           },
         },
       );
