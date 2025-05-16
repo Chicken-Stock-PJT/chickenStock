@@ -1,5 +1,8 @@
 package realClassOne.chickenStock.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -43,11 +46,26 @@ public class RedisConfig {
     }
 
     @Bean
+    public ObjectMapper redisObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
+    }
+
+    @Bean
     public RedisTemplate<String, DashboardResponseDTO> dashboardRedisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, DashboardResponseDTO> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
         template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
+
+        // 개선된 직렬화 방식 사용
+        Jackson2JsonRedisSerializer<DashboardResponseDTO> serializer =
+                new Jackson2JsonRedisSerializer<>(DashboardResponseDTO.class);
+        serializer.setObjectMapper(redisObjectMapper());
+        template.setValueSerializer(serializer);
+
+        template.afterPropertiesSet();
         return template;
     }
 

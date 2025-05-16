@@ -1,13 +1,18 @@
 package realClassOne.chickenStock.stock.dto.response;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
 import java.util.List;
 
 @Getter
 @Builder
-public class DashboardResponseDTO {
+@NoArgsConstructor  // 기본 생성자 추가
+@AllArgsConstructor // 모든 필드 생성자 추가
+public class DashboardResponseDTO implements Serializable {  // Serializable 구현
 
     // 회원 자산 정보
     private Long memberMoney;           // 보유 현금
@@ -33,7 +38,9 @@ public class DashboardResponseDTO {
 
     @Getter
     @Builder
-    public static class StockHoldingDTO {
+    @NoArgsConstructor  // 기본 생성자 추가
+    @AllArgsConstructor // 모든 필드 생성자 추가
+    public static class StockHoldingDTO implements Serializable {  // Serializable 구현
         private String stockCode;       // 종목 코드
         private String stockName;       // 종목명
         private Integer quantity;       // 보유수량
