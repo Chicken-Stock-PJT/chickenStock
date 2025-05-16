@@ -1,4 +1,4 @@
-import { DollarSign, TrendingUp, Trophy } from "lucide-react";
+import { DollarSign, TrendingUp } from "lucide-react";
 
 const AiInfo = ({
   aiBotId,
