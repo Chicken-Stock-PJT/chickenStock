@@ -1,5 +1,6 @@
 package realClassOne.chickenStock.stock.service;
 
+import org.springframework.data.redis.core.RedisTemplate;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,41 +37,113 @@ public class DashboardService {
     private final PendingOrderRepository pendingOrderRepository;
     private final TradeHistoryRepository tradeHistoryRepository;
     private final KiwoomStockApiService kiwoomStockApiService;
-    private final KiwoomWebSocketClient kiwoomWebSocketClient;
     private final JwtTokenProvider jwtTokenProvider;
 
+    private final RedisTemplate<String, DashboardResponseDTO> dashboardRedisTemplate;
+    private static final long CACHE_TTL_SECONDS = 5; // 캐시 유효 시간: 5초
+
     /**
-     * 회원의 통합 대시보드 정보를 조회합니다.
-     * 한 번의 키움증권 API 호출로 모든 종목 정보를 가져옵니다.
+     * 대시보드 데이터를 캐시에서 조회
+     */
+    public DashboardResponseDTO getCachedDashboard(String cacheKey) {
+        return dashboardRedisTemplate.opsForValue().get(cacheKey);
+    }
+
+    /**
+     * 대시보드 데이터를 캐시에 저장
+     */
+    public void cacheDashboard(String cacheKey, DashboardResponseDTO dashboard) {
+        dashboardRedisTemplate.opsForValue().set(cacheKey, dashboard, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+        log.info("대시보드 데이터 캐싱 완료: {}", cacheKey);
+    }
+
+    /**
+     * 인증 토큰 기반 캐시 키 생성
+     */
+    public String generateCacheKeyFromToken(String token) {
+        return "dashboard:token:" + token;
+    }
+
+    /**
+     * 회원 ID 기반 캐시 키 생성
+     */
+    public String generateCacheKeyFromMemberId(Long memberId) {
+        return "dashboard:member:" + memberId;
+    }
+
+    /**
+     * 토큰 기반 회원의 통합 대시보드 정보를 조회합니다.
+     * 캐싱 기능을 적용하여 5초 동안 동일한 결과를 반환합니다.
      */
     @Transactional(readOnly = true)
     public DashboardResponseDTO getDashboard(String authorizationHeader) {
-        // 1. 회원 정보 조회
+        // 토큰에서 회원 ID 추출
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
+        // 캐시 키 생성
+        String cacheKey = generateCacheKeyFromToken(token);
+
+        // 캐시에서 조회
+        DashboardResponseDTO cachedDashboard = getCachedDashboard(cacheKey);
+        if (cachedDashboard != null) {
+            log.info("캐시에서 대시보드 데이터 조회: {}", cacheKey);
+            return cachedDashboard;
+        }
+
+        // 캐시에 없는 경우 새로 조회
+        DashboardResponseDTO dashboard = getDashboardByMemberId(memberId);
+
+        // 결과를 캐시에 저장
+        cacheDashboard(cacheKey, dashboard);
+
+        return dashboard;
+    }
+
+    /**
+     * 회원 ID로 대시보드 정보를 조회합니다.
+     * 캐싱 기능을 적용하여 5초 동안 동일한 결과를 반환합니다.
+     */
+    @Transactional(readOnly = true)
+    public DashboardResponseDTO getDashboardByMemberId(Long memberId) {
+        // 캐시 키 생성
+        String cacheKey = generateCacheKeyFromMemberId(memberId);
+
+        // 캐시에서 조회
+        DashboardResponseDTO cachedDashboard = getCachedDashboard(cacheKey);
+        if (cachedDashboard != null) {
+            log.info("캐시에서 대시보드 데이터 조회: {}", cacheKey);
+            return cachedDashboard;
+        }
+
+        // 회원 정보 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        // 2. 보유 종목 정보 조회 (active = true인 것만)
+        // 보유 종목 정보 조회 (active = true인 것만)
         List<HoldingPosition> holdings = holdingPositionRepository.findByMemberWithStockData(member)
                 .stream()
                 .filter(HoldingPosition::getActive)
                 .collect(Collectors.toList());
 
-        // 3. 미체결 주문 정보 조회
+        // 미체결 주문 정보 조회
         List<PendingOrder> pendingOrders = pendingOrderRepository.findByMemberAndStatus(
                 member, PendingOrder.OrderStatus.PENDING);
 
-        // 4. 금일 거래 내역 조회
+        // 금일 거래 내역 조회
         LocalDateTime todayStart = LocalDate.now().atStartOfDay();
         List<TradeHistory> todayTrades = tradeHistoryRepository.findTodayTradesByMember(member, todayStart);
 
-        // 5. 보유 종목과 미체결 종목의 현재가 정보 일괄 조회 (키움증권 API)
+        // 보유 종목과 미체결 종목의 현재가 정보 일괄 조회 (키움증권 API)
         Map<String, JsonNode> stockPriceMap = getStockPrices(holdings, pendingOrders);
 
-        // 6. 대시보드 데이터 구성
-        return buildDashboardResponse(member, holdings, pendingOrders, todayTrades, stockPriceMap);
+        // 대시보드 데이터 구성
+        DashboardResponseDTO dashboard = buildDashboardResponse(member, holdings, pendingOrders, todayTrades, stockPriceMap);
+
+        // 결과를 캐시에 저장
+        cacheDashboard(cacheKey, dashboard);
+
+        return dashboard;
     }
 
     /**
@@ -144,17 +218,11 @@ public class DashboardService {
             String stockCode = position.getStockData().getShortCode();
             JsonNode priceData = stockPriceMap.get(stockCode);
 
-            // 디버깅: 실제 응답 데이터 확인
-            if (priceData != null) {
-                log.info("종목 {} 응답 데이터: {}", stockCode, priceData.toString());
-            }
-
             // 현재가 추출
             Long currentPrice = extractCurrentPrice(priceData);
 
             // 현재가가 0이면 평균 매입가를 사용
             if (currentPrice == 0L) {
-                log.warn("종목 {} 현재가를 가져올 수 없어 평균매입가를 사용합니다.", stockCode);
                 currentPrice = position.getAveragePrice();
             }
 
@@ -215,6 +283,9 @@ public class DashboardService {
                 ? (todayProfitLoss.doubleValue() / totalValuation.doubleValue()) * 100
                 : 0.0;
 
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        String formattedDateTime = LocalDateTime.now().format(formatter);
+
         return DashboardResponseDTO.builder()
                 .memberMoney(member.getMemberMoney())
                 .stockValuation(totalValuation)
@@ -227,7 +298,7 @@ public class DashboardService {
                 .todayReturnRate(todayReturnRate)
                 .holdingStockCount(holdings.size())
                 .holdings(holdingDTOs)
-                .updatedAt(LocalDateTime.now())
+                .updatedAt(formattedDateTime)
                 .build();
     }
 

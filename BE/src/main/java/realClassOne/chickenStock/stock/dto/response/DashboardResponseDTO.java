@@ -1,10 +1,8 @@
 package realClassOne.chickenStock.stock.dto.response;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Getter;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Getter
@@ -30,8 +28,8 @@ public class DashboardResponseDTO {
     private Integer holdingStockCount;  // 보유 종목 개수
     private List<StockHoldingDTO> holdings; // 보유 종목 리스트
 
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
-    private LocalDateTime updatedAt;    // 데이터 업데이트 시간
+    // LocalDateTime에서 String으로 변경
+    private String updatedAt;    // 데이터 업데이트 시간
 
     @Getter
     @Builder

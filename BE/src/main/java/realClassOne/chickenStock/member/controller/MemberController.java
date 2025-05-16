@@ -167,4 +167,17 @@ public class MemberController {
         DashboardResponseDTO dashboard = dashboardService.getDashboard(authorizationHeader);
         return ResponseEntity.ok(dashboard);
     }
+
+    @GetMapping("/{memberId}/dashboard")
+    public ResponseEntity<DashboardResponseDTO> getDashboardByMemberId(
+            @PathVariable Long memberId) {
+
+        // 허용된 회원 ID 검증
+        if (memberId < 1 || memberId > 4) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        DashboardResponseDTO dashboard = dashboardService.getDashboardByMemberId(memberId);
+        return ResponseEntity.ok(dashboard);
+    }
 }
