@@ -14,27 +14,22 @@ import java.util.List;
 @AllArgsConstructor // 모든 필드 생성자 추가
 public class DashboardResponseDTO implements Serializable {  // Serializable 구현
 
-    // 회원 자산 정보
-    private Long memberMoney;           // 보유 현금
-    private Long stockValuation;        // 주식 평가금액 (보유 종목의 현재가 합계)
-    private Long pendingOrderAmount;    // 미체결 금액 (매수 대기중인 금액)
-    private Long totalAsset;            // 총 자산 (현금 + 주식평가금액)
-
-    // 수익률 정보
-    private Long totalInvestment;       // 총 투자금액
-    private Long totalProfitLoss;       // 총 손익
-    private Double totalReturnRate;     // 총 수익률
-
-    // 당일 수익 정보
-    private Long todayProfitLoss;       // 금일 손익
-    private Double todayReturnRate;     // 금일 수익률
-
-    // 보유 종목 개요
-    private Integer holdingStockCount;  // 보유 종목 개수
-    private List<StockHoldingDTO> holdings; // 보유 종목 리스트
-
-    // LocalDateTime에서 String으로 변경
-    private String updatedAt;    // 데이터 업데이트 시간
+    private Long memberMoney;      // 예수금 잔고 (순 현금성 자산)
+    private Long cash;             // 현금 (순 현금성 자산 + 지정가 매수 대기중인 금액)
+    private Long stockValuation;   // 보유 주식 평가금액
+    private Long totalValuationAmount;  // 총 평가금액 (보유 주식 + 지정가 매도 대기)
+    private Long pendingOrderAmount;  // 지정가 매수 대기중인 금액
+    private Long pendingSellAmount;   // 지정가 매도 대기중인 금액
+    private Long totalAsset;       // 총 자산
+    private Long totalInvestment;  // 총 투자금액
+    private Long totalProfitLoss;  // 총 손익
+    private Double totalReturnRate;  // 총 수익률
+    private Long todayProfitLoss;  // 금일 수익
+    private Double todayReturnRate;  // 금일 수익률
+    private Long todayTradeAmount; // 금일 매매 규모
+    private Integer holdingStockCount;  // 보유 종목 수
+    private List<StockHoldingDTO> holdings;  // 보유 종목 상세 정보
+    private String updatedAt;      // 업데이트 시간
 
     @Getter
     @Builder
