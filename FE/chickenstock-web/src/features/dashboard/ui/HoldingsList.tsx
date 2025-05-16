@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
-import { Position } from "../model/types";
+import { Position } from "@/features/mypage/model/types";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 interface HoldingsListProps {
