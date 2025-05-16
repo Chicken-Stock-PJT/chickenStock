@@ -48,12 +48,23 @@ const Header = () => {
           >
             주식
           </NavLink>
+
           {/* <div
             onClick={() => void navigate("/stocks/005930")}
             className="cursor-pointer text-base font-semibold transition-colors duration-200 hover:text-primary-400"
           >
             주식
           </div> */}
+          <NavLink
+            to="ai-bot"
+            className={({ isActive }) =>
+              `${
+                isActive ? "text-primary-400" : ""
+              } text-base font-semibold transition-colors duration-200`
+            }
+          >
+            AI봇
+          </NavLink>
           {/* 랭킹 버튼 추가 */}
           <div
             onClick={() => setIsRankingOpen(true)}

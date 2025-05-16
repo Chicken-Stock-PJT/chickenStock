@@ -1,24 +1,24 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import ReactApexChart from "react-apexcharts";
-import { Position } from "../model/types";
+import { Holdings } from "@/features/dashboard/model/types";
 
 interface PortfolioChartProps {
-  positions: Position[];
-  totalValuation: number;
+  holdings: Holdings[];
+  stockValuation: number;
   memberMoney: number;
 }
 
-const PortfolioChart = ({ positions, totalValuation, memberMoney }: PortfolioChartProps) => {
+const PortfolioChart = ({ holdings, stockValuation, memberMoney }: PortfolioChartProps) => {
   const options = {
     // series: [memberMoney, ...positions.map((position) => position.valuationAmount)],
 
-    series: positions.map((position) => position.valuationAmount),
+    series: holdings.map((holding) => holding.valuationAmount),
     options: {
       chart: {
         type: "donut" as const,
       },
       // labels: ["현금", ...positions.map((position) => position.stockName)],
-      labels: positions.map((position) => position.stockName),
+      labels: holdings.map((holding) => holding.stockName),
       responsive: [
         {
           breakpoint: 480,
@@ -48,7 +48,7 @@ const PortfolioChart = ({ positions, totalValuation, memberMoney }: PortfolioCha
           <div className="border-l pl-4"></div>
           <div className="py-2">
             <div className="text-sm font-semibold text-gray-500">총 평가금액</div>
-            <div className="font-bold">{totalValuation.toLocaleString()}원</div>
+            <div className="font-bold">{stockValuation.toLocaleString()}원</div>
           </div>
         </div>
       </CardHeader>
