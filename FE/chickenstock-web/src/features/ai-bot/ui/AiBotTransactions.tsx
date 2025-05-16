@@ -1,8 +1,8 @@
 import TransactionsList from "@/features/dashboard/ui/TransactionsList";
-import { useGetTransactions } from "@/features/mypage/model/queries";
-const AiBotTransactions = () => {
+import { useAiTradeHistoryQuery } from "@/features/ai-bot/model/queries";
+const AiBotTransactions = ({ botId }: { botId: number }) => {
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useGetTransactions();
+    useAiTradeHistoryQuery(botId);
 
   return (
     <div className="text-left">

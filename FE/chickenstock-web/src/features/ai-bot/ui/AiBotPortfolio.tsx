@@ -11,9 +11,9 @@ const AiBotPortfolio = ({ selectedBot }: { selectedBot: number }) => {
 
   const portfolio = data!;
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       <AiBotDashboard portfolio={portfolio} aiBotId={selectedBot} />
-      <AiBotTrades portfolio={portfolio} refetch={() => void refetch()} />
+      <AiBotTrades portfolio={portfolio} refetch={() => void refetch()} selectedBot={selectedBot} />
     </div>
   );
 };
