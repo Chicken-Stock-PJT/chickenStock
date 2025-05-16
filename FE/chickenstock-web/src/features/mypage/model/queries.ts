@@ -1,7 +1,6 @@
 import { useQuery, useInfiniteQuery, InfiniteData } from "@tanstack/react-query";
 import {
   getDailyProfitRate,
-  getPortfolio,
   getTransactions,
   fetchPendingOrders,
   getMemberDashboard,
@@ -9,16 +8,6 @@ import {
 import { AxiosResponse } from "axios";
 import { ErrorResponse, DailyProfitRateResponse, TransactionResponse, PendingOrder } from "./types";
 import { MemberDashboardResponse } from "@/features/dashboard/model/types";
-
-export const useGetPortfolio = () => {
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["portfolio"],
-    queryFn: getPortfolio,
-    staleTime: 0,
-    gcTime: 0,
-  });
-  return { data, isLoading, error, refetch };
-};
 
 export const useGetTransactions = () => {
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =

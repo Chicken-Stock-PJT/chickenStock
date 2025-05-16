@@ -1,7 +1,6 @@
-import { getUserInfo } from "@/features/mypage/api";
 import useWatchlistStore from "@/features/watchlist/model/store";
 import apiClient from "@/shared/api/axios";
-import { AuthState, SimpleProfile } from "@/shared/store/types";
+import { AuthState } from "@/shared/store/types";
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import { queryClient } from "../api/queryClient";
@@ -29,31 +28,6 @@ export const useAuthStore = create<AuthState>()(
             accessToken: null,
             isLoggedIn: false,
           }),
-
-        simpleProfile: null,
-        getSimpleProfile: async () => {
-          try {
-            const response = await getUserInfo();
-            set({ simpleProfile: response });
-            return response;
-          } catch (error) {
-            if (error instanceof Error) {
-              console.log(`프로필 정보 조회 실패 ${error.message}`);
-            } else {
-              console.log("프로필 정보 조회 실패");
-            }
-            set({ simpleProfile: null });
-            void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
-            window.location.href = "/login";
-            throw error;
-          }
-        },
-        setSimpleProfile: (profile) =>
-          set((state) => ({
-            simpleProfile: state.simpleProfile
-              ? { ...state.simpleProfile, ...profile }
-              : (profile as SimpleProfile),
-          })),
         login: async (email: string, password: string) => {
           const response = await apiClient.post<LoginResponse>(`${baseURL}/auth/login`, {
             email,
@@ -97,7 +71,6 @@ export const useAuthStore = create<AuthState>()(
             set({
               accessToken: null,
               isLoggedIn: false,
-              simpleProfile: null,
             });
             void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
           }
