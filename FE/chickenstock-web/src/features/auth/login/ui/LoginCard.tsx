@@ -11,6 +11,7 @@ import { useGetWatchlist } from "@/features/watchlist/model/queries";
 import { AxiosError } from "axios";
 import { Alert, AlertDescription } from "@/shared/libs/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { useSimpleProfile } from "@/shared/model/queries";
 
 const LoginCard = () => {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ const LoginCard = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
 
+  const { refetch: refetchProfile } = useSimpleProfile();
   const { refetch: refetchWatchlist } = useGetWatchlist();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -38,7 +40,7 @@ const LoginCard = () => {
     try {
       const response = await useAuthStore.getState().login(formData.email, formData.password);
       useAuthStore.getState().setAccessToken(response.accessToken);
-      await useAuthStore.getState().getSimpleProfile();
+      await refetchProfile();
       await refetchWatchlist();
       void navigate(localStorage.getItem("redirectUrl") ?? "/");
       localStorage.removeItem("redirectUrl");
@@ -65,7 +67,7 @@ const LoginCard = () => {
         {showAlert && (
           <Alert variant="destructive">
             <div className="flex gap-2">
-              <AlertCircle className="h-4 w-4 my-auto" />
+              <AlertCircle className="my-auto size-4" />
               <AlertDescription className="text-left">{alertMessage}</AlertDescription>
             </div>
           </Alert>
@@ -104,11 +106,9 @@ const LoginCard = () => {
           </div>
         </form>
         <div className="flex items-center">
-          <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
-          <span className="flex-shrink mx-4 text-gray-400 dark:text-gray-200 text-sm">
-            소셜 로그인
-          </span>
-          <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+          <div className="grow border-t border-gray-200 dark:border-gray-700"></div>
+          <span className="mx-4 shrink text-sm text-gray-400 dark:text-gray-200">소셜 로그인</span>
+          <div className="grow border-t border-gray-200 dark:border-gray-700"></div>
         </div>
       </CardContent>
       <CardFooter>

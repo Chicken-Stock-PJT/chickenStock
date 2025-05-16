@@ -1,3 +1,11 @@
+export interface SimpleProfile {
+  nickname: string;
+  memberMoney: string;
+  totalAsset: string;
+  returnRate: string;
+  isOauth: string;
+}
+
 export interface UpdatePasswordRequest {
   currentPassword: string;
   newPassword: string;
