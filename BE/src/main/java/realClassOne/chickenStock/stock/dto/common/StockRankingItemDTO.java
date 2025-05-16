@@ -36,4 +36,9 @@ public class StockRankingItemDTO implements Serializable {
     private String tradeVolume; // 거래량
     private String previousRatio; // 전일비
     private String tradeTurnoverRate; // 거래회전율
+
+    // StockRankingItemDTO.java에 추가할 setter 메서드
+    public void setStockCode(String stockCode) {
+        this.stockCode = stockCode;
+    }
 }

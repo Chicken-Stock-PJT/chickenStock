@@ -190,6 +190,7 @@ public class KiwoomWebSocketClient {
     }
 
     // 새로운 웹소켓 클라이언트 생성 메서드
+    // createNewWebSocketClient() 메서드 수정
     private void createNewWebSocketClient() {
         try {
             log.info("새로운 WebSocket 클라이언트 생성 시작");
@@ -213,17 +214,12 @@ public class KiwoomWebSocketClient {
                         if ("LOGIN".equals(trnm)) {
                             if ("0".equals(response.get("return_code").asText())) {
                                 log.info("키움증권 WebSocket 로그인 성공 (완전 재연결)");
-
-//                                // 로그인 성공 후 기존 구독된 종목 재등록
-//                                if (!subscribedStockCodes.isEmpty()) {
-//                                    reregisterAllStocks();
-//                                }
                             } else {
                                 log.error("키움증권 WebSocket 로그인 실패: {}", response.get("return_msg").asText());
-                                reconnect();
+                                // 별도 스레드에서 재연결
+                                scheduler.execute(() -> reconnect());
                             }
                         } else if ("PING".equals(trnm)) {
-                            // PING 메시지에 그대로 응답
                             messageQueue.offer(message);
                         } else if ("REAL".equals(trnm)) {
                             processRealTimeData(response);
@@ -241,14 +237,16 @@ public class KiwoomWebSocketClient {
                 public void onClose(int code, String reason, boolean remote) {
                     log.info("키움증권 WebSocket 연결 종료: code={}, reason={}, remote={}", code, reason, remote);
                     connected.set(false);
-                    reconnect();
+                    // 별도 스레드에서 재연결 시도
+                    scheduler.execute(() -> reconnect());
                 }
 
                 @Override
                 public void onError(Exception ex) {
                     log.error("키움증권 WebSocket 오류 발생", ex);
                     connected.set(false);
-                    reconnect();
+                    // 별도 스레드에서 재연결 시도
+                    scheduler.execute(() -> reconnect());
                 }
             };
 
@@ -285,7 +283,7 @@ public class KiwoomWebSocketClient {
                     log.info("키움증권 WebSocket 서버 연결 성공");
                     connected.set(true);
                     reconnectAttempts = 0;
-                    fullReconnectAttempts = 0; // 완전 재연결 카운터도 리셋
+                    fullReconnectAttempts = 0;
                     login();
                 }
 
@@ -298,17 +296,12 @@ public class KiwoomWebSocketClient {
                         if ("LOGIN".equals(trnm)) {
                             if ("0".equals(response.get("return_code").asText())) {
                                 log.info("키움증권 WebSocket 로그인 성공");
-
-//                                // 로그인 성공 후 기존 구독된 종목 재등록
-//                                if (!subscribedStockCodes.isEmpty()) {
-//                                    reregisterAllStocks();
-//                                }
                             } else {
                                 log.error("키움증권 WebSocket 로그인 실패: {}", response.get("return_msg").asText());
-                                reconnect();
+                                // 별도 스레드에서 재연결
+                                scheduler.execute(() -> reconnect());
                             }
                         } else if ("PING".equals(trnm)) {
-                            // PING 메시지에 그대로 응답
                             messageQueue.offer(message);
                         } else if ("REAL".equals(trnm)) {
                             processRealTimeData(response);
@@ -326,14 +319,16 @@ public class KiwoomWebSocketClient {
                 public void onClose(int code, String reason, boolean remote) {
                     log.info("키움증권 WebSocket 연결 종료: code={}, reason={}, remote={}", code, reason, remote);
                     connected.set(false);
-                    reconnect();
+                    // 별도 스레드에서 재연결 시도
+                    scheduler.execute(() -> reconnect());
                 }
 
                 @Override
                 public void onError(Exception ex) {
                     log.error("키움증권 WebSocket 오류 발생", ex);
                     connected.set(false);
-                    reconnect();
+                    // 별도 스레드에서 재연결 시도
+                    scheduler.execute(() -> reconnect());
                 }
             };
 
@@ -1108,12 +1103,9 @@ public class KiwoomWebSocketClient {
     private void disconnectIfNoSubscriptions() {
         subscriptionLock.readLock().lock();
         try {
-            // 구독 중인 종목이 없는지 확인
             if (subscribedStockCodes.isEmpty()) {
                 log.info("구독 중인 종목이 없음. 리스너 수: {}", listeners.size());
 
-                // 추가: 필요한 리스너만 확인하도록 수정
-                // StockWebSocketHandler에서 등록한 리스너인지 확인
                 boolean hasWebSocketListener = false;
                 for (StockDataListener listener : listeners) {
                     if (listener instanceof StockWebSocketHandler) {
@@ -1122,15 +1114,17 @@ public class KiwoomWebSocketClient {
                     }
                 }
 
-                // 웹소켓 리스너가 없거나 리스너가 1개만 있고
-                // 그것이 기본 시스템 리스너라면 연결 종료 가능
                 if (!hasWebSocketListener &&
                         (listeners.isEmpty() || (listeners.size() == 1 && isSystemListener(listeners.get(0))))) {
                     if (client != null && isConnected()) {
                         try {
                             log.info("웹소켓 리스너가 없고 구독 중인 종목이 없어 키움증권 WebSocket 연결을 종료합니다.");
+                            // 재연결 방지를 위한 플래그 설정
+                            reconnecting.set(true);
                             client.close();
                             connected.set(false);
+                            // 일정 시간 후 재연결 플래그 해제
+                            scheduler.schedule(() -> reconnecting.set(false), 5, TimeUnit.SECONDS);
                             log.info("키움증권 WebSocket 연결 종료 완료");
                         } catch (Exception e) {
                             log.error("키움증권 WebSocket 연결 종료 중 오류 발생", e);

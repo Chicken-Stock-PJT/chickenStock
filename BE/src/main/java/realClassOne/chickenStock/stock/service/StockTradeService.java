@@ -75,17 +75,6 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
     private final KiwoomStockApiService kiwoomStockApiService;
 
-    @PostConstruct
-    public void init() {
-        try {
-            kiwoomWebSocketClient.addListener(this);
-            log.info("StockTradeService 초기화 완료 - 실시간 가격 리스너 등록");
-        } catch (Exception e) {
-            log.error("StockTradeService 초기화 실패", e);
-            throw new RuntimeException("StockTradeService 초기화 실패", e);
-        }
-    }
-
     // 특정 종목에 대한 락 획득
     private ReentrantLock getStockLock(String stockCode) {
         return stockLocks.computeIfAbsent(stockCode, k -> new ReentrantLock());
@@ -99,165 +88,85 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     // 매수 메서드
     @Transactional
     public TradeResponseDTO buyStock(String authorizationHeader, TradeRequestDTO request) {
-        // 입력값 검증
-        validateTradeRequest(request);
-
-        String token = jwtTokenProvider.resolveToken(authorizationHeader);
-        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
-
-        StockData stock = stockDataRepository.findByShortCode(request.getStockCode())
-                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND, "해당 종목을 찾을 수 없습니다: " + request.getStockCode()));
-
-        // 데드락 방지를 위해 항상 동일한 순서로 락 획득
-        ReentrantLock memberLock = getMemberLock(memberId);
-        memberLock.lock();
         try {
-            ReentrantLock stockLock = getStockLock(request.getStockCode());
-            stockLock.lock();
-            try {
-                // 시장가 주문인 경우 실시간 가격 조회
-                Long currentPrice;
-                boolean temporarySubscription = false;
+            // 토큰에서 회원 정보 추출
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-                if (Boolean.TRUE.equals(request.getMarketOrder())) {
-                    temporarySubscription = !kiwoomWebSocketClient.isSubscribed(request.getStockCode());
-                    currentPrice = getCurrentStockPriceWithRetry(request.getStockCode());
-                    if (currentPrice == null) {
-                        failedTrades.incrementAndGet();
-                        throw new CustomException(StockErrorCode.PRICE_DATA_NOT_AVAILABLE);
-                    }
-                } else {
-                    // 지정가 주문 처리
-                    return createPendingBuyOrder(member, stock, request);
-                }
+            // 종목 정보 조회
+            StockData stockData = stockDataRepository.findByShortCode(request.getStockCode())
+                    .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
-                // 총 구매 금액 계산
-                Long totalAmount = currentPrice * request.getQuantity();
-
-                // 수수료 계산
-                Long fee = feeTaxService.calculateBuyFee(totalAmount);
-
-                // 총 구매 금액에 수수료 추가
-                Long totalAmountWithFee = totalAmount + fee;
-
-                // 잔액 확인 - 재조회하여 최신 데이터로 확인
-                member = memberRepository.findById(memberId)
-                        .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
-
-                if (member.getMemberMoney() < totalAmountWithFee) {
-                    failedTrades.incrementAndGet();
-                    throw new CustomException(StockErrorCode.INSUFFICIENT_BALANCE);
-                }
-
-                // 매수 처리 (수수료 포함)
-                member.subtractMemberMoney(totalAmountWithFee);
-                memberRepository.save(member);
-
-                // 수수료를 전체 통계에 추가
-                feeTaxService.addBuyFee(fee);
-
-                // 거래 내역 생성 (수수료, 세금 포함)
-                TradeHistory tradeHistory = TradeHistory.of(
-                        member,
-                        stock,
-                        TradeHistory.TradeType.BUY,
-                        request.getQuantity(),
-                        currentPrice,
-                        totalAmount,
-                        fee,    // 수수료 추가
-                        0L,     // 매수에는 세금 없음
-                        LocalDateTime.now()
-                );
-                tradeHistoryRepository.save(tradeHistory);
-
-                // 비활성화된 기존 포지션 확인 (같은 종목 재매수 확인)
-                Optional<HoldingPosition> existingPosition = holdingPositionRepository
-                        .findByMemberAndStockData(member, stock);
-
-                if (existingPosition.isPresent()) {
-                    HoldingPosition position = existingPosition.get();
-
-                    if (!position.getActive()) {
-                        // 비활성화된 포지션 재활성화
-                        position.activate();
-                        position.updatePosition(
-                                request.getQuantity(),
-                                currentPrice,
-                                0L,  // 초기 수익
-                                0.0  // 초기 수익률
-                        );
-                        holdingPositionRepository.save(position);
-
-                    } else {
-                        // 기존 활성 포지션 업데이트
-                        int newQuantity = position.getQuantity() + request.getQuantity();
-                        long newAvgPrice = ((position.getAveragePrice() * position.getQuantity()) + (currentPrice * request.getQuantity())) / newQuantity;
-                        Long latestPrice = getCurrentStockPriceWithRetry(stock.getShortCode());
-                        if (latestPrice == null) latestPrice = currentPrice;
-
-                        long currentProfit = (latestPrice - newAvgPrice) * newQuantity;
-                        double returnRate = ((double) latestPrice / newAvgPrice - 1.0) * 100.0;
-
-                        position.updatePosition(newQuantity, newAvgPrice, currentProfit, returnRate);
-                        holdingPositionRepository.save(position);
-                    }
-                } else {
-                    // 새 포지션 생성
-                    HoldingPosition newPosition = HoldingPosition.of(
-                            member,
-                            stock,
-                            request.getQuantity(),
-                            currentPrice,
-                            0L, // 초기 수익
-                            0.0 // 초기 수익률
-                    );
-                    holdingPositionRepository.save(newPosition);
-                    member.addHoldingPosition(newPosition);
-                }
-
-                // 투자 요약 업데이트
-                updateInvestmentSummary(member);
-
-                // 임시 구독이었다면 구독 해제
-                if (temporarySubscription) {
-                    unsubscribeStockAfterTrade(request.getStockCode());
-                }
-
-                successfulTrades.incrementAndGet();
-
-                // 여기에 체결 정보 WebSocket 전송 코드 추가
-                try {
-                    // 시간 포맷 변환 (HHmmss 형식으로)
-                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
-                    stockWebSocketHandler.broadcastTradeExecution(
-                            stock.getShortCode(),
-                            "BUY",
-                            request.getQuantity(),
-                            currentPrice,
-                            totalAmount,
-                            timestamp
-                    );
-                } catch (Exception e) {
-                    log.warn("시장가 매수 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
-                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
-                }
-
-                return TradeResponseDTO.fromTradeHistory(tradeHistory);
-            } catch (Exception e) {
-                log.error("매수 주문 처리 중 오류 발생", e);
-                failedTrades.incrementAndGet();
-                throw e;
-            } finally {
-                stockLock.unlock();
+            Integer quantity = request.getQuantity();
+            if (quantity == null || quantity <= 0) {
+                throw new CustomException(StockErrorCode.INVALID_QUANTITY);
             }
-        } finally {
-            memberLock.unlock();
+
+            // 시장가 주문인 경우
+            if (Boolean.TRUE.equals(request.getMarketOrder())) {
+                return processMarketBuyOrder(member, stockData, quantity);
+            }
+
+            // 지정가 주문인 경우
+            if (request.getPrice() == null || request.getPrice() <= 0) {
+                throw new CustomException(StockErrorCode.INVALID_PRICE);
+            }
+
+            return processLimitBuyOrder(member, stockData, quantity, request.getPrice());
+
+        } catch (CustomException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("매수 처리 중 오류 발생", e);
+            throw new CustomException(StockErrorCode.TRADE_PROCESSING_FAILED);
         }
     }
 
-    // 오버로딩 - 내부 사용
+    /**
+     * 지정가 매수 주문 처리
+     */
+    private TradeResponseDTO processLimitBuyOrder(Member member, StockData stockData,
+                                                  Integer quantity, Long price) {
+        // 수수료 계산
+        Long totalPrice = price * quantity;
+        Long fee = calculateFee(totalPrice);
+
+        // 잔액 확인
+        if (member.getMemberMoney() < totalPrice + fee) {
+            throw new CustomException(StockErrorCode.INSUFFICIENT_FUNDS);
+        }
+
+        // 지정가 주문 생성
+        PendingOrder pendingOrder = PendingOrder.createBuyOrder(
+                member, stockData, quantity, price, fee
+        );
+        pendingOrderRepository.save(pendingOrder);
+
+        // 잔액에서 예약금 차감 (주문 금액 + 수수료)
+        Long newBalance = member.getMemberMoney() - totalPrice - fee;
+        member.updateMemberMoney(newBalance);
+        memberRepository.save(member);
+
+        log.info("지정가 매수 주문 등록 - 회원: {}, 종목: {}, 수량: {}, 가격: {}",
+                member.getMemberId(), stockData.getShortCode(), quantity, price);
+
+        // 응답 생성
+        return TradeResponseDTO.builder()
+                .orderId(pendingOrder.getOrderId())
+                .stockCode(stockData.getShortCode())
+                .stockName(stockData.getShortName())
+                .tradeType("BUY")
+                .quantity(quantity)
+                .unitPrice(price)
+                .totalPrice(totalPrice)
+                .fee(fee)
+                .status("PENDING")
+                .message("지정가 매수 주문이 등록되었습니다.")
+                .build();
+    }
+
     // 오버로딩 - 내부 사용
     @Transactional
     public TradeResponseDTO buyStock(TradeRequestDTO request, Member member) {
@@ -415,148 +324,87 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 
     @Transactional
     public TradeResponseDTO sellStock(String authorizationHeader, TradeRequestDTO request) {
-        validateTradeRequest(request);
-
-        String token = jwtTokenProvider.resolveToken(authorizationHeader);
-        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
-
-        StockData stock = stockDataRepository.findByShortCode(request.getStockCode())
-                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
-
-        ReentrantLock memberLock = getMemberLock(memberId);
-        memberLock.lock();
         try {
-            ReentrantLock stockLock = getStockLock(request.getStockCode());
-            stockLock.lock();
-            try {
-                // 매번 최신 상태의 포지션 정보를 조회 (active=true인 포지션만)
-                HoldingPosition position = holdingPositionRepository.findByMemberAndStockDataAndActiveTrue(member, stock)
-                        .orElseThrow(() -> new CustomException(StockErrorCode.INSUFFICIENT_STOCK,
-                                "해당 종목을 보유하고 있지 않습니다: " + request.getStockCode()));
+            // 토큰에서 회원 정보 추출
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-                // 수량 검증 강화 - 명확한 에러 메시지 포함
-                if (position.getQuantity() < request.getQuantity()) {
-                    failedTrades.incrementAndGet();
-                    throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK,
-                            "보유 수량이 부족합니다. 요청: " + request.getQuantity() + "주, 보유: " + position.getQuantity() + "주");
-                }
+            // 종목 정보 조회
+            StockData stockData = stockDataRepository.findByShortCode(request.getStockCode())
+                    .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
 
-                // 시장가 주문인 경우 실시간 가격 조회
-                Long currentPrice;
-                boolean temporarySubscription = false;
-
-                if (Boolean.TRUE.equals(request.getMarketOrder())) {
-                    temporarySubscription = !kiwoomWebSocketClient.isSubscribed(request.getStockCode());
-                    currentPrice = getCurrentStockPriceWithRetry(request.getStockCode());
-                    if (currentPrice == null) {
-                        failedTrades.incrementAndGet();
-                        throw new CustomException(StockErrorCode.PRICE_DATA_NOT_AVAILABLE);
-                    }
-                } else {
-                    // 지정가 주문 처리
-                    return createPendingSellOrder(member, stock, request);
-                }
-
-                // 포지션 업데이트를 위해 먼저 홀딩 포지션 처리 (먼저 처리하여 즉시 반영)
-                int newQuantity = position.getQuantity() - request.getQuantity();
-
-                // 매도 수량 만큼 즉시 차감
-                if (newQuantity == 0) {
-
-                    position.updatePosition(0, position.getAveragePrice(), 0L, 0.0); // 수량을 0으로 설정
-                    position.deactivate();
-                    holdingPositionRepository.save(position);
-                    holdingPositionRepository.flush();
-
-                } else {
-                    // 보유량 감소만 처리 (평균단가는 변경하지 않음)
-                    Long latestPrice = getCurrentStockPriceWithRetry(stock.getShortCode());
-                    if (latestPrice == null) latestPrice = currentPrice; // 가격 조회 실패 시 거래 가격 사용
-
-                    long currentProfit = (latestPrice - position.getAveragePrice()) * newQuantity;
-                    double returnRate = ((double) latestPrice / position.getAveragePrice() - 1.0) * 100.0;
-
-                    position.updatePosition(newQuantity, position.getAveragePrice(), currentProfit, returnRate);
-                    holdingPositionRepository.save(position);
-                    holdingPositionRepository.flush(); // 즉시 DB에 반영
-                }
-
-                // 총 판매 금액 계산
-                Long totalAmount = currentPrice * request.getQuantity();
-
-                // 수수료 및 세금 계산
-                Long fee = feeTaxService.calculateSellFee(totalAmount);
-                Long tax = feeTaxService.calculateSellTax(totalAmount);
-
-                // 순 매도 금액 (수수료와 세금 제외)
-                Long netAmount = totalAmount - fee - tax;
-
-                // 매도 처리 (순 금액만 입금)
-                member.addMemberMoney(netAmount);
-                memberRepository.save(member);
-
-                // 수수료와 세금을 전체 통계에 추가
-                feeTaxService.addSellFee(fee);
-                feeTaxService.addSellTax(tax);
-
-                // 거래 내역 생성 (수수료, 세금 포함)
-                TradeHistory tradeHistory = TradeHistory.of(
-                        member,
-                        stock,
-                        TradeHistory.TradeType.SELL,
-                        request.getQuantity(),
-                        currentPrice,
-                        totalAmount,
-                        fee,    // 매도 수수료
-                        tax,    // 매도 세금
-                        LocalDateTime.now()
-                );
-                tradeHistoryRepository.save(tradeHistory);
-
-                // 투자 요약 업데이트
-                updateInvestmentSummary(member);
-
-                // 임시 구독 해제
-                if (temporarySubscription) {
-                    unsubscribeStockAfterTrade(request.getStockCode());
-                }
-
-                successfulTrades.incrementAndGet();
-
-                // 추가: 트랜잭션을 즉시 플러시하여 DB에 반영
-                holdingPositionRepository.flush();
-                memberRepository.flush();
-
-                // 여기에 체결 정보 WebSocket 전송 코드 추가
-                try {
-                    // 시간 포맷 변환 (HHmmss 형식으로)
-                    String timestamp = tradeHistory.getTradedAt().format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
-                    stockWebSocketHandler.broadcastTradeExecution(
-                            stock.getShortCode(),
-                            "SELL",
-                            request.getQuantity(),
-                            currentPrice,
-                            totalAmount,
-                            timestamp
-                    );
-                } catch (Exception e) {
-                    log.warn("시장가 매도 체결 정보 WebSocket 전송 실패: {}", e.getMessage());
-                    // 웹소켓 전송 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
-                }
-
-                return TradeResponseDTO.fromTradeHistory(tradeHistory);
-            } catch (Exception e) {
-                log.error("매도 주문 처리 중 오류 발생", e);
-                failedTrades.incrementAndGet();
-                throw e;
-            } finally {
-                stockLock.unlock();
+            Integer quantity = request.getQuantity();
+            if (quantity == null || quantity <= 0) {
+                throw new CustomException(StockErrorCode.INVALID_QUANTITY);
             }
-        } finally {
-            memberLock.unlock();
+
+            // 보유 포지션 확인
+            List<HoldingPosition> positions = holdingPositionRepository
+                    .findAllByMemberAndStockDataAndActiveTrue(member, stockData);
+            if (positions.isEmpty()) {
+                throw new CustomException(StockErrorCode.NO_HOLDING_POSITION);
+            }
+            HoldingPosition position = positions.get(0);
+
+            if (position.getQuantity() < quantity) {
+                throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK_QUANTITY);
+            }
+
+            // 시장가 주문인 경우
+            if (Boolean.TRUE.equals(request.getMarketOrder())) {
+                return processMarketSellOrder(member, stockData, quantity, position);
+            }
+
+            // 지정가 주문인 경우
+            if (request.getPrice() == null || request.getPrice() <= 0) {
+                throw new CustomException(StockErrorCode.INVALID_PRICE);
+            }
+
+            return processLimitSellOrder(member, stockData, quantity, request.getPrice());
+
+        } catch (CustomException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("매도 처리 중 오류 발생", e);
+            throw new CustomException(StockErrorCode.TRADE_PROCESSING_FAILED);
         }
+    }
+
+    /**
+     * 지정가 매도 주문 처리
+     */
+    private TradeResponseDTO processLimitSellOrder(Member member, StockData stockData,
+                                                   Integer quantity, Long price) {
+        // 수수료 및 세금 계산
+        Long totalPrice = price * quantity;
+        Long fee = calculateFee(totalPrice);
+        Long tax = calculateTax(totalPrice);
+
+        // 지정가 주문 생성
+        PendingOrder pendingOrder = PendingOrder.createSellOrder(
+                member, stockData, quantity, price, fee, tax
+        );
+        pendingOrderRepository.save(pendingOrder);
+
+        log.info("지정가 매도 주문 등록 - 회원: {}, 종목: {}, 수량: {}, 가격: {}",
+                member.getMemberId(), stockData.getShortCode(), quantity, price);
+
+        // 응답 생성
+        return TradeResponseDTO.builder()
+                .orderId(pendingOrder.getOrderId())
+                .stockCode(stockData.getShortCode())
+                .stockName(stockData.getShortName())
+                .tradeType("SELL")
+                .quantity(quantity)
+                .unitPrice(price)
+                .totalPrice(totalPrice)
+                .fee(fee)
+                .tax(tax)
+                .status("PENDING")
+                .message("지정가 매도 주문이 등록되었습니다.")
+                .build();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -926,8 +774,10 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
                     .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
             // 이미 초기화를 한 경우 예외 발생
-            if (member.isMoneyInitialized()) {
-                throw new CustomException(MemberErrorCode.MONEY_ALREADY_INITIALIZED);
+            if (!List.of(1L, 2L, 3L, 4L).contains(member.getMemberId())) { // BOT일 경우 초기화 무제한
+                if (member.isMoneyInitialized()) {
+                    throw new CustomException(MemberErrorCode.MONEY_ALREADY_INITIALIZED);
+                }
             }
 
             // 1. 모든 엔티티를 JPQL을 사용하여 직접 삭제 (순서 중요: 외래 키 제약조건 고려)
@@ -993,6 +843,59 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         } finally {
             memberLock.unlock();
         }
+    }
+
+    /**
+     * 수수료 계산 메서드들 추가
+     */
+    private Long calculateFee(Long totalPrice) {
+        // feeTaxService.calculateBuyFee()로 변경 가능
+        return feeTaxService.calculateBuyFee(totalPrice);
+    }
+
+    private Long calculateTax(Long totalPrice) {
+        // feeTaxService.calculateSellTax()로 변경 가능
+        return feeTaxService.calculateSellTax(totalPrice);
+    }
+
+    /**
+     * 시장가 매수 처리 메서드 추가
+     */
+    private TradeResponseDTO processMarketBuyOrder(Member member, StockData stockData,
+                                                   Integer quantity) {
+        // 현재가 조회
+        Long currentPrice = getCurrentStockPriceWithRetry(stockData.getShortCode());
+        if (currentPrice == null) {
+            throw new CustomException(StockErrorCode.PRICE_DATA_NOT_AVAILABLE);
+        }
+
+        // 기존 buyStock(TradeRequestDTO request, Member member) 메서드의 로직 사용
+        TradeRequestDTO marketRequest = new TradeRequestDTO();
+        marketRequest.setStockCode(stockData.getShortCode());
+        marketRequest.setQuantity(quantity);
+        marketRequest.setMarketOrder(true);
+
+        return buyStock(marketRequest, member);
+    }
+
+    /**
+     * 시장가 매도 처리 메서드 추가
+     */
+    private TradeResponseDTO processMarketSellOrder(Member member, StockData stockData,
+                                                    Integer quantity, HoldingPosition position) {
+        // 현재가 조회
+        Long currentPrice = getCurrentStockPriceWithRetry(stockData.getShortCode());
+        if (currentPrice == null) {
+            throw new CustomException(StockErrorCode.PRICE_DATA_NOT_AVAILABLE);
+        }
+
+        // 기존 sellStock(TradeRequestDTO request, Member member) 메서드의 로직 사용
+        TradeRequestDTO marketRequest = new TradeRequestDTO();
+        marketRequest.setStockCode(stockData.getShortCode());
+        marketRequest.setQuantity(quantity);
+        marketRequest.setMarketOrder(true);
+
+        return sellStock(marketRequest, member);
     }
 
     @Transactional
@@ -1771,187 +1674,80 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         return response;
     }
 
+    /**
+     * 회원의 미체결 주문 목록 조회
+     */
     @Transactional(readOnly = true)
     public List<PendingOrderDTO> getPendingOrdersByMember(String authorizationHeader) {
-        String token = jwtTokenProvider.resolveToken(authorizationHeader);
-        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+        try {
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
 
-        List<PendingOrder> pendingOrders = pendingOrderRepository.findByMemberAndStatus(
-                member, PendingOrder.OrderStatus.PENDING);
+            List<PendingOrder> pendingOrders = pendingOrderRepository
+                    .findByMemberAndStatusOrderByCreatedAtDesc(member, PendingOrder.OrderStatus.PENDING);
 
-        return pendingOrders.stream()
-                .map(PendingOrderDTO::fromPendingOrder)
-                .collect(Collectors.toList());
+            return pendingOrders.stream()
+                    .map(PendingOrderDTO::fromEntity)
+                    .collect(Collectors.toList());
+
+        } catch (CustomException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("미체결 주문 조회 중 오류 발생", e);
+            throw new CustomException(StockErrorCode.ORDER_INQUIRY_FAILED);
+        }
     }
 
-    // 주문 취소 메서드
+    /**
+     * 지정가 주문 취소 처리
+     */
     @Transactional
     public boolean cancelPendingOrder(String authorizationHeader, Long orderId) {
-        String token = jwtTokenProvider.resolveToken(authorizationHeader);
-        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
-
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
-
-        Optional<PendingOrder> optionalOrder = pendingOrderRepository.findById(orderId);
-
-        if (optionalOrder.isEmpty()) {
-            log.warn("취소할 주문을 찾을 수 없음: {}", orderId);
-            return false;
-        }
-
-        PendingOrder order = optionalOrder.get();
-
-        // 주문이 현재 회원의 것인지 확인
-        if (!order.getMember().getMemberId().equals(memberId)) {
-            log.warn("다른 회원의 주문을 취소할 수 없음: 주문ID={}, 요청회원={}, 주문회원={}",
-                    orderId, memberId, order.getMember().getMemberId());
-            return false;
-        }
-
-        // 취소 가능한 상태인지 확인
-        if (order.getStatus() != PendingOrder.OrderStatus.PENDING) {
-            log.warn("이미 처리된 주문은 취소할 수 없음: 주문ID={}, 상태={}", orderId, order.getStatus());
-            return false;
-        }
-
-        // 동시성 제어를 위한 락 획득
-        ReentrantLock lock = getStockLock(order.getStockData().getShortCode());
-        lock.lock();
-
         try {
-            // 상태 재확인 (락 획득 후)
-            if (order.getStatus() != PendingOrder.OrderStatus.PENDING) {
-                log.warn("락 획득 후 상태 변경됨: 주문ID={}, 상태={}", orderId, order.getStatus());
-                return false;
+            // 토큰에서 회원 정보 추출
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+            // 주문 조회
+            PendingOrder order = pendingOrderRepository.findById(orderId)
+                    .orElseThrow(() -> new CustomException(StockErrorCode.ORDER_NOT_FOUND));
+
+            // 본인 주문인지 확인
+            if (!order.getMember().getMemberId().equals(memberId)) {
+                throw new CustomException(StockErrorCode.UNAUTHORIZED_ORDER_ACCESS);
             }
 
-            // 매수 주문인 경우 예약된 금액 환불 (수수료 포함)
+            // 취소 가능한 상태인지 확인
+            if (!order.isCancelable()) {
+                throw new CustomException(StockErrorCode.ORDER_NOT_CANCELABLE);
+            }
+
+            // 매수 주문 취소 시 예약금 환불
             if (order.getOrderType() == TradeHistory.TradeType.BUY) {
-                Long refundAmount = order.getTargetPrice() * order.getQuantity();
-                Long reservedFee = order.getReservedFee() != null ? order.getReservedFee() : 0L;
-                Long totalRefund = refundAmount + reservedFee;
+                Long refundAmount = order.getTargetPrice() * order.getQuantity() + order.getReservedFee();
+                Long newBalance = order.getMember().getMemberMoney() + refundAmount;
+                order.getMember().updateMemberMoney(newBalance);
+                memberRepository.save(order.getMember());
 
-                member.addMemberMoney(totalRefund);
-                memberRepository.save(member);
-                log.info("취소된 매수 주문에 대한 금액 환불: 주문ID={}, 원금={}원, 수수료={}원, 총 환불액={}원",
-                        orderId, refundAmount, reservedFee, totalRefund);
-            }
-            // 매도 주문인 경우 - 논리적 예약만 했으므로 별도 처리 불필요
-            else if (order.getOrderType() == TradeHistory.TradeType.SELL) {
-                log.info("취소된 매도 주문: 주문ID={}, 종목={}, 수량={}주 (물리적 수량 변경 없음)",
-                        orderId, order.getStockData().getShortCode(), order.getQuantity());
+                log.info("매수 주문 취소로 인한 예약금 환불: {} 원", refundAmount);
             }
 
-            // 주문 취소 처리
+            // 주문 상태를 취소로 변경
             order.cancel();
             pendingOrderRepository.save(order);
 
-            // 취소된 주문의 구독 목적 해제
-            String pendingOrderPurpose = "PENDING_ORDER_" + order.getOrderId();
-            String stockCode = order.getStockData().getShortCode();
-            kiwoomWebSocketClient.unsubscribeStockForPurpose(stockCode, pendingOrderPurpose);
-
-            log.info("주문 취소 완료: 주문ID={}, 종목={}, 타입={}",
-                    order.getOrderId(), stockCode, order.getOrderType());
-
-            // 해당 종목의 다른 지정가 주문이 없고, 포트폴리오에도 없으면 구독 해제
-            if (!isStockNeededElsewhere(stockCode)) {
-                unsubscribeStockAfterTrade(stockCode);
-            }
-
-            // 포트폴리오 웹소켓 업데이트 알림
-            try {
-                portfolioWebSocketHandler.sendFullPortfolioUpdate(member.getMemberId());
-            } catch (Exception e) {
-                log.warn("포트폴리오 업데이트 알림 전송 중 오류 발생: {}", e.getMessage());
-            }
+            log.info("지정가 주문 취소 완료 - 주문 ID: {}, 회원 ID: {}", orderId, memberId);
 
             return true;
+
+        } catch (CustomException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("주문 취소 중 오류 발생: {}", e.getMessage(), e);
+            log.error("주문 취소 처리 중 오류 발생", e);
             return false;
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    // 지정가 주문 처리 스케줄러 메서드
-    @Transactional(readOnly = true)
-    public void processPendingOrders() {
-        try {
-            // JOIN FETCH를 사용하여 모든 관련 데이터를 즉시 로딩
-            List<PendingOrder> pendingOrders = pendingOrderRepository.findPendingOrdersWithStockData();
-
-            if (pendingOrders.isEmpty()) {
-                return;
-            }
-
-            // 최대 처리 주문수 제한 (50개로 제한)
-            final int MAX_ORDERS_PER_BATCH = 50;
-            if (pendingOrders.size() > MAX_ORDERS_PER_BATCH) {
-                pendingOrders = pendingOrders.subList(0, MAX_ORDERS_PER_BATCH);
-                log.info("지정가 주문이 너무 많아 일부만 처리합니다. 처리: {}/{}",
-                        MAX_ORDERS_PER_BATCH, pendingOrders.size());
-            }
-
-            log.info("처리할 지정가 주문 수: {}", pendingOrders.size());
-
-            // 종목별로 그룹화하여 효율적으로 처리
-            Map<String, List<PendingOrder>> ordersByStockCode = pendingOrders.stream()
-                    .collect(Collectors.groupingBy(order -> order.getStockData().getShortCode()));
-
-            // 각 종목별로 현재가 조회 및 주문 처리
-            for (Map.Entry<String, List<PendingOrder>> entry : ordersByStockCode.entrySet()) {
-                String stockCode = entry.getKey();
-                List<PendingOrder> orders = entry.getValue();
-
-                // 종목 구독 확인 및 필요시 구독 추가
-                boolean temporarySubscription = false;
-                if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
-                    boolean success = subscribeStockIfNeeded(stockCode);
-                    if (!success) {
-                        log.warn("종목 {} 구독 실패, 주문 처리 건너뜀", stockCode);
-                        continue;
-                    }
-                    temporarySubscription = true;
-
-                    // 구독 후 잠시 대기하여 데이터 수신을 기다림
-                    try {
-                        Thread.sleep(300);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-
-                try {
-                    // 현재가 조회
-                    Long currentPrice = getCurrentStockPriceWithRetry(stockCode);
-                    if (currentPrice == null) {
-                        log.warn("종목 {} 현재가 조회 실패, 주문 처리 건너뜀", stockCode);
-                        continue;
-                    }
-
-                    log.debug("종목 {} 현재가 조회 성공: {}원, 처리할 주문 수: {}",
-                            stockCode, currentPrice, orders.size());
-
-                    // 각 주문 처리 (개별 트랜잭션으로 분리)
-                    for (PendingOrder order : orders) {
-                        processOrderWithTransaction(order, currentPrice);
-                    }
-                } finally {
-                    // 임시 구독이었고, 모든 주문 처리 후 필요 없으면 구독 해제
-                    if (temporarySubscription && !isStockNeededElsewhere(stockCode)) {
-                        log.info("임시 구독한 종목 {} 주문 처리 완료 후 구독 해제", stockCode);
-                        kiwoomWebSocketClient.unsubscribeStock(stockCode);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("지정가 주문 처리 스케줄러 실행 중 오류 발생", e);
         }
     }
 
@@ -2007,4 +1803,80 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
         // 시스템이 정상이면 true 반환
         return socketConnected && kospiPrice != null;
     }
+
+//    // 지정가 주문 처리 스케줄러 메서드
+//    @Transactional(readOnly = true)
+//    public void processPendingOrders() {
+//        try {
+//            // JOIN FETCH를 사용하여 모든 관련 데이터를 즉시 로딩
+//            List<PendingOrder> pendingOrders = pendingOrderRepository.findPendingOrdersWithStockData();
+//
+//            if (pendingOrders.isEmpty()) {
+//                return;
+//            }
+//
+//            // 최대 처리 주문수 제한 (50개로 제한)
+//            final int MAX_ORDERS_PER_BATCH = 50;
+//            if (pendingOrders.size() > MAX_ORDERS_PER_BATCH) {
+//                pendingOrders = pendingOrders.subList(0, MAX_ORDERS_PER_BATCH);
+//                log.info("지정가 주문이 너무 많아 일부만 처리합니다. 처리: {}/{}",
+//                        MAX_ORDERS_PER_BATCH, pendingOrders.size());
+//            }
+//
+//            log.info("처리할 지정가 주문 수: {}", pendingOrders.size());
+//
+//            // 종목별로 그룹화하여 효율적으로 처리
+//            Map<String, List<PendingOrder>> ordersByStockCode = pendingOrders.stream()
+//                    .collect(Collectors.groupingBy(order -> order.getStockData().getShortCode()));
+//
+//            // 각 종목별로 현재가 조회 및 주문 처리
+//            for (Map.Entry<String, List<PendingOrder>> entry : ordersByStockCode.entrySet()) {
+//                String stockCode = entry.getKey();
+//                List<PendingOrder> orders = entry.getValue();
+//
+//                // 종목 구독 확인 및 필요시 구독 추가
+//                boolean temporarySubscription = false;
+//                if (!kiwoomWebSocketClient.isSubscribed(stockCode)) {
+//                    boolean success = subscribeStockIfNeeded(stockCode);
+//                    if (!success) {
+//                        log.warn("종목 {} 구독 실패, 주문 처리 건너뜀", stockCode);
+//                        continue;
+//                    }
+//                    temporarySubscription = true;
+//
+//                    // 구독 후 잠시 대기하여 데이터 수신을 기다림
+//                    try {
+//                        Thread.sleep(300);
+//                    } catch (InterruptedException ie) {
+//                        Thread.currentThread().interrupt();
+//                    }
+//                }
+//
+//                try {
+//                    // 현재가 조회
+//                    Long currentPrice = getCurrentStockPriceWithRetry(stockCode);
+//                    if (currentPrice == null) {
+//                        log.warn("종목 {} 현재가 조회 실패, 주문 처리 건너뜀", stockCode);
+//                        continue;
+//                    }
+//
+//                    log.debug("종목 {} 현재가 조회 성공: {}원, 처리할 주문 수: {}",
+//                            stockCode, currentPrice, orders.size());
+//
+//                    // 각 주문 처리 (개별 트랜잭션으로 분리)
+//                    for (PendingOrder order : orders) {
+//                        processOrderWithTransaction(order, currentPrice);
+//                    }
+//                } finally {
+//                    // 임시 구독이었고, 모든 주문 처리 후 필요 없으면 구독 해제
+//                    if (temporarySubscription && !isStockNeededElsewhere(stockCode)) {
+//                        log.info("임시 구독한 종목 {} 주문 처리 완료 후 구독 해제", stockCode);
+//                        kiwoomWebSocketClient.unsubscribeStock(stockCode);
+//                    }
+//                }
+//            }
+//        } catch (Exception e) {
+//            log.error("지정가 주문 처리 스케줄러 실행 중 오류 발생", e);
+//        }
+//    }
 }

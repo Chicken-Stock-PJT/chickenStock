@@ -16,9 +16,6 @@ import java.util.Optional;
 public interface HoldingPositionRepository extends JpaRepository<HoldingPosition, Long> {
     Optional<HoldingPosition> findByMemberAndStockData(Member member, StockData stockData);
     List<HoldingPosition> findByMember(Member member);
-    List<HoldingPosition> findAllByMember_MemberId(Long memberId);
-
-    void deleteByMember(Member member);
 
     // 새로 추가할 메서드: Eager Loading 활용
     @Query("SELECT hp FROM HoldingPosition hp JOIN FETCH hp.stockData WHERE hp.member.memberId = :memberId")
@@ -46,4 +43,6 @@ public interface HoldingPositionRepository extends JpaRepository<HoldingPosition
     @Query(value = "DELETE FROM holding_position WHERE member_id = :memberId AND stock_data_id = :stockDataId",
             nativeQuery = true)
     int deleteByMemberIdAndStockDataIdNative(@Param("memberId") Long memberId, @Param("stockDataId") Long stockDataId);
+
+    List<HoldingPosition> findAllByMemberAndStockDataAndActiveTrue(Member member, StockData stockData);
 }
