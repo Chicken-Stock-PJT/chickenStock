@@ -10,8 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
+import realClassOne.chickenStock.stock.entity.PendingOrder;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
+import realClassOne.chickenStock.stock.repository.PendingOrderRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
 import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 
@@ -30,6 +32,7 @@ public class UserRankingScheduler {
     private final TradeHistoryRepository tradeHistoryRepository;
     private final ZSetOperations<String, String> zSetOperations;
     private final KiwoomStockApiService kiwoomStockApiService;
+    private final PendingOrderRepository pendingOrderRepository;
 
     private static final String REDIS_KEY = "ranking:totalAsset";
     private static final String RETURN_RATE_KEY = "ranking:returnRate";
@@ -79,6 +82,16 @@ public class UserRankingScheduler {
         for (Member member : members) {
             List<HoldingPosition> holdings = holdingPositionRepository.findByMember(member);
             long totalAsset = member.getMemberMoney();
+
+            // PENDING 상태의 BUY 주문 자산 반영
+            List<PendingOrder> pendingOrders = pendingOrderRepository.findByMemberAndStatus(member, PendingOrder.OrderStatus.PENDING);
+            for (PendingOrder pending : pendingOrders) {
+                if (pending.getOrderType() == TradeHistory.TradeType.BUY) {
+                    long pendingValue = pending.getTargetPrice() * pending.getQuantity();
+                    totalAsset += pendingValue;
+                }
+            }
+
             for (HoldingPosition holding : holdings) {
                 String code = holding.getStockData().getShortCode();
                 JsonNode stockInfo = priceMap.get(code + "_AL"); // _AL 붙여주기
