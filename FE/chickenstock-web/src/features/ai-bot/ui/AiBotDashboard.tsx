@@ -1,8 +1,6 @@
 import PortfolioChart from "@/features/mypage/ui/PortfolioChart";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/libs/ui/card";
-import AiBotAssetOverview from "./AiBotAssetOverview";
-import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 import AiInfo from "./AiInfo";
+import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 
 const AiBotDashboard = ({
   portfolio,
@@ -18,21 +16,11 @@ const AiBotDashboard = ({
         aiBotId={aiBotId}
         totalAsset={portfolio.totalAsset}
         totalReturnRate={portfolio.totalReturnRate}
+        totalProfitLoss={portfolio.totalProfitLoss}
         memberMoney={portfolio.memberMoney}
+        todayReturnRate={portfolio.todayReturnRate}
+        todayProfitLoss={portfolio.todayProfitLoss}
       />
-
-      {/* 요약 */}
-      <AiBotAssetOverview portfolio={portfolio} />
-
-      {/* 성과추이 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>성과추이</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>성과추이</p>
-        </CardContent>
-      </Card>
 
       {/* 포트폴리오 구성 */}
       <PortfolioChart
