@@ -47,4 +47,8 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
             @Param("member") Member member,
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate);
+
+    @Query("SELECT t FROM TradeHistory t JOIN FETCH t.stockData WHERE t.member = :member")
+    List<TradeHistory> findWithStockDataByMember(@Param("member") Member member);
+
 }
