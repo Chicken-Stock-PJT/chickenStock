@@ -55,7 +55,8 @@ const OrderBook = ({ stockCode, currentPrice }: OrderBookProps) => {
 
       <div className="relative flex-1 overflow-auto">
         <OrderIndex />
-        <div className="divide-y divide-gray-100">
+        {/* <div className="divide-y divide-gray-100"> */}
+        <div className="grid">
           {orderBookRows.map((row, index) => (
             <MemoizedOrderRow
               key={`row-${index}`}
