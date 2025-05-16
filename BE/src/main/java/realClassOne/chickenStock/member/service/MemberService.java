@@ -21,6 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 import realClassOne.chickenStock.member.repository.WatchListRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
+import realClassOne.chickenStock.stock.dto.response.DashboardResponseDTO;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 
@@ -31,6 +32,7 @@ import realClassOne.chickenStock.stock.entity.TradeHistory;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
+import realClassOne.chickenStock.stock.service.DashboardService;
 import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.service.StockSubscriptionService;
@@ -57,6 +59,7 @@ public class MemberService {
     private final PortfolioService portfolioService;
     private final StockDataRepository stockDataRepository;
     private final KiwoomStockApiService kiwoomStockApiService;
+    private final DashboardService dashboardService;
 
     @Transactional(readOnly = true)
     public MemberResponseDto getCurrentUser() {
@@ -804,30 +807,63 @@ public class MemberService {
             // 기본값 설정
             String totalAsset = "0";
             String returnRate = "0.0";
+            String memberMoney = "0";
+            String pendingOrderAmount = "0";
+            String stockValuation = "0";
 
-            try {
-                // 포트폴리오 서비스에서 전체 포트폴리오 정보를 가져옴
-                var portfolio = portfolioService.getPortfolioById(memberId);
+            // Dashboard 캐싱 키 생성
+            String dashboardCacheKey = dashboardService.generateCacheKeyFromToken(token);
 
-                // totalAsset(총 자산 = 현금 + 주식평가금액)을 사용
-                totalAsset = portfolio.getTotalAsset().toString();
-                returnRate = String.format("%.2f", portfolio.getTotalReturnRate());
+            // 캐시에서 Dashboard 정보 조회 시도
+            DashboardResponseDTO cachedDashboard = dashboardService.getCachedDashboard(dashboardCacheKey);
 
-            } catch (Exception e) {
-                log.warn("포트폴리오 정보 조회 중 오류 발생: {}", e.getMessage());
+            if (cachedDashboard != null) {
+                // 캐시된 Dashboard 정보가 있으면 이를 사용
+                log.info("Redis 캐시에서 Dashboard 정보를 가져옵니다. MemberId: {}", memberId);
 
-                // 포트폴리오 조회 실패 시 최소한 현금 금액이라도 표시
-                if (member.getMemberMoney() != null) {
-                    totalAsset = member.getMemberMoney().toString();
-                    log.info("포트폴리오 조회 실패, 현금만 표시: {}", totalAsset);
+                totalAsset = cachedDashboard.getTotalAsset().toString();
+                returnRate = String.format("%.2f", cachedDashboard.getTotalReturnRate());
+                memberMoney = cachedDashboard.getMemberMoney().toString();
+                pendingOrderAmount = cachedDashboard.getPendingOrderAmount().toString();
+                stockValuation = cachedDashboard.getStockValuation().toString();
+            } else {
+                // 캐시된 Dashboard 정보가 없으면 포트폴리오 서비스에서 정보 조회 시도
+                log.info("Redis 캐시에 Dashboard 정보가 없어 포트폴리오 정보를 조회합니다. MemberId: {}", memberId);
+
+                try {
+                    // 새로운 Dashboard 정보 조회
+                    DashboardResponseDTO dashboard = dashboardService.getDashboardByMemberId(memberId);
+
+                    totalAsset = dashboard.getTotalAsset().toString();
+                    returnRate = String.format("%.2f", dashboard.getTotalReturnRate());
+                    memberMoney = dashboard.getMemberMoney().toString();
+                    pendingOrderAmount = dashboard.getPendingOrderAmount().toString();
+                    stockValuation = dashboard.getStockValuation().toString();
+                } catch (Exception e) {
+                    log.warn("Dashboard 정보 조회 중 오류 발생: {}", e.getMessage());
+
+                    // 최소한 현금 금액만이라도 표시
+                    if (member.getMemberMoney() != null) {
+                        memberMoney = member.getMemberMoney().toString();
+                        totalAsset = memberMoney; // 최소한 현금은 총 자산에 포함
+                        log.info("Dashboard 조회 실패, 현금만 표시: {}", memberMoney);
+                    }
                 }
             }
 
             String nickname = member.getNickname();
             String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
-            String memberMoney = member.getMemberMoney() != null ? member.getMemberMoney().toString() : "조회 중";
 
-            return SimpleMemberProfileResponseDTO.of(nickname, totalAsset, returnRate, isOauth, memberMoney);
+            // 확장된 SimpleMemberProfileResponseDTO 반환
+            return SimpleMemberProfileResponseDTO.builder()
+                    .nickname(nickname)
+                    .totalAsset(totalAsset)
+                    .returnRate(returnRate)
+                    .isOauth(isOauth)
+                    .memberMoney(memberMoney)
+                    .pendingOrderAmount(pendingOrderAmount)
+                    .stockValuation(stockValuation)
+                    .build();
         } catch (Exception e) {
             log.error("간단 회원 정보 조회 중 오류 발생", e);
             throw new CustomException(MemberErrorCode.MEMBER_NOT_FOUND, "회원 정보를 불러올 수 없습니다");
