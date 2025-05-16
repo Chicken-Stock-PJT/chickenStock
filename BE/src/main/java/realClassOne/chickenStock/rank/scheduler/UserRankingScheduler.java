@@ -100,15 +100,10 @@ public class UserRankingScheduler {
             String memberIdStr = member.getMemberId().toString();
             zSetOperations.add(REDIS_KEY, memberIdStr, totalAsset);
 
-            // 🔥🔥🔥 수익률 계산 추가 시작
+            // 수익률 계산 추가 시작
             List<TradeHistory> tradeHistories = tradeHistoryRepository.findWithStockDataByMember(member);
-
-            log.info("🧾 {}번 회원 거래내역 {}건", member.getMemberId(), tradeHistories.size());
-
             Map<Long, List<TradeHistory>> groupedByStock = tradeHistories.stream()
                     .collect(Collectors.groupingBy(t -> t.getStockData().getStockDataId()));
-
-            log.info("📦 종목 그룹핑 결과: {}", groupedByStock.keySet());
 
             long totalInvestment = 0L;
             long totalEvaluation = 0L;
@@ -131,12 +126,8 @@ public class UserRankingScheduler {
 
                 String shortCode = trades.get(0).getStockData().getShortCode();
 
-                // 🔍 총 매수/매도/보유 수량 로그 찍기
-                log.info("📊 [{}] 총매수: {}, 총매도: {}", shortCode, totalBuyQty, totalSellQty);
-
                 long holdingQty = totalBuyQty - totalSellQty;
                 if (holdingQty <= 0) {
-                    log.warn("⛔ [{}] 보유 수량 없음 → 평가 대상 제외", shortCode);
                     continue;
                 }
 
@@ -147,11 +138,6 @@ public class UserRankingScheduler {
 
                 JsonNode priceInfo = priceMap.get(shortCode + "_AL");
 
-                if (priceInfo == null) {
-                    log.warn("❌ 가격 정보 없음: {}", shortCode + "_AL");
-                } else if (!priceInfo.has("cur_prc")) {
-                    log.warn("⚠️ cur_prc 필드 없음: {}", shortCode + "_AL");
-                }
 
                 long currentPrice = 0L;
                 if (priceInfo != null && priceInfo.has("cur_prc")) {
@@ -161,21 +147,17 @@ public class UserRankingScheduler {
                     }
                 }
 
-                log.info("📈 종목 [{}] 현재가: {}", shortCode, currentPrice);
-
                 totalEvaluation += currentPrice * holdingQty;
             }
 
             if (totalInvestment > 0L) {
                 double returnRate = ((double) totalEvaluation - totalInvestment) / totalInvestment * 100;
                 returnRate = Math.round(returnRate * 100.0) / 100.0;
-                zSetOperations.add(RETURN_RATE_KEY, memberIdStr, returnRate); // 🔥 수익률 저장
-                log.info("🔥 {}번 회원 수익률: {}%", memberIdStr, returnRate);
+                zSetOperations.add(RETURN_RATE_KEY, memberIdStr, returnRate);
             } else {
-                zSetOperations.add(RETURN_RATE_KEY, memberIdStr, 0.0); // 🔥 투자 없을 경우 0 처리
-                log.info("🔥 {}번 회원 수익률 없음 (0%)", memberIdStr);
+                zSetOperations.add(RETURN_RATE_KEY, memberIdStr, 0.0);
             }
-            // 🔥🔥🔥 수익률 계산 끝
+            // 수익률 계산 끝
         }
 
         log.info("✅ [랭킹 스케줄러] 랭킹 갱신 완료 (총 {}명)", members.size());
