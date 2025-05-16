@@ -31,4 +31,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     // 특정 날짜 이전의 모든 알림 삭제
     @Modifying
     void deleteByCreatedAtBefore(LocalDateTime dateTime);
+
+    List<Notification> findByMemberIdAndTypeOrderByCreatedAtDesc(Long memberId, String type);
 }

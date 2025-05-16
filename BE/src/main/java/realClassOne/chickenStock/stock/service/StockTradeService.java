@@ -1415,7 +1415,6 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     // 매수 주문 처리 메서드
-    // 매수 주문 처리 메서드
     @Transactional
     private void executeBuyOrderWithFreshData(PendingOrder order, Long currentPrice) {
         if (order.getStatus() != PendingOrder.OrderStatus.PENDING) {
