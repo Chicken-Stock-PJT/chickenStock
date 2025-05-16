@@ -1,6 +1,7 @@
 package realClassOne.chickenStock.stock.service;
 
 import org.springframework.data.redis.core.RedisTemplate;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ public class DashboardService {
 
     private final RedisTemplate<String, DashboardResponseDTO> dashboardRedisTemplate;
     private static final long CACHE_TTL_SECONDS = 5; // 캐시 유효 시간: 5초
+    private static final Long INITIAL_CAPITAL = 100_000_000L;
 
     /**
      * 대시보드 데이터를 캐시에서 조회
@@ -202,9 +204,6 @@ public class DashboardService {
         return cleanStockDataMap;
     }
 
-    /**
-     * 대시보드 응답 DTO를 구성합니다.
-     */
     private DashboardResponseDTO buildDashboardResponse(
             Member member,
             List<HoldingPosition> holdings,
@@ -216,7 +215,6 @@ public class DashboardService {
         List<DashboardResponseDTO.StockHoldingDTO> holdingDTOs = new ArrayList<>();
         Long totalInvestment = 0L;
         Long totalValuation = 0L;
-        Long todayProfitLoss = 0L;
 
         for (HoldingPosition position : holdings) {
             String stockCode = position.getStockData().getShortCode();
@@ -244,9 +242,6 @@ public class DashboardService {
             totalInvestment += investmentAmount;
             totalValuation += valuationAmount;
 
-            // 금일 손익 계산 (금일 거래가 있는 경우)
-            todayProfitLoss += calculateTodayProfitLoss(stockCode, todayTrades, currentPrice);
-
             DashboardResponseDTO.StockHoldingDTO holdingDTO = DashboardResponseDTO.StockHoldingDTO.builder()
                     .stockCode(stockCode)
                     .stockName(position.getStockData().getShortName())
@@ -273,19 +268,21 @@ public class DashboardService {
         // (미체결 매수금액은 이미 member_money에서 차감되어 있음)
         Long totalAsset = member.getMemberMoney() + totalValuation;
 
-        // 만약 총 자본금 개념으로 표시하고 싶다면:
-        // Long totalAsset = member.getMemberMoney() + totalValuation + pendingOrderAmount;
+        // --- 수정된 부분 시작 ---
+        // 1. 초기 자본금(1억) 기준 총 손익 계산
+        Long totalProfitLoss = totalAsset - INITIAL_CAPITAL;
 
-        // 총 손익 및 수익률 계산
-        Long totalProfitLoss = totalValuation - totalInvestment;
-        Double totalReturnRate = totalInvestment > 0
-                ? (totalProfitLoss.doubleValue() / totalInvestment.doubleValue()) * 100
-                : 0.0;
+        // 2. 초기 자본금(1억) 기준 총 수익률 계산
+        Double totalReturnRate = (totalProfitLoss.doubleValue() / INITIAL_CAPITAL.doubleValue()) * 100;
 
-        // 금일 수익률 계산
-        Double todayReturnRate = totalValuation > 0
-                ? (todayProfitLoss.doubleValue() / totalValuation.doubleValue()) * 100
+        // 3. 당일 실현 손익 계산
+        Long todayProfitLoss = calculateTodayRealizedProfitLoss(todayTrades);
+
+        // 4. 당일 수익률 계산 (당일 실현 손익 / 자산 총액)
+        Double todayReturnRate = totalAsset > 0
+                ? (todayProfitLoss.doubleValue() / totalAsset.doubleValue()) * 100
                 : 0.0;
+        // --- 수정된 부분 끝 ---
 
         java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         String formattedDateTime = LocalDateTime.now().format(formatter);
@@ -304,6 +301,72 @@ public class DashboardService {
                 .holdings(holdingDTOs)
                 .updatedAt(formattedDateTime)
                 .build();
+    }
+
+    /**
+     * 당일 실현 손익을 계산합니다.
+     */
+    private Long calculateTodayRealizedProfitLoss(List<TradeHistory> todayTrades) {
+        Long todayProfitLoss = 0L;
+
+        // 당일 매도 거래의 실현 손익을 계산
+        for (TradeHistory trade : todayTrades) {
+            if (trade.getTradeType() == TradeHistory.TradeType.SELL) {
+                // 매도 거래의 실제 손익 = 매도 금액 - 매수 비용 - 수수료 - 세금
+                // 실제 매도 금액 (수수료와 세금 차감 전)
+                Long sellAmount = trade.getUnitPrice() * trade.getQuantity();
+
+                // 평균 매입가로 계산한 매수 비용
+                Long buyAmount = findAverageCostBasis(trade);
+
+                // 실현 손익 = 매도 금액 - 매수 비용 - 수수료 - 세금
+                Long realizedProfit = sellAmount - buyAmount - trade.getFee() - trade.getTax();
+
+                todayProfitLoss += realizedProfit;
+            }
+        }
+
+        return todayProfitLoss;
+    }
+
+    /**
+     * 매도 거래의 원가를 계산합니다.
+     * 필요시 TradeHistoryRepository에 관련 쿼리를 추가하세요.
+     */
+    private Long findAverageCostBasis(TradeHistory sellTrade) {
+        // 이 메서드는 매도 시점의 평균 매입가를 사용하여 원가를 계산합니다.
+        // TradeHistory에 매도 시점의 평균 매입가가 저장되어 있지 않다면,
+        // 별도의 쿼리나 로직을 통해 매도 시점의 평균 매입가를 조회해야 합니다.
+
+        // 간단한 구현: 해당 주식의 평균 매입가를 조회
+        Member member = sellTrade.getMember();
+        StockData stockData = sellTrade.getStockData();
+        LocalDateTime sellTime = sellTrade.getTradedAt();
+
+        // 매도 시점 이전의 모든 거래 내역을 조회해야 합니다.
+        // 이를 위한 새로운 쿼리 메서드가 필요할 수 있습니다.
+        List<TradeHistory> previousTrades = tradeHistoryRepository.findByMemberAndStockDataAndTradedAtBefore(
+                member, stockData, sellTime);
+
+        long totalBuyAmount = 0L;
+        int totalBuyQuantity = 0;
+
+        for (TradeHistory history : previousTrades) {
+            if (history.getTradeType() == TradeHistory.TradeType.BUY) {
+                totalBuyAmount += history.getUnitPrice() * history.getQuantity();
+                totalBuyQuantity += history.getQuantity();
+            } else if (history.getTradeType() == TradeHistory.TradeType.SELL) {
+                // FIFO 방식을 가정하면, 매도된 수량만큼 가장 오래된 매수 수량을 차감해야 합니다.
+                // 이 부분은 복잡하므로, 단순화를 위해 매도 수량을 전체 매수 수량에서 차감합니다.
+                totalBuyQuantity -= history.getQuantity();
+            }
+        }
+
+        // 평균 매입가
+        long avgPrice = totalBuyQuantity > 0 ? totalBuyAmount / totalBuyQuantity : 0L;
+
+        // 매도한 수량에 대한 원가 계산
+        return avgPrice * sellTrade.getQuantity();
     }
 
     /**
