@@ -1,15 +1,9 @@
-import TransactionsList from "../dashboard/ui/TransactionsList";
-import { useGetTransactions } from "./model/queries";
-
-const Transactions = () => {
+import TransactionsList from "@/features/dashboard/ui/TransactionsList";
+import { useGetTransactions } from "@/features/mypage/model/queries";
+const AiBotTransactions = () => {
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useGetTransactions();
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-  if (error) {
-    return <div>Error: {error.message}</div>;
-  }
+
   return (
     <div className="text-left">
       <TransactionsList
@@ -24,4 +18,4 @@ const Transactions = () => {
   );
 };
 
-export default Transactions;
+export default AiBotTransactions;
