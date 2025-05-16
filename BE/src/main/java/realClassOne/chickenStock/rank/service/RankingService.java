@@ -9,6 +9,8 @@ import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.rank.dto.response.RankingEntryDTO;
 import realClassOne.chickenStock.rank.dto.response.RankingResponseDTO;
+import realClassOne.chickenStock.rank.dto.response.ReturnRateRankingEntryDTO;
+import realClassOne.chickenStock.rank.dto.response.ReturnRateRankingResponseDTO;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 
 import java.util.*;
@@ -26,6 +28,7 @@ public class RankingService {
     private final TotalAssetCalculator totalAssetCalculator;
 
     private static final String REDIS_KEY = "ranking:totalAsset";
+    private static final String RETURN_RATE_KEY = "ranking:returnRate";
 
     // TOP 100 랭킹과 로그인한 사용자의 공동 순위 정보를 반환
     public RankingResponseDTO getTop100WithMyRank(String authorizationHeader) {
@@ -69,7 +72,10 @@ public class RankingService {
             String nickname = nicknameMap.getOrDefault(memberId, "탈퇴회원");
 
             // TOP 100만 담기
-            if (topRankings.size() < 100) {
+//            if (topRankings.size() < 100) {
+//                topRankings.add(new RankingEntryDTO(rank, nickname, totalAsset));
+//            }
+            if (rank <= 100) {
                 topRankings.add(new RankingEntryDTO(rank, nickname, totalAsset));
             }
 
@@ -126,4 +132,66 @@ public class RankingService {
 
         return filteredRanks;
     }
+
+
+    // 수익률 랭킹 (전체)
+    public ReturnRateRankingResponseDTO getReturnRateRanking(String authorizationHeader) {
+        Set<ZSetOperations.TypedTuple<String>> rankingSet =
+                zSetOperations.reverseRangeWithScores(RETURN_RATE_KEY, 0, -1);
+
+        if (rankingSet == null || rankingSet.isEmpty()) {
+            return new ReturnRateRankingResponseDTO(List.of(), null);
+        }
+
+        // 멤버 ID → 닉네임 매핑
+        Map<Long, String> nicknameMap = memberRepository.findAll().stream()
+                .collect(Collectors.toMap(Member::getMemberId, Member::getNickname));
+
+        List<ReturnRateRankingEntryDTO> topRankings = new ArrayList<>();
+        ReturnRateRankingEntryDTO myRank = null;
+
+        int rank = 0;
+        double prevScore = Double.NaN;
+        int skip = 1;
+
+        // Authorization 헤더로 내 memberId 추출
+        Long myId = null;
+        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+            try {
+                String token = jwtTokenProvider.resolveToken(authorizationHeader);
+                myId = jwtTokenProvider.getMemberIdFromToken(token);
+            } catch (Exception ignored) {}
+        }
+
+        for (ZSetOperations.TypedTuple<String> tuple : rankingSet) {
+            Long memberId = Long.valueOf(tuple.getValue());
+            double returnRate = tuple.getScore();
+
+            // 공동 등수 처리
+            if (!Double.valueOf(returnRate).equals(prevScore)) {
+                rank += skip;
+                skip = 1;
+            } else {
+                skip++;
+            }
+
+
+            String nickname = nicknameMap.getOrDefault(memberId, "탈퇴회원");
+
+            // TOP 100만 담기
+            if (rank <= 100) {
+                topRankings.add(new ReturnRateRankingEntryDTO(rank, nickname, returnRate));
+            }
+
+            // 내 랭킹 추적
+            if (myId != null && myId.equals(memberId)) {
+                myRank = new ReturnRateRankingEntryDTO(rank, nickname, returnRate);
+            }
+
+            prevScore = returnRate;
+        }
+
+        return new ReturnRateRankingResponseDTO(topRankings, myRank);
+    }
+
 }
