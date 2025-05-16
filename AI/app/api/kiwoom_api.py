@@ -7,6 +7,7 @@ import aiohttp
 from typing import Dict, List, Callable, Optional, Any
 from datetime import datetime
 from app.auth.token_manager import TokenManager
+from app.auth.kiwoom_auth import KiwoomAuthClient
 from app.cache.stock_cache import StockCache
 from app.api.kiwoom_websocket import KiwoomWebSocket
 from app.config import settings
@@ -24,6 +25,7 @@ class KiwoomAPI:
         
         # 토큰 관리자
         self.token_manager = token_manager
+        self.kiwoom_auth = KiwoomAuthClient()
         
         # 키움 API 토큰
         self.kiwoom_token = ""
@@ -70,6 +72,12 @@ class KiwoomAPI:
                 base_url=self.websocket_url,
                 stock_cache=self.stock_cache
             )
+
+            # 실제 웹소켓 연결 추가
+            websocket_connected = await self.websocket_client.connect(self.kiwoom_token)
+            if not websocket_connected:
+                logger.error("웹소켓 연결 실패")
+                return False
             
             # 연결 상태 설정
             self.connected = True
@@ -106,93 +114,190 @@ class KiwoomAPI:
             return True
         return False
     
-    def get_cash_balance(self):
-        """현금 잔고 조회"""
-        return self.account_info.get("cash_balance", 0)
+    def get_account_info(self):
+        return self.account_info
     
     def get_positions(self):
-        """보유 종목 조회"""
+        """보유 종목 정보 반환"""
         return self.account_info.get("positions", {})
+
+    def get_cash_balance(self):
+        """예수금 반환"""
+        return self.account_info.get("cash_balance", 0)
     
     def get_total_asset_value(self):
-        """총 자산 가치 조회"""
+        """총 자산 가치 반환"""
         return self.account_info.get("total_asset_value", 0)
     
-    def get_trade_history(self):
-        """거래 이력 조회"""
-        # 실제 구현에서는 백엔드에서 거래 이력을 가져옴
-        return []
-    
-    async def get_filtered_symbols(self, top_kospi: int = 450, top_kosdaq: int = 150) -> List[str]:
-        """시가총액 기준으로 종목 필터링"""
+    async def get_filtered_symbols(self, top_kospi: int = 450, top_kosdaq: int = 150) -> dict:
+      """시가총액 기준으로 코스피/코스닥 종목 필터링하고 시장 유형과 함께 반환"""
+      try:
+          if not self.session:
+              self.session = aiohttp.ClientSession()
+          
+          # 키움 API 요청 헤더 구성
+          headers = {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+              "Authorization": f"Bearer {self.kiwoom_token}",
+              "api-id": "ka10099"  # API ID 설정
+          }
+
+          # 코스피, 코스닥 시장 정보 요청
+          market_types = [('0', 'KOSPI'), ('10', 'KOSDAQ')]
+          filtered_stocks = {"KOSPI": [], "KOSDAQ": []}
+
+          for market_code, market_name in market_types:
+              logger.info(f"{market_name} 시장 종목 조회 시작")
+              
+              # 요청 파라미터
+              params = {'mrkt_tp': market_code}
+              
+              try:
+                  async with self.session.post(
+                      f"{self.base_url}/api/dostk/stkinfo", 
+                      headers=headers, 
+                      json=params
+                  ) as response:
+                      if response.status == 200:
+                          data = await response.json()
+                          stocks = data.get('list', [])
+                          
+                          # 종목 정보 처리
+                          market_stocks = []
+                          
+                          for stock in stocks:
+                              try:
+                                  # 상장주식수와 종가 데이터가 있는지 확인
+                                  if not stock.get('listCount') or not stock.get('lastPrice'):
+                                      continue
+                                  
+                                  list_count = int(stock.get('listCount', '0').replace(',', ''))
+                                  last_price = int(stock.get('lastPrice', '0').replace(',', ''))
+                                  
+                                  # 시가총액이 0인 종목 제외
+                                  market_cap = list_count * last_price
+                                  if market_cap <= 0:
+                                      continue
+                                  
+                                  market_stocks.append({
+                                      'code': stock.get('code'),
+                                      'name': stock.get('name'),
+                                      'market_cap': market_cap,
+                                      'market_type': market_name,
+                                      'lastPrice': stock.get('lastPrice')
+                                  })
+                              except (ValueError, TypeError) as e:
+                                  logger.warning(f"종목({stock.get('code', 'unknown')}) 처리 중 오류: {e}")
+                                  continue
+                          
+                          # 시가총액 기준 정렬
+                          market_stocks.sort(key=lambda x: x['market_cap'], reverse=True)
+                          
+                          # 상위 N개 종목 선택 (코스피 450, 코스닥 150)
+                          top_count = top_kospi if market_name == 'KOSPI' else top_kosdaq
+                          selected_count = min(top_count, len(market_stocks))
+                          selected_stocks = market_stocks[:selected_count]
+                          
+                          # 시장별로 저장 - 종목 코드와 시장 유형 함께 저장
+                          filtered_stocks[market_name] = [
+                              {'code': stock['code'], 'market_type': market_name, 'lastPrice': stock['lastPrice']}
+                              for stock in selected_stocks
+                          ]
+                          
+                          logger.info(f"{market_name} 시장 상위 {len(filtered_stocks[market_name])}개 선택 (목표: {top_count}개)")
+                      else:
+                          error_msg = await response.text()
+                          logger.error(f"{market_name} 종목 정보 조회 실패: HTTP {response.status}, 응답: {error_msg}")
+              except Exception as e:
+                  logger.error(f"{market_name} 시장 데이터 요청 중 오류: {str(e)}")
+          
+          # 로깅
+          kospi_count = len(filtered_stocks["KOSPI"])
+          kosdaq_count = len(filtered_stocks["KOSDAQ"])
+          total_count = kospi_count + kosdaq_count
+          
+          logger.info(f"필터링된 종목 수: 코스피 {kospi_count}개, 코스닥 {kosdaq_count}개, 총 {total_count}개")
+          
+          return filtered_stocks
+
+      except Exception as e:
+          logger.error(f"종목 필터링 중 오류: {str(e)}", exc_info=True)
+          return {"KOSPI": [], "KOSDAQ": []}
+      
+    async def get_top_trading_amount(self, market_type="0", include_managed=0, exchange_type="3", limit=100):
         try:
+            # 세션 확인
             if not self.session:
                 self.session = aiohttp.ClientSession()
-            
+
+            self.kiwoom_token = await self.kiwoom_auth.get_access_token()
+                
             # 키움 API 요청 헤더 구성
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "Authorization": f"Bearer {self.kiwoom_token}",
-                "api-id": "ka10099"  # API ID 설정
+                "api-id": "ka10032"  # 거래대금상위요청 API ID
             }
+            
+            # API 요청 파라미터 구성
+            params = {
+                "mrkt_tp": market_type,  # 시장구분
+                "mang_stk_incls": str(include_managed),  # 관리종목 포함 여부
+                "stex_tp": exchange_type  # 거래소구분
+            }
+            
+            # API 요청
+            async with self.session.post(
+                f"{self.base_url}/api/dostk/rkinfo",
+                json=params,
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
 
-            # 코스피, 코스닥 시장 정보 요청
-            market_types = [('0', 'KOSPI'), ('10', 'KOSDAQ')]
-            all_stocks = []
-
-            for market_code, market_name in market_types:
-                logger.info(f"{market_name} 시장 종목 조회 시작")
-                
-                # 요청 파라미터
-                params = {'mrkt_tp': market_code}
-                
-                async with self.session.post(
-                    f"{self.base_url}/api/dostk/stkinfo", 
-                    headers=headers, 
-                    json=params
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        stocks = data.get('list', [])
+                    # 응답 데이터 처리
+                    top_stocks = []
+                    
+                    if "trde_prica_upper" in data and isinstance(data["trde_prica_upper"], list):
+                        stocks = data["trde_prica_upper"][:limit]  # 상위 limit개만 가져오기
                         
-                        # 종목 정보 처리
-                        all_market_stocks = []
                         for stock in stocks:
-                            try:
-                                list_count = int(stock.get('listCount', '0').replace(',', ''))
-                                last_price = int(stock.get('lastPrice', '0').replace(',', ''))
-                                
-                                market_cap = list_count * last_price
-                                
-                                all_market_stocks.append({
-                                    'code': stock.get('code'),
-                                    'name': stock.get('name'),
-                                    'market_cap': market_cap
-                                })
-                            except (ValueError, TypeError) as e:
-                                logger.warning(f"종목 처리 중 오류: {e}")
-                                continue
-                        
-                        # 시가총액 기준 정렬
-                        all_market_stocks.sort(key=lambda x: x['market_cap'], reverse=True)
-                        
-                        # 상위 N개 종목 선택 (코스피 450, 코스닥 150)
-                        top_count = top_kospi if market_name == 'KOSPI' else top_kosdaq
-                        selected_stocks = all_market_stocks[:top_count]
-                        
-                        logger.info(f"{market_name} 시장 상위 {top_count}개 선택")
-                        
-                        all_stocks.extend([stock['code'] for stock in selected_stocks])
-                    else:
-                        logger.error(f"{market_name} 종목 정보 조회 실패: HTTP {response.status}")
-
-            logger.info(f"총 선택된 종목 수: {len(all_stocks)}")
-            return all_stocks
-
+                            stock_info = {
+                                "code": stock.get("stk_cd", ""),  # 종목 코드
+                                "name": stock.get("stk_nm", ""),  # 종목명
+                                "rank": int(stock.get("now_rank", "0") or "0"),  # 현재 순위
+                                "price": float(stock.get("cur_prc", "0").replace(",", "") or "0"),  # 현재가
+                                "change_rate": float(stock.get("flu_rt", "0").replace("%", "") or "0"),  # 등락률
+                                "volume": int(stock.get("now_trde_qty", "0").replace(",", "") or "0"),  # 거래량
+                                "trading_amount": float(stock.get("trde_prica", "0").replace(",", "") or "0"),  # 거래대금
+                                "market_type": "KOSPI" if market_type == "001" else "KOSDAQ" if market_type == "101" else "ALL"
+                            }
+                            top_stocks.append(stock_info)
+                    
+                    logger.info(f"거래 대금 상위 종목 조회 성공: {len(top_stocks)}개")
+                    return top_stocks
+                else:
+                    logger.error(f"거래 대금 상위 종목 조회 실패: HTTP {response.status}")
+                    return []
+        
         except Exception as e:
-            logger.error(f"종목 필터링 중 오류: {str(e)}")
+            logger.error(f"거래 대금 상위 종목 조회 중 오류: {str(e)}")
             return []
+
+    async def get_all_top_trading_amount(self, limit=100):
+        kospi_top = await self.get_top_trading_amount(market_type="001", limit=limit)
+        kosdaq_top = await self.get_top_trading_amount(market_type="101", limit=limit)
+        
+        # 코스피와 코스닥 종목 통합
+        all_top = kospi_top + kosdaq_top
+        
+        # 거래대금 기준으로 내림차순 정렬
+        all_top.sort(key=lambda x: x.get("trading_amount", 0), reverse=True)
+        
+        # 상위 limit개만 선택
+        return all_top
             
     async def initialize_chart_data(self, symbols, from_date=None, period=90):
         """여러 종목의 차트 데이터를 한 번에 초기화하고 캐싱"""
@@ -304,6 +409,106 @@ class KiwoomAPI:
         except Exception as e:
             logger.error(f"차트 데이터 요청 중 오류: {code} - {str(e)}")
             return []
+        
+    async def get_minute_chart(self, symbol: str, time_interval: int = 5, update_cache: bool = True):
+        try:
+            # 세션 확인
+            if not self.session:
+                self.session = aiohttp.ClientSession()
+                
+            # 키움 API 요청 헤더 구성
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.kiwoom_token}",
+                "api-id": "ka10080"  # 분봉 차트 API ID
+            }
+            
+            # API 요청 파라미터 구성
+            request_data = {
+                "stk_cd": symbol,  # 종목 코드
+                "tic_scope": str(time_interval),  # 시간 간격
+                "upd_stkpc_tp": "0"  # 수정주가구분 (0: 원주가, 1: 수정주가)
+            }
+            
+            # API 요청
+            async with self.session.post(
+                f"{self.base_url}/api/dostk/chart",
+                json=request_data,
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    response_data = await response.json()
+                    
+                    if "stk_min_pole_chart_qry" not in response_data:
+                        logger.warning(f"종목 {symbol}의 분봉 데이터 응답 형식 오류")
+                        return []
+                    
+                    # 분봉 데이터 파싱
+                    minute_chart_data = response_data["stk_min_pole_chart_qry"]
+                    
+                    # 필요한 경우 데이터 변환 (API 응답 형식에 따라 조정)
+                    processed_data = []
+                    for item in minute_chart_data:
+                        processed_item = {
+                            "time": item.get("cntr_tm", ""),  # 체결시간
+                            "open": float(item.get("open_pric", 0) or 0),  # 시가
+                            "high": float(item.get("high_pric", 0) or 0),  # 고가
+                            "low": float(item.get("low_pric", 0) or 0),  # 저가
+                            "close": float(item.get("cur_prc", 0) or 0),  # 종가 (현재가)
+                            "volume": float(item.get("trde_qty", 0) or 0)  # 거래량
+                        }
+                        processed_data.append(processed_item)
+                    
+                    # 최근 50개만 유지
+                    if len(processed_data) > 50:
+                        processed_data = processed_data[:50]
+                    
+                    # 캐시 업데이트
+                    if update_cache and self.stock_cache:
+                        self.stock_cache.add_minute_chart_data(symbol, processed_data)
+                    
+                    return processed_data
+                else:
+                    logger.error(f"종목 {symbol}의 분봉 데이터 요청 실패: HTTP {response.status}")
+                    return []
+        except Exception as e:
+            logger.error(f"종목 {symbol}의 분봉 데이터 조회 중 오류: {str(e)}")
+            return []
+    
+    async def initialize_minute_chart_data(self, symbols: List[str], time_interval: int = 5):
+        logger.info(f"{len(symbols)}개 종목의 {time_interval}분봉 데이터 초기화 시작")
+        
+        success_count = 0
+        
+        # 여러 종목을 병렬로 처리하기 위한 코루틴 함수
+        async def fetch_minute_chart(symbol):
+            try:
+                result = await self.get_minute_chart(symbol, time_interval)
+                return len(result) > 0
+            except Exception as e:
+                logger.error(f"종목 {symbol}의 분봉 데이터 초기화 중 오류: {str(e)}")
+                return False
+        
+        # 동시 요청 수 제한 (너무 많은 동시 요청은 API 제한에 걸릴 수 있음)
+        batch_size = 5
+        
+        # 종목을 배치로 나누어 처리
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            
+            # 배치 내 종목들을 병렬로 처리
+            tasks = [fetch_minute_chart(symbol) for symbol in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 성공 횟수 계산
+            success_count += sum(1 for result in results if result == True)
+            
+            # API 호출 제한을 고려한 딜레이
+            await asyncio.sleep(1)
+        
+        logger.info(f"{time_interval}분봉 데이터 초기화 완료: {success_count}/{len(symbols)}개 성공")
+        return success_count > 0
     
     async def prepare_subscription_groups(self, filtered_stock_list, group_size: int = 30):
         """구독 그룹 준비"""

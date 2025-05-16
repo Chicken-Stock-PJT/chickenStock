@@ -13,7 +13,8 @@ public enum MemberErrorCode implements ErrorCode {
     INVALID_PASSWORD(HttpStatus.BAD_REQUEST, "MEMBER-E003", "비밀번호가 일치하지 않습니다"),
     EMAIL_VERIFICATION_FAILED(HttpStatus.BAD_REQUEST, "MEMBER-E004", "이메일 인증에 실패했습니다"),
     PASSWORD_CONFIRM_MISMATCH(HttpStatus.BAD_REQUEST, "MEMBER-E005", "비밀번호 확인이 일치하지 않습니다"),
-    DUPLICATE_NICKNAME(HttpStatus.CONFLICT, "MEMBER-E006", "이미 사용 중인 닉네임입니다.");
+    DUPLICATE_NICKNAME(HttpStatus.CONFLICT, "MEMBER-E006", "이미 사용 중인 닉네임입니다."),
+    MONEY_ALREADY_INITIALIZED(HttpStatus.BAD_REQUEST, "MEMBER-E007", "이미 1억 초기화를 한 회원입니다.");
 
 
 

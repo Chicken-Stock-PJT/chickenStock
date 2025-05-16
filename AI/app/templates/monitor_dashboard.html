@@ -1,0 +1,223 @@
+
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ title }}</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+        <link rel="stylesheet" href="/static/css/monitor.css">
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/moment"></script>
+    </head>
+    <body>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">캐시 모니터링 대시보드</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#" data-section="dashboard">대시보드</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-section="stocks">종목 리스트</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-section="bots">봇 상태</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-section="signals">신호 분석</a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="d-flex">
+                    <span class="navbar-text me-3" id="last-update"></span>
+                    <button class="btn btn-outline-light btn-sm" id="refresh-btn">
+                        새로고침
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container-fluid mt-3">
+            <!-- 대시보드 섹션 -->
+            <div class="section-content" id="dashboard-section">
+                <h2>시스템 상태 요약</h2>
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>캐시 상태</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="cache-summary"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>신호 분포</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <canvas id="envelope-chart" width="200" height="200"></canvas>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <canvas id="bollinger-chart" width="200" height="200"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>활성 봇</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="active-bots-summary"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 종목 리스트 섹션 -->
+            <div class="section-content d-none" id="stocks-section">
+                <h2>필터링된 종목 목록</h2>
+                <div class="card mt-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">종목 리스트</h5>
+                        <div class="input-group" style="width: 300px;">
+                            <input type="text" class="form-control" placeholder="종목 검색" id="stock-search">
+                            <button class="btn btn-outline-secondary" type="button" id="stock-search-btn">검색</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover" id="stocks-table">
+                                <thead>
+                                    <tr>
+                                        <th>종목코드</th>
+                                        <th>종목명</th>
+                                        <th>시장</th>
+                                        <th>현재가</th>
+                                        <th>Envelope 신호</th>
+                                        <th>볼린저 신호</th>
+                                        <th>상세보기</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- 종목 데이터 들어갈 자리 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 봇 상태 섹션 -->
+            <div class="section-content d-none" id="bots-section">
+                <h2>봇 상태 모니터링</h2>
+                <div class="row mt-3" id="bots-cards">
+                    <!-- 봇 카드 들어갈 자리 -->
+                </div>
+            </div>
+
+            <!-- 신호 분석 섹션 -->
+            <div class="section-content d-none" id="signals-section">
+                <h2>매매 신호 분석</h2>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>Envelope 전략 매매 신호</h5>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="envelope-signals-chart" width="400" height="300"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>볼린저 밴드 전략 매매 신호</h5>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="bollinger-signals-chart" width="400" height="300"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>봇별 매매 신호</h5>
+                            </div>
+                            <div class="card-body" id="bot-signals-container">
+                                <!-- 봇별 신호 차트 들어갈 자리 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 종목 상세 모달 -->
+            <div class="modal fade" id="stock-detail-modal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">종목 상세 정보</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="stock-detail-content">
+                                <!-- 종목 상세 정보 들어갈 자리 -->
+                            </div>
+                            
+                            <div class="row mt-4">
+                                <div class="col-md-12">
+                                    <h5>차트 데이터</h5>
+                                    <canvas id="stock-price-chart" width="100%" height="300"></canvas>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <h5>Envelope 지표</h5>
+                                    <div id="envelope-indicators"></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h5>볼린저 밴드 지표</h5>
+                                    <div id="bollinger-indicators"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-4">
+                                <div class="col-md-12">
+                                    <h5>봇별 지표</h5>
+                                    <div id="bot-indicators"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="/static/js/monitor.js"></script>
+    </body>
+    </html>
+    

@@ -38,11 +38,13 @@ export const useAuthStore = create<AuthState>()(
             return response;
           } catch (error) {
             if (error instanceof Error) {
-              alert(`프로필 정보 조회 실패 ${error.message}`);
+              console.log(`프로필 정보 조회 실패 ${error.message}`);
             } else {
-              alert("프로필 정보 조회 실패");
+              console.log("프로필 정보 조회 실패");
             }
             set({ simpleProfile: null });
+            void queryClient.removeQueries({ queryKey: ["simpleProfile"] });
+            window.location.href = "/login";
             throw error;
           }
         },

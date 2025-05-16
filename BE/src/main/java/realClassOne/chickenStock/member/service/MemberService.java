@@ -825,8 +825,9 @@ public class MemberService {
 
             String nickname = member.getNickname();
             String isOauth = !"local".equals(member.getProvider()) ? "true" : "false";
+            String memberMoney = member.getMemberMoney() != null ? member.getMemberMoney().toString() : "조회 중";
 
-            return SimpleMemberProfileResponseDTO.of(nickname, totalAsset, returnRate, isOauth);
+            return SimpleMemberProfileResponseDTO.of(nickname, totalAsset, returnRate, isOauth, memberMoney);
         } catch (Exception e) {
             log.error("간단 회원 정보 조회 중 오류 발생", e);
             throw new CustomException(MemberErrorCode.MEMBER_NOT_FOUND, "회원 정보를 불러올 수 없습니다");
@@ -909,6 +910,52 @@ public class MemberService {
         } catch (Exception e) {
             log.error("종목 거래내역 조회 중 오류 발생", e);
             throw new CustomException(StockErrorCode.OPERATION_FAILED, "종목 거래내역 조회 중 오류가 발생했습니다");
+        }
+    }
+
+    /**
+     * 사용자의 보유 주식 목록과 현금 자산을 조회합니다.
+     *
+     * @param authorizationHeader 인증 헤더
+     * @return 보유 주식 및 현금 정보 DTO
+     */
+    @Transactional(readOnly = true)
+    public HoldingStocksResponseDTO getHoldingStocks(String authorizationHeader) {
+        try {
+            // 토큰에서 회원 ID 추출
+            String token = jwtTokenProvider.resolveToken(authorizationHeader);
+            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+            Member member = memberRepository.findById(memberId)
+                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+            // 보유 주식 조회
+            List<HoldingPosition> holdingPositions = holdingPositionRepository.findByMember(member);
+
+            // 보유 주식 DTO 리스트 생성
+            List<HoldingStocksResponseDTO.HoldingStockDTO> holdingStockDTOs = holdingPositions.stream()
+                    .map(position -> HoldingStocksResponseDTO.HoldingStockDTO.builder()
+                            .stockCode(position.getStockData().getShortCode())
+                            .stockName(position.getStockData().getShortName())
+                            .quantity(position.getQuantity().longValue())
+                            .averagePrice(position.getAveragePrice())
+                            .build())
+                    .collect(Collectors.toList());
+
+            // 응답 생성
+            return HoldingStocksResponseDTO.builder()
+                    .cashAmount(member.getMemberMoney())
+                    .holdingStocks(holdingStockDTOs)
+                    .updatedAt(LocalDateTime.now())
+                    .message("보유 주식 조회 성공")
+                    .build();
+
+        } catch (CustomException ce) {
+            log.error("보유 주식 조회 실패: {}", ce.getMessage());
+            throw ce;
+        } catch (Exception e) {
+            log.error("보유 주식 조회 중 오류 발생", e);
+            throw new CustomException(StockErrorCode.OPERATION_FAILED, "보유 주식 조회 중 오류가 발생했습니다");
         }
     }
 }

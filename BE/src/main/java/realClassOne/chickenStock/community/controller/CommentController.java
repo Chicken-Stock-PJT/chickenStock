@@ -10,6 +10,7 @@ import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.community.dto.request.CommentReplyRequestDTO;
 import realClassOne.chickenStock.community.dto.request.CommentRequestDTO;
 import realClassOne.chickenStock.community.dto.request.CommentUpdateRequestDTO;
+import realClassOne.chickenStock.community.dto.response.CommentPageResponseDTO;
 import realClassOne.chickenStock.community.dto.response.CommentReplyResponseDTO;
 import realClassOne.chickenStock.community.dto.response.CommentResponseDTO;
 import realClassOne.chickenStock.community.dto.response.CommentUpdateResponseDTO;
@@ -33,8 +34,13 @@ public class CommentController {
 
     // 댓글,대댓글 조회
     @GetMapping
-    public ResponseEntity<List<CommentResponseDTO>> getComments(@PathVariable String shortCode) {
-        List<CommentResponseDTO> comments = commentService.getCommentsByStock(shortCode);
+    public ResponseEntity<CommentPageResponseDTO> getComments(
+            @PathVariable String shortCode,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        CommentPageResponseDTO comments = commentService.getCommentsByStock(shortCode, cursor, limit, authorizationHeader);
         return ResponseEntity.ok(comments);
     }
 

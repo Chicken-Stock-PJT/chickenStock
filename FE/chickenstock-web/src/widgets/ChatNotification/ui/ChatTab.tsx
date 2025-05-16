@@ -1,92 +1,136 @@
-import { useState } from "react";
-import { Send } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Send, User } from "lucide-react";
 import { useChatNotificationStore } from "../model/store";
-import { useWebSocket } from "../hooks/useWebSocket";
+import { webSocketManager } from "../api/webSocket";
 import { cn } from "@/shared/libs/utils";
 
 export default function ChatTab() {
   const [inputMessage, setInputMessage] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { messages, currentUser, authenticated, connected } = useChatNotificationStore();
-  const { sendChatMessage } = useWebSocket();
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputMessage.trim() && authenticated) {
-      sendChatMessage(inputMessage);
+      webSocketManager.sendChatMessage(inputMessage);
       setInputMessage("");
     }
   };
 
   return (
-    <div className="flex h-full flex-col">
-      {/* 연결 상태 표시 */}
-      <div className="px-4 py-2 text-center text-sm">
-        {connected ? (
-          authenticated ? (
-            <span className="text-green-600">● 연결됨</span>
-          ) : (
-            <span className="text-yellow-600">● 인증 중...</span>
-          )
-        ) : (
-          <span className="text-red-600">● 연결 끊김</span>
-        )}
+    <div className="flex h-full flex-col bg-gray-50">
+      {/* 헤더 */}
+      <div className="bg-white shadow-sm">
+        <div className="px-4 py-3">
+          <h3 className="text-center font-medium text-gray-900">실시간 채팅방</h3>
+        </div>
+
+        {/* 연결 상태 */}
+        <div className="bg-gray-100 px-4 py-1.5 text-center">
+          <span
+            className={cn(
+              "text-xs font-medium",
+              connected ? (authenticated ? "text-green-600" : "text-yellow-600") : "text-red-600",
+            )}
+          >
+            {connected ? (authenticated ? "연결됨" : "인증 중...") : "로그인이 필요합니다"}
+          </span>
+        </div>
       </div>
 
       {/* 메시지 목록 */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
-          <div className="text-center text-gray-500">채팅을 시작해보세요!</div>
+          <div className="flex h-full items-center justify-center text-gray-500">
+            <p className="text-sm">채팅을 시작해보세요!</p>
+          </div>
         ) : (
-          messages.map((msg, index) => (
-            <div
-              key={index}
-              className={cn(
-                "mb-3 rounded-lg p-3 max-w-[80%]",
-                msg.memberId === currentUser?.memberId
-                  ? "ml-auto bg-amber-100 text-right"
-                  : "mr-auto bg-gray-100",
-              )}
-            >
-              <div className="text-xs font-medium text-gray-600">{msg.nickname}</div>
-              <div className="mt-1 text-sm">{msg.message}</div>
-              <div className="mt-1 text-xs text-gray-500">
-                {new Date(msg.timestamp ?? Date.now()).toLocaleTimeString()}
-              </div>
+          <div className="flex min-h-full flex-col justify-end">
+            <div className="space-y-3 py-4">
+              {messages.map((msg, index) => {
+                const isMyMessage = msg.memberId === currentUser?.memberId;
+                const time = new Date(msg.timestamp ?? Date.now());
+                const timeString = `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}`;
+
+                return (
+                  <div key={index} className={cn("px-4", isMyMessage && "bg-white py-2")}>
+                    <div className="flex items-start gap-3">
+                      {/* 프로필 */}
+                      <div
+                        className={cn(
+                          "flex size-8 shrink-0 items-center justify-center rounded-full",
+                          isMyMessage ? "bg-amber-500" : "bg-gray-300",
+                        )}
+                      >
+                        <User size={16} className="text-white" />
+                      </div>
+
+                      {/* 메시지 내용 - 좌측 정렬 */}
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-baseline gap-2">
+                          <span className="text-sm font-medium text-gray-900">{msg.nickname}</span>
+                          {isMyMessage && (
+                            <span className="text-xs font-medium text-amber-600">나</span>
+                          )}
+                        </div>
+                        <p className="break-words text-left text-sm text-gray-700">{msg.message}</p>
+                      </div>
+
+                      {/* 시간 */}
+                      <span className="shrink-0 text-xs text-gray-400">{timeString}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
             </div>
-          ))
+          </div>
         )}
       </div>
 
-      {/* 메시지 입력 폼 */}
-      <form onSubmit={handleSendMessage} className="border-t p-4">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={authenticated ? "메시지를 입력하세요..." : "연결 중..."}
-            disabled={!authenticated}
-            className={cn(
-              "flex-1 rounded-lg border px-3 py-2 text-sm",
-              "focus:border-amber-500 focus:outline-none",
-              !authenticated && "bg-gray-100",
-            )}
-          />
-          <button
-            type="submit"
-            disabled={!authenticated || !inputMessage.trim()}
-            className={cn(
-              "rounded-lg px-4 py-2",
-              "bg-amber-500 text-white",
-              "transition-colors",
-              "hover:bg-amber-600",
-              "disabled:bg-gray-300 disabled:cursor-not-allowed",
-            )}
-          >
-            <Send size={18} />
-          </button>
-        </div>
-      </form>
+      {/* 입력 영역 */}
+      <div className="border-t bg-white">
+        <form onSubmit={handleSendMessage} className="p-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="메시지를 입력하세요..."
+                disabled={!authenticated}
+                className={cn(
+                  "w-full rounded-full border px-4 py-2.5 pr-12",
+                  "text-sm placeholder:text-gray-400",
+                  "focus:border-amber-500 focus:outline-none",
+                  !authenticated && "bg-gray-100",
+                )}
+              />
+              <button
+                type="submit"
+                disabled={!authenticated || !inputMessage.trim()}
+                className={cn(
+                  "absolute right-1 top-1/2 -translate-y-1/2",
+                  // "flex size-9 items-center justify-center",
+                  "rounded-full bg-amber-500 text-white",
+                  "transition-all hover:bg-amber-600",
+                  "disabled:cursor-not-allowed disabled:bg-gray-300 disabled:hover:scale-100",
+                )}
+              >
+                <Send size={18} className="ml-0.5" />
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
