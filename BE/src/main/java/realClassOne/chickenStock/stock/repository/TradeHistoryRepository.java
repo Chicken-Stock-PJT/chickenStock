@@ -56,4 +56,7 @@ public interface TradeHistoryRepository extends JpaRepository<TradeHistory, Long
             @Param("member") Member member,
             @Param("stockData") StockData stockData,
             @Param("dateTime") LocalDateTime dateTime);
+
+    List<TradeHistory> findByMemberAndStockDataAndTradedAtBeforeOrderByTradedAtAsc(
+            Member member, StockData stockData, LocalDateTime tradedAt);
 }
