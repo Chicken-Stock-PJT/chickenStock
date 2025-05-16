@@ -27,32 +27,32 @@ class BotManager:
         return True
     
     async def create_bot(self, email: str, password: str, strategy: TradingStrategy, shared_stock_cache=None) -> Optional[BotInstance]:
-        """
-        새로운 봇 생성 및 초기화
-        
-        :param email: 사용자 이메일
-        :param password: 사용자 비밀번호
-        :param strategy: 봇 전략 (ENVELOPE 또는 BOLLINGER)
-        :param shared_stock_cache: 공유 StockCache (지정되지 않으면 관리자의 공유 캐시 사용)
-        """
         try:
             # 이미 존재하는 봇인지 확인
             if email in self.bots:
                 # 동일한 전략이면 기존 봇 반환
                 if self.bots[email].strategy == strategy:
                     logger.info(f"이미 존재하는 봇 반환: {email} (전략: {strategy})")
+                    # 이메일과 비밀번호 업데이트 (인증 정보 유지를 위해)
+                    self.bots[email].email = email 
+                    self.bots[email].password = password
                     return self.bots[email]
                 else:
                     # 다른 전략이면 기존 봇 제거 후 새로 생성
                     logger.info(f"다른 전략의 봇이 존재하여 제거 후 재생성: {email} "
-                              f"({self.bots[email].strategy} -> {strategy})")
+                            f"({self.bots[email].strategy} -> {strategy})")
                     await self.remove_bot(email)
             
             # 공유 캐시 결정 (지정된 것 없으면 관리자의 공유 캐시 사용)
             stock_cache_to_use = shared_stock_cache if shared_stock_cache else self.shared_stock_cache
             
             # 새 봇 인스턴스 생성 (공유 캐시 전달)
+            # BotInstance의 생성자에 맞게 올바른 인자 전달
             bot = BotInstance(email, strategy, stock_cache_to_use)
+            
+            # 이메일 및 비밀번호 명시적 설정 (인증 정보 유지를 위해)
+            bot.email = email
+            bot.password = password
             
             # 봇 초기화 (로그인 등)
             if await bot.initialize(password, stock_cache_to_use):

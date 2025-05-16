@@ -183,7 +183,7 @@ class ShortTermTradingModel:
                 if (now - self.last_top_amount_update).total_seconds() >= self.top_amount_update_interval:
                     # 거래 대금 상위 종목 가져오기
                     if self.kiwoom_api and hasattr(self.kiwoom_api, "get_all_top_trading_amount"):
-                        top_stocks = await self.kiwoom_api.get_all_top_trading_amount(limit=100)
+                        top_stocks = await self.kiwoom_api.get_all_top_trading_amount(limit=200)
                         
                         if top_stocks and len(top_stocks) > 0:
                             self.top_trading_amount_stocks = top_stocks
@@ -248,7 +248,7 @@ class ShortTermTradingModel:
           logger.error(f"종목 교차 검증 중 오류: {str(e)}", exc_info=True)
           return []
     
-    async def get_cross_verified_target_stocks(self, limit=30):
+    async def get_cross_verified_target_stocks(self, limit=100):
         # 현재 시간 확인
         now = datetime.now()
         
@@ -403,13 +403,13 @@ class ShortTermTradingModel:
             # 매도 신호 생성 (보유 종목인 경우에만)
             elif symbol in self.positions:
                 position = self.positions.get(symbol, {})
-                avg_price = position.get("avg_price", 0)
+                avgPrice = position.get("avgPrice", 0)
                 
                 # 손절 조건 확인
-                stop_loss_triggered = (avg_price > 0) and (price < avg_price * (1 - self.stop_loss_pct / 100))
+                stop_loss_triggered = (avgPrice > 0) and (price < avgPrice * (1 - self.stop_loss_pct / 100))
                 
                 # 이익 실현 조건 확인
-                take_profit = self._check_take_profit(candle_data, price, avg_price)
+                take_profit = self._check_take_profit(candle_data, price, avgPrice)
                 
                 if stop_loss_triggered:
                     # 손절 신호 처리
@@ -519,10 +519,10 @@ class ShortTermTradingModel:
             
             # 손절 조건인 경우 전량 매도
             position = self.positions.get(symbol, {})
-            avg_price = position.get("avg_price", 0)
+            avgPrice = position.get("avgPrice", 0)
             
             is_stop_loss = False
-            if avg_price > 0 and price < avg_price * (1 - self.stop_loss_pct / 100):
+            if avgPrice > 0 and price < avgPrice * (1 - self.stop_loss_pct / 100):
                 is_stop_loss = True
                 sell_signal = "stop_loss"
                 sell_reason = f"손절 조건 충족: -{self.stop_loss_pct}% (전량 매도)"
@@ -560,7 +560,7 @@ class ShortTermTradingModel:
             self.division_status[symbol]["last_division"] = now
             
             if is_stop_loss:
-                logger.info(f"손절 매도 신호 발생: {symbol}, 현재가: {price:.2f}, 평균단가: {avg_price:.2f}, 전량 매도")
+                logger.info(f"손절 매도 신호 발생: {symbol}, 현재가: {price:.2f}, 평균단가: {avgPrice:.2f}, 전량 매도")
             else:
                 logger.info(f"분할 매도 신호 발생: {symbol}, 현재가: {price:.2f}, 회차: {sell_count + 1}/{self.sell_division_count}")
         else:
@@ -1050,14 +1050,14 @@ class ShortTermTradingModel:
           logger.error(f"일목균형표 기준선 확인 중 오류: {str(e)}")
           return False
 
-    def _check_take_profit(self, candle_data, current_price, avg_price):
+    def _check_take_profit(self, candle_data, current_price, avgPrice):
       """이익 실현 조건 확인"""
       try:
-          if not candle_data or len(candle_data) < 5 or avg_price <= 0:
+          if not candle_data or len(candle_data) < 5 or avgPrice <= 0:
               return False
           
           # 수익률 계산
-          profit_pct = ((current_price / avg_price) - 1) * 100
+          profit_pct = ((current_price / avgPrice) - 1) * 100
           
           # 최소 5% 이상 수익 발생 확인
           if profit_pct < 5.0:

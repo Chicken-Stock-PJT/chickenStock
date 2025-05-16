@@ -379,18 +379,17 @@ async def trading_loop():
                     try:
                         logger.info(f"봇 [{email}] 처리 시작 (전략: {bot.strategy})")
                         
-                        # 인증 상태 확인
-                        if not bot.auth_client or not bot.auth_client.is_authenticated:
-                            logger.warning(f"봇 [{email}]의 인증이 유효하지 않습니다. 이 봇의 거래는 건너뜁니다.")
+                        # 계좌 정보 업데이트 - BotInstance 내부에서 인증 상태 확인 및 복구
+                        logger.info(f"봇 [{email}] 계좌 정보 업데이트 요청 중...")
+                        update_success = await bot.update_account_info()
+                        
+                        if not update_success:
+                            logger.error(f"봇 [{email}] 계좌 정보 업데이트 실패. 이 봇의 거래는 건너뜁니다.")
                             return
                         
-                        # 계좌 정보 업데이트
-                        logger.info(f"봇 [{email}] 계좌 정보 업데이트 요청 중...")
-                        await bot.update_account_info()
-                        
-                        # 계좌 정보 로그 출력 (올바른 필드 이름 사용)
-                        cash = bot.get_cash()  # get_cash 메서드 사용
-                        holdings = bot.get_holdings()  # get_holdings 메서드 사용
+                        # 계좌 정보 로그 출력
+                        cash = bot.get_cash()
+                        holdings = bot.get_holdings()
                         logger.info(f"봇 [{email}] 계좌 정보 업데이트 성공: 예수금={cash}, 보유종목수={len(holdings)}")
                         
                         if bot.trading_model:
@@ -452,10 +451,10 @@ async def trading_loop():
                 for email, bot in running_bots.items():
                     bot_tasks.append(process_bot(email, bot))
                 
-                # 모든 봇 태스크를 병렬로 실행 (타임아웃 5초 설정)
+                # 모든 봇 태스크를 병렬로 실행 (타임아웃 10초로 설정)
                 try:
                     # asyncio.wait_for를 사용하여 전체 gather에 타임아웃 설정
-                    await asyncio.wait_for(asyncio.gather(*bot_tasks), timeout=5.0)
+                    await asyncio.wait_for(asyncio.gather(*bot_tasks), timeout=10.0)
                 except asyncio.TimeoutError:
                     logger.warning("일부 봇 처리가 시간 초과로 완료되지 않았습니다.")
                 except Exception as e:
