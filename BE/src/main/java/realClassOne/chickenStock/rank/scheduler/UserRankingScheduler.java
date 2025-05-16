@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
@@ -36,7 +37,8 @@ public class UserRankingScheduler {
     /**
      * 매 1시간마다 회원별 총자산 기준 Redis 랭킹 갱신
      */
-    @Scheduled(cron = "0 */5 * * * *") // 매 정시마다 실행 (ex. 12:00, 13:00, ...)
+    @Scheduled(cron = "*/10 * * * * *") // 매 정시마다 실행 (ex. 12:00, 13:00, ...)
+    @Transactional(readOnly = true)
     public void updateRanking() {
         log.info("🔄 [랭킹 스케줄러] Redis에 랭킹 갱신 시작");
 
@@ -99,9 +101,14 @@ public class UserRankingScheduler {
             zSetOperations.add(REDIS_KEY, memberIdStr, totalAsset);
 
             // 🔥🔥🔥 수익률 계산 추가 시작
-            List<TradeHistory> tradeHistories = tradeHistoryRepository.findByMemberId(member.getMemberId());
+            List<TradeHistory> tradeHistories = tradeHistoryRepository.findWithStockDataByMember(member);
+
+            log.info("🧾 {}번 회원 거래내역 {}건", member.getMemberId(), tradeHistories.size());
+
             Map<Long, List<TradeHistory>> groupedByStock = tradeHistories.stream()
                     .collect(Collectors.groupingBy(t -> t.getStockData().getStockDataId()));
+
+            log.info("📦 종목 그룹핑 결과: {}", groupedByStock.keySet());
 
             long totalInvestment = 0L;
             long totalEvaluation = 0L;
@@ -113,23 +120,38 @@ public class UserRankingScheduler {
                 long totalSellQty = 0L;
 
                 for (TradeHistory trade : trades) {
-                    if ("BUY".equals(trade.getTradeType())) {
+                    if (trade.getTradeType() == TradeHistory.TradeType.BUY) {
                         totalBuyQty += trade.getQuantity();
                         totalBuyAmount += trade.getTotalPrice();
-                    } else if ("SELL".equals(trade.getTradeType())) {
+                    } else if (trade.getTradeType() == TradeHistory.TradeType.SELL) {
                         totalSellQty += trade.getQuantity();
                     }
                 }
 
+
+                String shortCode = trades.get(0).getStockData().getShortCode();
+
+                // 🔍 총 매수/매도/보유 수량 로그 찍기
+                log.info("📊 [{}] 총매수: {}, 총매도: {}", shortCode, totalBuyQty, totalSellQty);
+
                 long holdingQty = totalBuyQty - totalSellQty;
-                if (holdingQty <= 0) continue;
+                if (holdingQty <= 0) {
+                    log.warn("⛔ [{}] 보유 수량 없음 → 평가 대상 제외", shortCode);
+                    continue;
+                }
 
                 long avgBuyPrice = totalBuyAmount / totalBuyQty;
                 long investAmount = avgBuyPrice * holdingQty;
                 totalInvestment += investAmount;
 
-                String shortCode = trades.get(0).getStockData().getShortCode();
+
                 JsonNode priceInfo = priceMap.get(shortCode + "_AL");
+
+                if (priceInfo == null) {
+                    log.warn("❌ 가격 정보 없음: {}", shortCode + "_AL");
+                } else if (!priceInfo.has("cur_prc")) {
+                    log.warn("⚠️ cur_prc 필드 없음: {}", shortCode + "_AL");
+                }
 
                 long currentPrice = 0L;
                 if (priceInfo != null && priceInfo.has("cur_prc")) {
@@ -138,6 +160,8 @@ public class UserRankingScheduler {
                         currentPrice = Long.parseLong(rawPrice);
                     }
                 }
+
+                log.info("📈 종목 [{}] 현재가: {}", shortCode, currentPrice);
 
                 totalEvaluation += currentPrice * holdingQty;
             }
