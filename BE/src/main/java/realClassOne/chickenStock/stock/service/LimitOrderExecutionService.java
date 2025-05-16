@@ -11,6 +11,7 @@ import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
+import realClassOne.chickenStock.notification.service.NotificationService;
 import realClassOne.chickenStock.stock.dto.common.ChartDataDTO;
 import realClassOne.chickenStock.stock.dto.request.ChartRequestDTO;
 import realClassOne.chickenStock.stock.dto.response.ChartResponseDTO;
@@ -49,6 +50,7 @@ public class LimitOrderExecutionService {
     private final PortfolioWebSocketHandler portfolioWebSocketHandler;
     private final FeeTaxService feeTaxService;
     private final StockWebSocketHandler stockWebSocketHandler;
+    private final NotificationService notificationService;
 
     // API 호출 제한 관리를 위한 스케줄러
     private final ScheduledExecutorService apiScheduler = Executors.newScheduledThreadPool(1);
@@ -393,7 +395,24 @@ public class LimitOrderExecutionService {
                 log.warn("체결 정보 웹소켓 전송 실패: {}", e.getMessage());
             }
 
-            log.info("지정가 주문 체결 완료 - ID: {}", order.getOrderId());
+            try {
+                log.info("체결 알림 생성 시작: 회원ID={}, 종목={}, 타입={}, 수량={}, 가격={}",
+                        member.getMemberId(), stockData.getShortName(),
+                        order.getOrderType() == TradeHistory.TradeType.BUY ? "BUY" : "SELL",
+                        quantity, executionPrice);
+
+                notificationService.createTradeNotification(
+                        member.getMemberId(),
+                        stockData.getShortName(),
+                        order.getOrderType() == TradeHistory.TradeType.BUY ? "BUY" : "SELL",
+                        quantity,
+                        executionPrice
+                );
+
+                log.info("체결 알림 생성 완료");
+            } catch (Exception e) {
+                log.error("체결 알림 생성 중 오류 발생", e);
+            }
 
         } catch (Exception e) {
             log.error("지정가 주문 체결 실패 - ID: {}", order.getOrderId(), e);
