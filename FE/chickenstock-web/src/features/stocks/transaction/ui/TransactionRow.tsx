@@ -8,7 +8,6 @@ interface TransactionRowProps {
 }
 
 const TransactionRow = ({
-  stockCode,
   timestamp,
   price,
   quantity,
