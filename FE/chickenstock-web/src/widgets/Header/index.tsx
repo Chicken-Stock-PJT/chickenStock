@@ -13,7 +13,6 @@ const Header = () => {
   const [isRankingOpen, setIsRankingOpen] = useState(false);
   const { data: simpleProfile } = useSimpleProfile();
   const isLogin = useAuthStore((state) => state.isLoggedIn);
-
   return (
     <div className="sticky top-0 z-50 flex h-14 w-screen items-center justify-between bg-white px-4 md:px-6 lg:px-8">
       <div className="flex items-center lg:mr-[200px]">
@@ -40,7 +39,7 @@ const Header = () => {
             홈
           </NavLink>
           <NavLink
-            to="stocks"
+            to="stocks/005930"
             className={({ isActive }) =>
               `${
                 isActive ? "text-primary-400" : ""
@@ -49,6 +48,12 @@ const Header = () => {
           >
             주식
           </NavLink>
+          {/* <div
+            onClick={() => void navigate("/stocks/005930")}
+            className="cursor-pointer text-base font-semibold transition-colors duration-200 hover:text-primary-400"
+          >
+            주식
+          </div> */}
           {/* 랭킹 버튼 추가 */}
           <div
             onClick={() => setIsRankingOpen(true)}
