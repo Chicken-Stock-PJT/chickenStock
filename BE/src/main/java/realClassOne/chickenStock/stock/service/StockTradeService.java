@@ -1,22 +1,19 @@
 package realClassOne.chickenStock.stock.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
 import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.member.entity.InvestmentSummary;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
+import realClassOne.chickenStock.notification.service.NotificationService;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.dto.common.PendingOrderDTO;
 import realClassOne.chickenStock.stock.dto.request.TradeRequestDTO;
@@ -63,6 +60,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     private final PortfolioWebSocketHandler portfolioWebSocketHandler;
     private final StockWebSocketHandler stockWebSocketHandler;
     private final FeeTaxService feeTaxService;
+    private final NotificationService notificationService;
 
 
     // 동시성 제어를 위한 락 추가
@@ -1417,6 +1415,7 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
     }
 
     // 매수 주문 처리 메서드
+    // 매수 주문 처리 메서드
     @Transactional
     private void executeBuyOrderWithFreshData(PendingOrder order, Long currentPrice) {
         if (order.getStatus() != PendingOrder.OrderStatus.PENDING) {
@@ -1535,6 +1534,21 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             }
 
             successfulTrades.incrementAndGet();
+
+            // 여기에 알림 전송 코드 추가
+            try {
+                notificationService.createTradeNotification(
+                        member.getMemberId(),
+                        stock.getShortName(),
+                        "BUY",
+                        order.getQuantity(),
+                        currentPrice
+                );
+                log.info("지정가 매수 체결 알림 전송 성공: 회원ID={}, 종목={}", member.getMemberId(), stock.getShortName());
+            } catch (Exception e) {
+                log.warn("지정가 매수 체결 알림 전송 실패: {}", e.getMessage());
+                // 알림 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+            }
         } catch (Exception e) {
             handleOrderExecutionFailure(order, "매수", e);
         }
@@ -1641,6 +1655,21 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
             }
 
             successfulTrades.incrementAndGet();
+
+            // 여기에 알림 전송 코드 추가
+            try {
+                notificationService.createTradeNotification(
+                        member.getMemberId(),
+                        stock.getShortName(),
+                        "SELL",
+                        order.getQuantity(),
+                        currentPrice
+                );
+                log.info("지정가 매도 체결 알림 전송 성공: 회원ID={}, 종목={}", member.getMemberId(), stock.getShortName());
+            } catch (Exception e) {
+                log.warn("지정가 매도 체결 알림 전송 실패: {}", e.getMessage());
+                // 알림 실패는 거래 자체에 영향을 주지 않으므로 예외 전파하지 않음
+            }
         } catch (Exception e) {
             handleOrderExecutionFailure(order, "매도", e);
         }
