@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useWebSocketStore } from "@/shared/store/websocket";
 import TransactionRow from "@/features/stocks/transaction/ui/TransactionRow";
 
-const Transaction = () => {
+const Transaction = ({ stockCode }: { stockCode: string }) => {
   const [transactionData, setTransactionData] = useState<TradeExecutionData[]>([]);
 
   const { tradeExecutionData } = useWebSocketStore();
 
   useEffect(() => {
-    if (tradeExecutionData) {
+    if (tradeExecutionData && tradeExecutionData.stockCode === stockCode) {
       const newData = [tradeExecutionData, ...transactionData];
       setTransactionData(newData);
     }

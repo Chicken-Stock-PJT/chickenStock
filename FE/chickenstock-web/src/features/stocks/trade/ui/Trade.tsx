@@ -10,8 +10,11 @@ import {
 import checkAvailableTime from "../model/checkAvailableTime";
 import { isNxtStock } from "../model/nxtStocks";
 import { TradeAlert } from "./TradeAlert";
+import { queryClient } from "@/shared/api/queryClient";
+import { Button } from "@/shared/libs/ui/button";
 
 const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: string }) => {
+  console.log(currentPrice);
   const [isNxt, setIsNxt] = useState<boolean>(false);
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
   const [quantity, setQuantity] = useState<number>(1); // 수량
@@ -20,6 +23,8 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   const [tempPrice, setTempPrice] = useState<string>(""); // 임시 가격을 저장할 상태 추가
   const quantityInputRef = useRef<HTMLInputElement>(null); // 수량 input ref
   const priceInputRef = useRef<HTMLInputElement>(null); // 가격 input ref
+  const memberMoney =
+    queryClient.getQueryData<{ memberMoney: number }>(["simpleProfile"])?.memberMoney ?? 0;
 
   useEffect(() => {
     const fetchIsNxt = async () => {
@@ -59,9 +64,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
       return;
     }
     setIsLimitOrder(toLimitOrder ? true : false);
-    if (!toLimitOrder) {
-      setPrice(currentPrice); // 시장가 주문 시 현재 가격으로 설정
-    }
+    setPrice(currentPrice); // 시장가 주문 시 현재 가격으로 설정
   };
 
   // 가격에 따라 tick size를 결정
@@ -113,6 +116,10 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
     quantityInputRef.current?.focus();
   };
 
+  const handleMaxQuantity = () => {
+    setQuantity(Math.floor(memberMoney / price));
+  };
+
   // 가격 감소 핸들러
   const handlePriceDecrease = () => {
     if (isLimitOrder && price > 0) {
@@ -161,7 +168,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
             showAlert("success", "매수 완료", "매수가 되었습니다.");
           },
           onError: () => {
-            showAlert("error", "매수 실패", "잔고가 부족합니다다.");
+            showAlert("error", "매수 실패", "잔고가 부족합니다.");
           },
         },
       );
@@ -249,7 +256,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
               className={`w-full rounded-lg px-4 py-2 transition-colors ${
                 !isLimitOrder
                   ? "border-2 border-primary-400 bg-primary-50 text-gray-900"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-gray-100 font-semibold text-gray-600 hover:bg-gray-200"
               }`}
               onClick={() => handlePriceType(false)}
             >
@@ -259,7 +266,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
               className={`w-full rounded-lg px-4 py-2 transition-colors ${
                 isLimitOrder
                   ? "border-2 border-primary-400 bg-primary-50 text-gray-900"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-gray-100 font-semibold text-gray-600 hover:bg-gray-200"
               }`}
               onClick={() => handlePriceType(true)}
             >
@@ -267,38 +274,46 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
             </button>
           </div>
 
-          <div className="mt-4 flex flex-col gap-2">
-            <label htmlFor="quantity" className="text-sm text-gray-500">
-              수량
-            </label>
-            <div className="relative flex items-center">
-              <button
-                onClick={handleQuantityDecrease}
-                className="absolute left-2 p-1 text-gray-500 hover:text-primary-500"
-              >
-                <Minus size={16} />
-              </button>
-              <input
-                ref={quantityInputRef}
-                type="number"
-                id="quantity"
-                value={quantity}
-                onChange={(e) => handleQuantityChange(e.target.value)}
-                onClick={(e) => e.currentTarget.select()}
-                min="0"
-                className="w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-              <button
-                onClick={handleQuantityIncrease}
-                className="absolute right-2 p-1 text-gray-500 hover:text-primary-500"
-              >
-                <Plus size={16} />
-              </button>
+          <TabsContent value="buy">
+            <div className="mt-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label htmlFor="quantity" className="text-sm font-bold text-gray-500">
+                  수량
+                </label>
+                <Button
+                  className="rounded-full bg-primary-500 text-white"
+                  onClick={handleMaxQuantity}
+                >
+                  최대
+                </Button>
+              </div>
+              <div className="relative flex items-center">
+                <button
+                  onClick={handleQuantityDecrease}
+                  className="absolute left-2 p-1 text-gray-500 hover:text-primary-500"
+                >
+                  <Minus size={16} />
+                </button>
+                <input
+                  ref={quantityInputRef}
+                  type="number"
+                  id="quantity"
+                  value={quantity}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  onClick={(e) => e.currentTarget.select()}
+                  min="0"
+                  className="w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <button
+                  onClick={handleQuantityIncrease}
+                  className="absolute right-2 p-1 text-gray-500 hover:text-primary-500"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
             </div>
-          </div>
 
-          {isLimitOrder && (
-            <>
+            {isLimitOrder && (
               <div className="mt-4 flex flex-col gap-2">
                 <label htmlFor="price" className="text-sm text-gray-500">
                   가격
@@ -333,31 +348,118 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                   </button>
                 </div>
               </div>
+            )}
+
+            <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
+              <span className="font-semibold">예수금 잔고</span>
+              <span>{Number(memberMoney).toLocaleString()}원</span>
+            </div>
+
+            {isLimitOrder && (
               <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
                 <span>총 가격</span>
                 <span>{(price * quantity).toLocaleString()}원</span>
               </div>
-            </>
-          )}
-          <TabsContent value="buy">
+            )}
             <button
               className="w-full rounded-lg bg-primary-300 py-3 
-            text-gray-900 drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
-            transition-all
-            duration-200 hover:bg-primary-400 active:scale-[0.98]
-            active:shadow-inner"
+            font-semibold text-gray-900
+            drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
+            transition-all duration-200 hover:bg-primary-400
+            active:scale-[0.98] active:shadow-inner"
               onClick={handleBuyOrder}
             >
               매수 신청하기
             </button>
           </TabsContent>
           <TabsContent value="sell">
+            <div className="mt-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label htmlFor="quantity" className="text-sm font-bold text-gray-500">
+                  수량
+                </label>
+                <Button
+                  className="rounded-full bg-primary-500 text-white"
+                  onClick={handleMaxQuantity}
+                >
+                  최대
+                </Button>
+              </div>
+              <div className="relative flex items-center">
+                <button
+                  onClick={handleQuantityDecrease}
+                  className="absolute left-2 p-1 text-gray-500 hover:text-primary-500"
+                >
+                  <Minus size={16} />
+                </button>
+                <input
+                  ref={quantityInputRef}
+                  type="number"
+                  id="quantity"
+                  value={quantity}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  onClick={(e) => e.currentTarget.select()}
+                  min="0"
+                  className="w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <button
+                  onClick={handleQuantityIncrease}
+                  className="absolute right-2 p-1 text-gray-500 hover:text-primary-500"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
+            {isLimitOrder && (
+              <div className="mt-4 flex flex-col gap-2">
+                <label htmlFor="price" className="text-sm text-gray-500">
+                  가격
+                </label>
+                <div className="relative flex items-center">
+                  <button
+                    onClick={handlePriceDecrease}
+                    className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                    disabled={!isLimitOrder}
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <input
+                    ref={priceInputRef}
+                    type="number"
+                    id="price"
+                    value={tempPrice || price}
+                    onChange={(e) => handlePriceInput(e.target.value)}
+                    onBlur={handlePriceChange}
+                    onClick={(e) => e.currentTarget.select()}
+                    readOnly={!isLimitOrder}
+                    min={lowPrice}
+                    className={`w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
+                ${!isLimitOrder ? "cursor-not-allowed bg-gray-100" : ""}`}
+                  />
+                  <button
+                    onClick={handlePriceIncrease}
+                    className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                    disabled={!isLimitOrder}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isLimitOrder && (
+              <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
+                <span>총 가격</span>
+                <span>{(price * quantity).toLocaleString()}원</span>
+              </div>
+            )}
             <button
-              className="w-full rounded-lg bg-primary-300 py-3 
-        text-gray-900 drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
-        transition-all
-        duration-200 hover:bg-primary-400 active:scale-[0.98]
-        active:shadow-inner"
+              className="mt-4 w-full rounded-lg bg-primary-300 
+        py-3 font-semibold
+        text-gray-900
+        drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)] transition-all duration-200
+        hover:bg-primary-400 active:scale-[0.98] active:shadow-inner"
               onClick={handleSellOrder}
             >
               매도 신청하기
