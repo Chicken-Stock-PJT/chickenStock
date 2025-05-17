@@ -15,7 +15,7 @@ const TransactionRow = ({
   tradeType,
 }: TransactionRowProps) => {
   return (
-    <div className="grid grid-cols-5 items-center overflow-hidden p-2">
+    <div className="grid grid-cols-5 items-center overflow-hidden text-nowrap p-2">
       {/* 매수 영역 */}
       {/* 수량 */}
       <div className={`flex items-center justify-start font-semibold`}>
@@ -24,7 +24,7 @@ const TransactionRow = ({
 
       {/* 가격 */}
       <div
-        className={`flex items-center justify-end ${tradeType === "BUY" ? "text-chart-red" : "text-chart-blue"}`}
+        className={`flex items-center justify-end text-nowrap ${tradeType === "BUY" ? "text-chart-red" : "text-chart-blue"}`}
       >
         {quantity}주
       </div>
