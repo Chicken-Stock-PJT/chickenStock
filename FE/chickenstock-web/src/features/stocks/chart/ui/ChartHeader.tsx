@@ -70,18 +70,22 @@ const ChartHeader = ({
           >
             일
           </button>
-          {/* <button
-          className="rounded- bg-gray-100 py-1 text-xs"
-          onClick={() => onChartTypeChange("WEEKLY")}
+          <button
+            className={`rounded px-2 py-1 text-xs ${
+              selectedChartType === "WEEKLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
+            }`}
+            onClick={() => onChartTypeChange("WEEKLY")}
           >
-          주
+            일
           </button>
           <button
-          className="rounded- bg-gray-100 py-1 text-xs"
-          onClick={() => onChartTypeChange("MONTHLY")}
+            className={`rounded px-2 py-1 text-xs ${
+              selectedChartType === "MONTHLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
+            }`}
+            onClick={() => onChartTypeChange("MONTHLY")}
           >
-          월
-          </button> */}
+            월
+          </button>
           <button
             className={`rounded px-2 py-1 text-xs ${
               selectedChartType === "YEARLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"

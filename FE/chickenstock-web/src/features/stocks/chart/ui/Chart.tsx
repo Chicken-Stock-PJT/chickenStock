@@ -14,7 +14,7 @@ import {
   HistogramData,
   MouseEventParams,
 } from "lightweight-charts";
-import { formatChartTime } from "@/features/stocks/chart/model/hooks";
+import { formatChartTime, updateTimestamp } from "@/features/stocks/chart/model/hooks";
 
 interface ChartProps {
   stockName?: string;
@@ -30,7 +30,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [chartType, setChartType] = useState<"MINUTE" | "DAILY" | "YEARLY">("DAILY");
+  const [chartType, setChartType] = useState<ChartType>("DAILY");
   const [nextKey, setNextKey] = useState<string>("");
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const { stockPriceData, tradeExecutionData } = useWebSocketStore();
@@ -58,7 +58,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
           hasNext: false,
           nextKey: "",
         });
-        // console.log(data.chartData);
+        console.log(data.chartData);
         const processedData = data.chartData
           .map((item) => ({
             currentPrice: Math.abs(Number(item.currentPrice)).toString(),
@@ -154,26 +154,19 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   useEffect(() => {
     if (loading) return;
     if (stockPriceData && candlestickSeriesRef.current) {
-      const today = new Date();
-      if (chartType === "YEARLY") {
-        today.setMonth(0, 2); // 1월 2일로 설정
-      }
-      // UTC+9 시간대로 설정
-      today.setHours(0, 0, 0, 0);
-      today.setHours(today.getHours() + 9);
-      const todayTimestamp = Math.floor(today.getTime() / 1000);
-      // console.log(todayTimestamp);
-
-      const time =
-        chartType === "MINUTE"
-          ? (formatChartTime(stockPriceData.timestamp) as Time)
-          : (todayTimestamp as Time);
+      const lastCandle =
+        candlestickSeriesRef.current.data()[candlestickSeriesRef.current.data().length - 1];
+      const time = updateTimestamp(
+        formatChartTime(stockPriceData.timestamp),
+        Number(lastCandle.time),
+        chartType,
+      ) as Time;
 
       const newData = {
         time,
-        open: Number(chartData[chartData.length - 1]?.openPrice),
-        high: Number(chartData[chartData.length - 1]?.highPrice),
-        low: Number(chartData[chartData.length - 1]?.lowPrice),
+        open: Number((lastCandle as CandlestickData<Time>).open),
+        high: Number((lastCandle as CandlestickData<Time>).high),
+        low: Number((lastCandle as CandlestickData<Time>).low),
         close: Math.abs(Number(stockPriceData.currentPrice)),
       };
       // console.log(newData);
@@ -184,21 +177,14 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   useEffect(() => {
     if (loading) return;
     if (tradeExecutionData && volumeSeriesRef.current && chartData.length > 0) {
-      const lastOpenPrice = Number(chartData[chartData.length - 1]?.openPrice ?? 0);
-      const today = new Date();
-      if (chartType === "YEARLY") {
-        today.setMonth(0, 2); // 1월 2일로 설정
-      }
-      // UTC+9 시간대로 설정
-      today.setHours(0, 0, 0, 0);
-      today.setHours(today.getHours() + 9);
-      const todayTimestamp = Math.floor(today.getTime() / 1000);
-      // console.log(todayTimestamp);
-
-      const time =
-        chartType === "MINUTE"
-          ? (formatChartTime(tradeExecutionData.timestamp) as Time)
-          : (todayTimestamp as Time);
+      const lastCandle =
+        candlestickSeriesRef.current?.data()[candlestickSeriesRef.current?.data().length - 1];
+      const lastOpenPrice = Number((lastCandle as CandlestickData<Time>).open);
+      const time = updateTimestamp(
+        formatChartTime(tradeExecutionData.timestamp),
+        Number(volumeSeriesRef.current.data()[0].time),
+        chartType,
+      ) as Time;
 
       const quantity = Number(tradeExecutionData.quantity);
       // console.log(time, prevVolume.time);
@@ -213,7 +199,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       setPrevVolume({ time: newData.time, value: newData.value, color: newData.color });
       volumeSeriesRef.current.update(newData as HistogramData<Time>);
     }
-  }, [tradeExecutionData, chartData]);
+  }, [tradeExecutionData]);
 
   // 차트 생성 및 설정 - 의존성 배열에 memoizedChartData 추가
   useEffect(() => {
