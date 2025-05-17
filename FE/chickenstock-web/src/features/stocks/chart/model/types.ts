@@ -40,6 +40,8 @@ export type WebSocketResponse = WebSocketMessage | StockPriceData | StockBidAskD
 // 차트
 export type ChartType = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "MINUTE";
 
+export type TimeInterval = "1" | "3" | "5" | "10" | "15" | "30" | "60";
+
 export interface ChartRange {
   min: number;
   max: number;
@@ -76,6 +78,8 @@ export interface ChartHeaderProps {
   currentPrice: string;
   onChartTypeChange: (type: ChartType) => void;
   selectedChartType: ChartType;
+  onTimeIntervalChange: (interval: TimeInterval) => void;
+  timeInterval: TimeInterval;
 }
 
 // 차트 바디
@@ -96,6 +100,7 @@ export interface ChartRequest {
   chartType: ChartType;
   hasNext: boolean;
   nextKey: string;
+  timeInterval: TimeInterval;
 }
 
 export interface ChartResponse {

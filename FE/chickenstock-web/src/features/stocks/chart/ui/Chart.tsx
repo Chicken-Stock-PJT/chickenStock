@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import ChartHeader from "./ChartHeader";
-import { ChartData, ChartType } from "../model/types";
+import { ChartData, ChartType, TimeInterval } from "../model/types";
 import { getStockChartData } from "../api";
 import { useWebSocketStore } from "@/shared/store/websocket";
 import {
@@ -31,6 +31,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [chartType, setChartType] = useState<ChartType>("DAILY");
+  const [timeInterval, setTimeInterval] = useState<TimeInterval>("1");
   const [nextKey, setNextKey] = useState<string>("");
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const { stockPriceData, tradeExecutionData } = useWebSocketStore();
@@ -47,6 +48,13 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     setChartData([]); // 차트 타입 변경 시 데이터 초기화
   };
 
+  const handleTimeIntervalChange = (interval: TimeInterval) => {
+    if (interval === timeInterval) return;
+    setChartType("MINUTE");
+    setTimeInterval(interval);
+    setChartData([]); // 시간 간격 변경 시 데이터 초기화
+  };
+
   // 초기 차트 데이터 로드
   useEffect(() => {
     const fetchChartData = async () => {
@@ -57,6 +65,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
           chartType,
           hasNext: false,
           nextKey: "",
+          timeInterval,
         });
         console.log(data.chartData);
         const processedData = data.chartData
@@ -84,7 +93,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       }
     };
     void fetchChartData();
-  }, [stockCode, chartType]);
+  }, [stockCode, chartType, timeInterval]);
 
   // 이전 데이터 로드 함수
   const loadMoreData = useCallback(async () => {
@@ -103,6 +112,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         chartType,
         hasNext: true,
         nextKey,
+        timeInterval,
       });
 
       const lastDate = chartData[chartData.length - 1].date;
@@ -148,7 +158,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
     } finally {
       setIsLoadingMore(false);
     }
-  }, [stockCode, chartType, nextKey, chartData]);
+  }, [stockCode, chartType, nextKey, chartData, timeInterval]);
 
   // stockPriceData 업데이트 시 차트 업데이트
   useEffect(() => {
@@ -160,6 +170,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         formatChartTime(stockPriceData.timestamp),
         Number(lastCandle.time),
         chartType,
+        timeInterval,
       ) as Time;
 
       const newData = {
@@ -184,6 +195,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         formatChartTime(tradeExecutionData.timestamp),
         Number(volumeSeriesRef.current.data()[0].time),
         chartType,
+        timeInterval,
       ) as Time;
 
       const quantity = Number(tradeExecutionData.quantity);
@@ -446,6 +458,8 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
         changeRate={priceData?.changeRate ?? "0"}
         onChartTypeChange={handleChartTypeChange}
         selectedChartType={chartType}
+        onTimeIntervalChange={handleTimeIntervalChange}
+        timeInterval={timeInterval}
       />
       <div
         ref={chartContainerRef}

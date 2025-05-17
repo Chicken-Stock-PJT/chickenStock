@@ -9,6 +9,7 @@ import {
   ChartType,
   ChartVisibleRange,
   FormattedChartData,
+  TimeInterval,
 } from "./types";
 import { formatVolume } from "@/shared/libs/hooks/numberFormatters";
 import { renderCandlestickTooltip, renderVolumeTooltip } from "../ui/ChartTooltips";
@@ -49,6 +50,7 @@ export function updateTimestamp(
   compareTsSec: number,
   currentTsSec: number,
   chartType: ChartType,
+  timeInterval: TimeInterval,
 ): number {
   // JS Date 는 밀리초 단위이므로 *1000
   const compareDate = new Date(compareTsSec * 1000);
@@ -59,7 +61,7 @@ export function updateTimestamp(
 
   switch (chartType) {
     case "MINUTE":
-      nextDate.setMinutes(nextDate.getMinutes() + 1);
+      nextDate.setMinutes(nextDate.getMinutes() + Number(timeInterval));
       break;
 
     case "DAILY":
