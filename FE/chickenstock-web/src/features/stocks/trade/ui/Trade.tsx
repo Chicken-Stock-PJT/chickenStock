@@ -117,7 +117,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   };
 
   const handleMaxQuantity = () => {
-    setQuantity(Math.floor(memberMoney / price));
+    setQuantity(Math.floor(memberMoney / (price || currentPrice)));
   };
 
   // 가격 감소 핸들러
@@ -378,12 +378,12 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                 <label htmlFor="quantity" className="text-sm font-bold text-gray-500">
                   수량
                 </label>
-                <Button
+                {/* <Button
                   className="rounded-full bg-primary-500 text-white"
                   onClick={handleMaxQuantity}
                 >
                   최대
-                </Button>
+                </Button> */}
               </div>
               <div className="relative flex items-center">
                 <button
