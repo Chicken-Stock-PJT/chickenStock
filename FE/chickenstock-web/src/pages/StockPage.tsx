@@ -82,18 +82,21 @@ const StockPage = () => {
           <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
             <Chart stockName={stockName} stockCode={stockCode} priceData={priceData} />
           </div>
-          <div className="flex w-full gap-2">
-            <div className="w-1/2">
+          <div className="flex w-full flex-col gap-2 lg:flex-row">
+            <div className="w-full lg:w-1/2">
               <OrderBook stockCode={stockCode ?? ""} currentPrice={currentPriceNumber} />
             </div>
-            <div className="w-1/2 overflow-auto">
-              <Transaction />
+            <div className="h-[632px] w-full overflow-auto lg:w-1/2">
+              <Transaction stockCode={stockCode ?? ""} />
             </div>
           </div>
         </div>
         <div className="col-span-4 flex flex-col gap-2">
           <div className="flex w-full items-center justify-center rounded-lg border bg-gray-100">
-            <Trade currentPrice={currentPriceNumber} stockCode={stockCode ?? ""} />
+            <Trade
+              currentPrice={Math.abs(Number(priceData.currentPrice))}
+              stockCode={stockCode ?? ""}
+            />
           </div>
           <div className="flex-1 overflow-auto">
             <Status stockCode={stockCode ?? ""} />
