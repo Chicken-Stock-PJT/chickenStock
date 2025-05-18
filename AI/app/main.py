@@ -103,18 +103,19 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         # 변수 초기화
         default_email = None
         default_password = None
-        
+
         # 토큰 관리자 초기화
         if not token_manager:
             token_manager = TokenManager()
             await token_manager.initialize()
         
-        # 키움 API 토큰 발급
-        kiwoom_auth_client = KiwoomAuthClient()
+        # 키움 API 토큰 발급을 위한 클라이언트
+        kiwoom_auth_client = KiwoomAuthClient()  # 명확한 변수명으로 변경
         kiwoom_auth_client.set_token_manager(token_manager)
         await kiwoom_auth_client.initialize()
         
-        kiwoom_token = await kiwoom_auth_client.get_access_token()
+        # 명시적으로 토큰 갱신
+        kiwoom_token = await kiwoom_auth_client.refresh_token()
         if not kiwoom_token:
             logger.error("키움 API 토큰 발급 실패")
             return False
@@ -262,7 +263,7 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         logger.info("볼린저 밴드 지표 계산 시작")
         kiwoom_api.stock_cache.calculate_bollinger_bands()
         logger.info("볼린저 밴드 지표 계산 완료")
-        
+
         # 마지막 데이터 업데이트 시간 기록
         service_status["last_data_update"] = datetime.now()
         
@@ -493,7 +494,7 @@ async def trading_loop():
 
 async def scheduler_task():
     """매일 오전 7시에 서버 초기화 및 데이터 갱신을 실행하는 스케줄러"""
-    global kiwoom_api, service_status, bot_manager
+    global kiwoom_api, service_status, bot_manager, backend_client, auth_client
     
     logger.info("스케줄러 작업 시작됨")
     
@@ -519,10 +520,23 @@ async def scheduler_task():
                 await bot_manager.cleanup()
                 logger.info("봇 매니저 리소스 정리 완료")
             
+            # 백엔드 클라이언트 명시적 종료
+            if backend_client:
+                await backend_client.close()
+                logger.info("백엔드 클라이언트 종료 완료")
+                backend_client = None  # 변수 초기화
+            
+            # 인증 클라이언트 명시적 종료
+            if auth_client:
+                await auth_client.close()
+                logger.info("인증 클라이언트 종료 완료")
+                auth_client = None  # 변수 초기화
+            
             # 키움 API 연결 종료
             if kiwoom_api:
                 await kiwoom_api.close()
                 logger.info("키움 API 연결 종료 완료")
+                kiwoom_api = None  # 변수 초기화
             
             # 잠시 대기 (리소스 정리를 위한 시간)
             await asyncio.sleep(5)
