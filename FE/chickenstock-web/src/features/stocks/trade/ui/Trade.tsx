@@ -117,7 +117,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   };
 
   const handleMaxQuantity = () => {
-    setQuantity(Math.floor(memberMoney / price));
+    setQuantity(Math.floor(memberMoney / (price || currentPrice)));
   };
 
   // 가격 감소 핸들러
@@ -302,7 +302,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                   onChange={(e) => handleQuantityChange(e.target.value)}
                   onClick={(e) => e.currentTarget.select()}
                   min="0"
-                  className="w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <button
                   onClick={handleQuantityIncrease}
@@ -336,7 +336,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                     onClick={(e) => e.currentTarget.select()}
                     readOnly={!isLimitOrder}
                     min={lowPrice}
-                    className={`w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
+                    className={`w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
                 ${!isLimitOrder ? "cursor-not-allowed bg-gray-100" : ""}`}
                   />
                   <button
@@ -378,12 +378,12 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                 <label htmlFor="quantity" className="text-sm font-bold text-gray-500">
                   수량
                 </label>
-                <Button
+                {/* <Button
                   className="rounded-full bg-primary-500 text-white"
                   onClick={handleMaxQuantity}
                 >
                   최대
-                </Button>
+                </Button> */}
               </div>
               <div className="relative flex items-center">
                 <button
@@ -400,7 +400,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                   onChange={(e) => handleQuantityChange(e.target.value)}
                   onClick={(e) => e.currentTarget.select()}
                   min="0"
-                  className="w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <button
                   onClick={handleQuantityIncrease}
@@ -434,7 +434,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                     onClick={(e) => e.currentTarget.select()}
                     readOnly={!isLimitOrder}
                     min={lowPrice}
-                    className={`w-full rounded-lg border px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
+                    className={`w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
                 ${!isLimitOrder ? "cursor-not-allowed bg-gray-100" : ""}`}
                   />
                   <button
