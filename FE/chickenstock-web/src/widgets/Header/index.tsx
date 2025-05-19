@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
 import SearchModal from "@/features/stocks/search/ui/SearchModal";
@@ -13,6 +13,7 @@ const Header = () => {
   const [isRankingOpen, setIsRankingOpen] = useState(false);
   const { data: simpleProfile } = useSimpleProfile();
   const isLogin = useAuthStore((state) => state.isLoggedIn);
+  const navigate = useNavigate();
   return (
     <div className="sticky top-0 z-50 flex h-14 w-screen items-center justify-between bg-white px-4 md:px-6 lg:px-8">
       <div className="flex items-center lg:mr-[200px]">
@@ -49,12 +50,12 @@ const Header = () => {
             주식
           </NavLink> */}
 
-          {/* <div
+          <div
             onClick={() => void navigate("/stocks/005930")}
             className="cursor-pointer text-base font-semibold transition-colors duration-200 hover:text-primary-400"
           >
             주식
-          </div> */}
+          </div>
           <NavLink
             to="ai-bot"
             className={({ isActive }) =>
