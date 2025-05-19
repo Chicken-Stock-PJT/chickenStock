@@ -181,7 +181,7 @@ const InvestmentGuideModal = ({ isOpen, onClose }: InvestmentGuideModalProps) =>
                   </tr>
                   <tr>
                     <td className="border p-2">국내 주식 매도</td>
-                    <td className="border p-2">0.05% + 제세금 0.18%</td>
+                    <td className="border p-2">0.015% + 제세금 0.18%</td>
                     <td className="border p-2">양도소득세 별도</td>
                   </tr>
                 </tbody>
