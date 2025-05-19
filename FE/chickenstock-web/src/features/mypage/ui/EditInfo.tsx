@@ -23,6 +23,7 @@ const EditInfo = () => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
+      console.log(nickname); // 공백이 있거나 한글 인코딩 문제 있는지 확인
       await updateNickname(nickname);
     } catch (error) {
       // 에러는 useUpdateNickname 훅에서 처리됨
