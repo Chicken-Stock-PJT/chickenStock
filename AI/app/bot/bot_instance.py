@@ -36,7 +36,7 @@ class BotInstance:
             self.bot_stock_cache = BotStockCache(shared_stock_cache, strategy)
         
         # API 인스턴스
-        self.auth_client = None
+        self.auth_manager = None
         self.backend_client = None
         
         # 트레이딩 모델
@@ -49,11 +49,9 @@ class BotInstance:
         self.is_running = False
         self.start_time = None
         self.last_data_update = None
-        self.last_auth_check = None  # 마지막 인증 확인 시간 추가
         
         logger.info(f"봇 인스턴스 생성: {email} (전략: {strategy})")
     
-    # 필요한 부분만 수정한 initialize 메서드
     async def initialize(self, password: str, shared_stock_cache=None):
         """
         봇 초기화 및 로그인
@@ -69,25 +67,24 @@ class BotInstance:
             if shared_stock_cache and not self.bot_stock_cache:
                 self.bot_stock_cache = BotStockCache(shared_stock_cache, self.strategy)
             
-            # 인증 클라이언트 초기화
-            self.auth_client = AuthClient()
-            await self.auth_client.initialize()
+            # 인증 매니저 초기화
+            self.auth_manager = AuthClient()
+            await self.auth_manager.initialize()
             
             # 백엔드 서버 로그인
-            login_success = await self.auth_client.login(self.email, password)
+            login_success = await self.auth_manager.login(self.email, password)
             if not login_success:
                 logger.error(f"봇 {self.email} 로그인 실패")
                 return False
             
             logger.info(f"봇 {self.email} 로그인 성공")
-            self.last_auth_check = datetime.now()  # 인증 확인 시간 업데이트
             
             # 백엔드 클라이언트 초기화 (각 봇마다 독립적인 클라이언트)
             self.backend_client = BackendClient()
-            self.backend_client.set_auth_client(self.auth_client)
+            self.backend_client.set_auth_manager(self.auth_manager)
             await self.backend_client.start()
 
-            # 문자열 전략을 Enum으로 변환
+            # 전략 모델 초기화
             try:
                 # 문자열인 경우 Enum으로 변환
                 if isinstance(self.strategy, str):
@@ -96,7 +93,7 @@ class BotInstance:
                     # 이미 Enum인 경우 그대로 사용
                     strategy_enum = self.strategy
                 
-                # Enum 기반으로 비교
+                # Enum 기반으로 비교하여 전략 모델 생성
                 if strategy_enum == TradingStrategy.ENVELOPE:
                     logger.info(f"봇 {self.email} ENVELOPE 전략 모델 생성 시도")
                     self.trading_model = EnvelopeTradingModel(self.bot_stock_cache)
@@ -112,12 +109,6 @@ class BotInstance:
                     self.trading_model = ShortTermTradingModel(self.bot_stock_cache)
                     logger.info(f"봇 {self.email} SHORT_TERM 전략 모델 생성 성공")
                     self.trading_model.set_backend_client(self.backend_client)
-                # elif strategy_enum == TradingStrategy.DRL_UTRANS:
-                #     # DRL-UTrans 전략 추가
-                #     logger.info(f"봇 {self.email} DRL_UTRANS 전략 모델 생성 시도")
-                #     self.trading_model = DRLUTransTradingModel(self.bot_stock_cache)
-                #     logger.info(f"봇 {self.email} DRL_UTRANS 전략 모델 생성 성공")
-                #     self.trading_model.set_backend_client(self.backend_client)
                 else:
                     logger.warning(f"봇 {self.email} 알 수 없는 전략: {strategy_enum}")
                     
@@ -139,81 +130,15 @@ class BotInstance:
             await self.cleanup(preserve_auth_info=True)  # 인증 정보 보존
             return False
     
-    async def ensure_authentication(self) -> bool:
-        """인증 상태 확인 및 필요시 토큰 갱신 또는 재로그인"""
-        try:
-            # 인증 클라이언트 상태 확인
-            if not self.auth_client:
-                logger.warning(f"봇 [{self.email}]의 인증 클라이언트가 없습니다. 새로 생성합니다.")
-                self.auth_client = AuthClient()
-                await self.auth_client.initialize()
-            
-            # 현재 인증 상태 확인
-            if not self.auth_client.is_authenticated or not self.auth_client.is_token_valid():
-                logger.warning(f"봇 [{self.email}]의 인증이 유효하지 않습니다.")
-                
-                # 1. 리프레시 토큰으로 먼저 시도
-                if self.auth_client.refresh_token:
-                    logger.info(f"봇 [{self.email}] 리프레시 토큰으로 액세스 토큰 갱신 시도")
-                    refresh_success = await self.auth_client.refresh_access_token()
-                    
-                    if refresh_success:
-                        logger.info(f"봇 [{self.email}] 액세스 토큰 갱신 성공")
-                        # 백엔드 클라이언트에도 새 인증 정보 전달
-                        if self.backend_client:
-                            self.backend_client.set_auth_client(self.auth_client)
-                        
-                        self.last_auth_check = datetime.now()  # 인증 확인 시간 업데이트
-                        return True
-                    else:
-                        logger.warning(f"봇 [{self.email}] 액세스 토큰 갱신 실패. 이메일/비밀번호로 로그인 시도")
-                
-                # 2. 리프레시 토큰이 없거나 갱신 실패 시 이메일/비밀번호로 로그인 시도
-                if self.email and self.password:
-                    try:
-                        logger.info(f"봇 [{self.email}] 이메일/비밀번호로 로그인 시도")
-                        login_success = await self.auth_client.login(self.email, self.password)
-                        
-                        if login_success:
-                            logger.info(f"봇 [{self.email}] 이메일/비밀번호 로그인 성공")
-                            # 백엔드 클라이언트에도 새 인증 정보 전달
-                            if self.backend_client:
-                                self.backend_client.set_auth_client(self.auth_client)
-                            
-                            self.last_auth_check = datetime.now()  # 인증 확인 시간 업데이트
-                            return True
-                        else:
-                            logger.error(f"봇 [{self.email}] 이메일/비밀번호 로그인 실패")
-                            return False
-                    except Exception as e:
-                        logger.error(f"봇 [{self.email}] 로그인 중 오류 발생: {str(e)}")
-                        return False
-                else:
-                    logger.error(f"봇 [{self.email}]의 이메일 또는 비밀번호가 없습니다.")
-                    return False
-            
-            # 이미 인증된 상태
-            self.last_auth_check = datetime.now()  # 인증 확인 시간 업데이트
-            return True
-            
-        except Exception as e:
-            logger.error(f"봇 [{self.email}] 인증 확인 중 오류: {str(e)}")
-            return False
-    
     async def update_account_info(self):
-        """계좌 정보 업데이트 (인증 확인 포함)"""
+        """계좌 정보 업데이트"""
         try:
-            # 인증 상태 확인
+            # 백엔드 클라이언트 확인
             if not self.backend_client:
                 logger.error(f"봇 {self.email}의 백엔드 클라이언트가 초기화되지 않았습니다")
                 return False
             
-            # 인증 확인 및 필요시 갱신
-            auth_ok = await self.ensure_authentication()
-            if not auth_ok:
-                logger.error(f"봇 {self.email} 인증 확인 실패. 계좌 정보를 업데이트할 수 없습니다.")
-                return False
-            
+            # 계좌 정보 요청 (인증 확인은 authenticated_request 내부에서 처리됨)
             account_info = await self.backend_client.request_account_info()
             if account_info:
                 self.account_info = account_info
@@ -229,28 +154,6 @@ class BotInstance:
         
         except Exception as e:
             logger.error(f"봇 {self.email} 계좌 정보 업데이트 중 오류: {str(e)}")
-            
-            # 인증 관련 오류인 경우 재인증 시도
-            if "인증" in str(e) or "auth" in str(e).lower() or "token" in str(e).lower():
-                logger.warning(f"봇 {self.email} 인증 관련 오류 감지. 재인증 시도...")
-                auth_ok = await self.ensure_authentication()
-                
-                if auth_ok:
-                    # 재인증 성공 시 계좌 정보 업데이트 다시 시도
-                    logger.info(f"봇 {self.email} 재인증 성공. 계좌 정보 업데이트 다시 시도")
-                    try:
-                        account_info = await self.backend_client.request_account_info()
-                        if account_info:
-                            self.account_info = account_info
-                            
-                            # 트레이딩 모델에도 계좌 정보 전달
-                            if self.trading_model and hasattr(self.trading_model, 'update_account_info'):
-                                self.trading_model.update_account_info(account_info)
-                            
-                            return True
-                    except Exception as retry_error:
-                        logger.error(f"봇 {self.email} 계좌 정보 재시도 중 오류: {str(retry_error)}")
-            
             return False
     
     async def handle_realtime_price(self, symbol, price):
@@ -264,14 +167,6 @@ class BotInstance:
             return
         
         try:
-            # 인증 확인 (주기적으로만 수행 - 10분마다)
-            current_time = datetime.now()
-            if not self.last_auth_check or (current_time - self.last_auth_check).total_seconds() > 600:
-                auth_ok = await self.ensure_authentication()
-                if not auth_ok:
-                    logger.warning(f"봇 {self.email} 인증 실패. 실시간 데이터 처리를 건너뜁니다.")
-                    return
-            
             # 각 봇의 전략에 맞는 지표 계산
             strategy_enum = None
             if isinstance(self.strategy, str):
@@ -292,13 +187,11 @@ class BotInstance:
                     indicators = self.bot_stock_cache.get_envelope_indicators(symbol, price)
                     if indicators is None:
                         logger.error(f"ENVELOPE 지표 계산 실패: 메서드가 None을 반환했습니다.")
-                        # BotStockCache의 envelope 지표 계산 메서드 확인 필요
                     
                 elif strategy_enum == TradingStrategy.BOLLINGER:
                     indicators = self.bot_stock_cache.get_bollinger_bands(symbol, price)
                     if indicators is None:
                         logger.error(f"BOLLINGER 지표 계산 실패: 메서드가 None을 반환했습니다.")
-                        # BotStockCache의 bollinger 지표 계산 메서드 확인 필요
                     
                 elif strategy_enum == TradingStrategy.SHORT_TERM:
                     indicators = self.bot_stock_cache.get_short_term_indicators(symbol, price)
@@ -323,11 +216,6 @@ class BotInstance:
         
         except Exception as e:
             logger.error(f"봇 {self.email} 실시간 가격 처리 중 오류: {str(e)}", exc_info=True)
-            
-            # 인증 관련 오류인 경우 재인증 시도 (다음 호출에서 처리되도록)
-            if "인증" in str(e) or "auth" in str(e).lower() or "token" in str(e).lower():
-                logger.warning(f"봇 {self.email} 실시간 처리 중 인증 오류 감지. 다음 처리에서 재인증을 시도합니다.")
-                self.last_auth_check = None  # 다음 호출에서 인증 확인 강제
         
     async def refresh_indicators(self):
         """봇의 전략별 지표 새로고침"""
@@ -336,12 +224,6 @@ class BotInstance:
             return 0
         
         try:
-            # 인증 확인
-            auth_ok = await self.ensure_authentication()
-            if not auth_ok:
-                logger.error(f"봇 {self.email} 인증 확인 실패. 지표를 새로고침할 수 없습니다.")
-                return 0
-            
             success_count = self.bot_stock_cache.refresh_indicators()
             self.last_data_update = datetime.now()
             
@@ -352,18 +234,12 @@ class BotInstance:
             return 0
     
     async def start(self):
-        """봇 시작 (인증 확인 포함)"""
+        """봇 시작"""
         if self.is_running:
             logger.warning(f"봇 {self.email}이 이미 실행 중입니다")
             return False
         
         try:
-            # 인증 상태 확인 및 필요시 갱신
-            auth_ok = await self.ensure_authentication()
-            if not auth_ok:
-                logger.error(f"봇 {self.email} 인증 확인 실패. 봇을 시작할 수 없습니다.")
-                return False
-            
             # 계좌 정보 초기화 (각 봇마다 독립적으로 관리)
             await self.update_account_info()
             
@@ -421,10 +297,10 @@ class BotInstance:
             if self.is_running:
                 await self.stop()
             
-            # 인증 클라이언트 종료 (보존 옵션이 있는 경우 유지)
-            if self.auth_client and not preserve_auth_info:
-                await self.auth_client.close()
-                self.auth_client = None
+            # 인증 매니저 종료 (보존 옵션이 있는 경우 유지)
+            if self.auth_manager and not preserve_auth_info:
+                await self.auth_manager.close()
+                self.auth_manager = None
             
             # 객체 참조 제거 (인증 정보 관련 필드는 옵션에 따라 보존)
             self.trading_model = None
@@ -451,8 +327,7 @@ class BotInstance:
             "is_running": self.is_running,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "last_data_update": self.last_data_update.isoformat() if self.last_data_update else None,
-            "last_auth_check": self.last_auth_check.isoformat() if self.last_auth_check else None,
-            "authenticated": self.auth_client.is_authenticated if self.auth_client else False,
+            "authenticated": self.auth_manager.is_authenticated if self.auth_manager else False,
             "account_info": {
                 "cash_balance": self.account_info.get('cash_balance', 0),
                 "positions_count": len(self.account_info.get('positions', [])),
@@ -462,7 +337,7 @@ class BotInstance:
     
     def get_account_info(self) -> Dict:
         """계좌 정보 반환"""
-        self.update_account_info()
+        asyncio.create_task(self.update_account_info())
         return self.account_info
     
     def get_cash(self) -> float:
