@@ -14,7 +14,7 @@ class BollingerBandTradingModel(BaseTradingModel):
         super().__init__(stock_cache)
         
         # 매매 관련 설정
-        self.max_positions = 15  # 최대 보유 종목 수 (Envelope 모델보다 적게 설정)
+        self.max_positions = 20  # 최대 보유 종목 수 (Envelope 모델보다 적게 설정)
         self.trade_amount_per_stock = 6000000  # 종목당 매매 금액 (600만원)
         
         # 볼린저 밴드 설정 (StockCache와 동일하게 유지)
@@ -25,7 +25,7 @@ class BollingerBandTradingModel(BaseTradingModel):
         self.is_running = False
         
         # 매매 신호 저장 딕셔너리
-        self.trading_signals = {}  # {symbol: {"signal": "buy", "price": price, "timestamp": datetime}}
+        self.trading_signals = {}  # {symbol: {"signal": "buy", "price": price, "timestamp": datetime, "confidence": float}}
         
         # 거래 이력 저장
         self.trade_history = {}  # {symbol: {"last_trade": datetime, "last_action": "buy"}}
@@ -40,6 +40,9 @@ class BollingerBandTradingModel(BaseTradingModel):
         self.account_info = {}
         self.positions = {}
         self.cash_balance = 0
+        
+        # 신뢰도 관련 설정
+        self.min_confidence_threshold = 0.5  # 신호 처리를 위한 최소 신뢰도 기준
         
         logger.info("볼린저 밴드 트레이딩 모델 초기화 완료")
     
@@ -72,6 +75,91 @@ class BollingerBandTradingModel(BaseTradingModel):
         logger.info("볼린저 밴드 지표 갱신")
         # 필요한 경우 캐시 비우기 또는 내부 상태 초기화
         # 현재는 구현이 필요하지 않음
+    
+    def _calculate_signal_confidence(self, symbol, price, bb_indicators):
+        """매매 신호의 신뢰도 계산 (거래량 제외한 간소화 버전)
+        
+        Parameters:
+        - symbol: 종목 코드
+        - price: 현재가
+        - bb_indicators: 볼린저 밴드 지표 데이터
+        
+        Returns:
+        - float: 0.0 ~ 1.0 사이의 신뢰도 점수
+        """
+        # 기본 신뢰도 점수
+        confidence = 0.5
+        
+        # 1. 볼린저 밴드 관련 지표 확인
+        upper_band = bb_indicators.get("upperBand", 0)
+        middle_band = bb_indicators.get("middleBand", 0)
+        lower_band = bb_indicators.get("lowerBand", 0)
+        percent_b = bb_indicators.get("percentB", 0.5)
+        used_period = bb_indicators.get("period", 0)
+        band_width = (upper_band - lower_band) / middle_band if middle_band > 0 else 0  # 밴드 폭 계산
+        
+        # 2. 기본 신뢰도 요소: 사용된 데이터 기간의 충분성
+        period_confidence = min(1.0, used_period / self.bb_period)
+        confidence *= period_confidence
+        
+        # 3. %B 기반 신뢰도 계산 (매수/매도 신호에 따라 다름)
+        signal_type = "buy" if percent_b <= 0.1 else "sell" if percent_b >= 0.9 else "none"
+        
+        if signal_type == "buy":
+            # 매수 신호: %B가 0에 가까울수록 신뢰도 증가 (0.1 기준)
+            pb_confidence = 1.0 - (percent_b / 0.1)
+            pb_confidence = max(0.0, min(1.0, pb_confidence))
+            
+            # 가격이 밴드 하단보다 얼마나 낮은지 확인 (밴드 하단보다 낮을수록 신뢰도↑)
+            band_position = (lower_band - price) / lower_band if lower_band > 0 else 0
+            band_position = max(0.0, min(0.2, band_position)) * 5  # 0~0.2 범위를 0~1로 정규화
+            
+            # 밴드 폭이 넓을수록 (변동성이 클수록) 신뢰도 가중
+            band_width_factor = min(1.0, band_width / 0.05) if band_width > 0 else 0.5
+            
+            # 최종 매수 신호 신뢰도 (단순 가중 평균)
+            confidence = (confidence * 0.2) + (pb_confidence * 0.5) + (band_position * 0.2) + (band_width_factor * 0.1)
+            
+        elif signal_type == "sell":
+            # 매도 신호: %B가 1에 가까울수록 신뢰도 증가 (0.9 기준)
+            pb_confidence = (percent_b - 0.9) / 0.1
+            pb_confidence = max(0.0, min(1.0, pb_confidence))
+            
+            # 가격이 밴드 상단보다 얼마나 높은지 확인 (밴드 상단보다 높을수록 신뢰도↑)
+            band_position = (price - upper_band) / upper_band if upper_band > 0 else 0
+            band_position = max(0.0, min(0.2, band_position)) * 5  # 0~0.2 범위를 0~1로 정규화
+            
+            # 밴드 폭이 넓을수록 (변동성이 클수록) 신뢰도 가중
+            band_width_factor = min(1.0, band_width / 0.05) if band_width > 0 else 0.5
+            
+            # 최종 매도 신호 신뢰도 (단순 가중 평균)
+            confidence = (confidence * 0.2) + (pb_confidence * 0.5) + (band_position * 0.2) + (band_width_factor * 0.1)
+        
+        # 최종 신뢰도 점수 반환 (0.0 ~ 1.0 범위로 클램핑)
+        return max(0.0, min(1.0, confidence))
+    
+    def _should_process_price_update(self, symbol, price):
+        """실시간 가격 업데이트를 처리할지 결정"""
+        now = datetime.now()
+        
+        # 이전 처리 가격 및 시간
+        last_price = self.last_processed_prices.get(symbol, 0)
+        last_time = self.last_processed_times.get(symbol, datetime.min)
+        
+        # 최소 처리 간격 체크
+        if (now - last_time).total_seconds() < self.min_process_interval:
+            return False
+        
+        # 최소 가격 변동 체크 (가격이 0이 아닌 경우만)
+        if last_price > 0 and price > 0:
+            price_change_pct = abs(price - last_price) / last_price * 100
+            if price_change_pct < self.min_price_change_pct:
+                return False
+        
+        # 처리 결정: 가격 및 시간 업데이트
+        self.last_processed_prices[symbol] = price
+        self.last_processed_times[symbol] = now
+        return True
     
     async def handle_realtime_price(self, symbol, price, indicators=None):
         """실시간 가격 데이터 처리"""
@@ -110,6 +198,8 @@ class BollingerBandTradingModel(BaseTradingModel):
                 # 데이터가 충분하지 않으면 신호 생성하지 않음
                 return
             
+            # 거래량 데이터 조회 부분 제거 - 신뢰도 계산에 사용하지 않음
+            
             # 현재 시간
             now = datetime.now()
             
@@ -117,10 +207,12 @@ class BollingerBandTradingModel(BaseTradingModel):
             last_trade = self.trade_history.get(symbol, {})
             last_action = last_trade.get("last_action", "")
             last_trade_time = last_trade.get("last_trade", None)
-
             
             # 계좌 정보에서 보유 종목 확인 - 독립적인 positions 사용
             is_holding = symbol in self.positions
+            
+            # 매매 신호 신뢰도 계산
+            signal_confidence = 0.0
             
             # 볼린저 밴드 기반 매매 신호 로직
             # 1. 매수 신호: %B가 0.1 이하 (하단 밴드 아래거나 근처)
@@ -130,18 +222,26 @@ class BollingerBandTradingModel(BaseTradingModel):
                     logger.debug(f"이미 매수한 종목: {symbol}, 신호 무시")
                     return
                 
-                self.trading_signals[symbol] = {
-                    "signal": "buy",
-                    "price": price,
-                    "timestamp": now,
-                    "bands": {
-                        "upper": upper_band,
-                        "middle": middle_band,
-                        "lower": lower_band,
-                        "percentB": percent_b
+                # 매수 신호 신뢰도 계산 (거래량 제외)
+                signal_confidence = self._calculate_signal_confidence(symbol, price, bb_indicators)
+                
+                # 최소 신뢰도 이상인 경우만 신호 등록
+                if signal_confidence >= self.min_confidence_threshold:
+                    self.trading_signals[symbol] = {
+                        "signal": "buy",
+                        "price": price,
+                        "timestamp": now,
+                        "bands": {
+                            "upper": upper_band,
+                            "middle": middle_band,
+                            "lower": lower_band,
+                            "percentB": percent_b
+                        },
+                        "confidence": signal_confidence
                     }
-                }
-                logger.info(f"볼린저 밴드 매수 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}")
+                    logger.info(f"볼린저 밴드 매수 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}, 신뢰도: {signal_confidence:.2f}")
+                else:
+                    logger.debug(f"볼린저 밴드 매수 신호 무시 (낮은 신뢰도): {symbol}, 신뢰도: {signal_confidence:.2f}")
             
             # 2. 매도 신호: %B가 0.9 이상 (상단 밴드 위거나 근처)
             elif percent_b >= 0.9 and is_holding:
@@ -150,18 +250,26 @@ class BollingerBandTradingModel(BaseTradingModel):
                     logger.debug(f"이미 매도한 종목: {symbol}, 신호 무시")
                     return
                 
-                self.trading_signals[symbol] = {
-                    "signal": "sell",
-                    "price": price,
-                    "timestamp": now,
-                    "bands": {
-                        "upper": upper_band,
-                        "middle": middle_band,
-                        "lower": lower_band,
-                        "percentB": percent_b
+                # 매도 신호 신뢰도 계산 (거래량 제외)
+                signal_confidence = self._calculate_signal_confidence(symbol, price, bb_indicators)
+                
+                # 최소 신뢰도 이상인 경우만 신호 등록 (매도는 좀 더 낮게 설정)
+                if signal_confidence >= (self.min_confidence_threshold * 0.8):
+                    self.trading_signals[symbol] = {
+                        "signal": "sell",
+                        "price": price,
+                        "timestamp": now,
+                        "bands": {
+                            "upper": upper_band,
+                            "middle": middle_band,
+                            "lower": lower_band,
+                            "percentB": percent_b
+                        },
+                        "confidence": signal_confidence
                     }
-                }
-                logger.info(f"볼린저 밴드 매도 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}")
+                    logger.info(f"볼린저 밴드 매도 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}, 신뢰도: {signal_confidence:.2f}")
+                else:
+                    logger.debug(f"볼린저 밴드 매도 신호 무시 (낮은 신뢰도): {symbol}, 신뢰도: {signal_confidence:.2f}")
             
             # 3. 손절 신호: 보유 중인 종목이 이동평균 아래로 15% 이상 하락
             elif is_holding and price < middle_band * 0.85:
@@ -171,6 +279,10 @@ class BollingerBandTradingModel(BaseTradingModel):
                 
                 # 매수가 대비 10% 이상 손실인 경우에만 손절
                 if avg_price > 0 and price < avg_price * 0.9:
+                    # 손절 신호 신뢰도는 손실 크기에 비례
+                    loss_pct = 1.0 - (price / avg_price)
+                    signal_confidence = min(1.0, loss_pct * 5)  # 20% 손실이면 신뢰도 1.0
+                    
                     self.trading_signals[symbol] = {
                         "signal": "stop_loss",
                         "price": price,
@@ -180,9 +292,10 @@ class BollingerBandTradingModel(BaseTradingModel):
                             "middle": middle_band,
                             "lower": lower_band,
                             "percentB": percent_b
-                        }
+                        },
+                        "confidence": signal_confidence
                     }
-                    logger.info(f"볼린저 밴드 손절 신호 발생: {symbol}, 현재가: {price:.2f}, 매수가: {avg_price:.2f}")
+                    logger.info(f"볼린저 밴드 손절 신호 발생: {symbol}, 현재가: {price:.2f}, 매수가: {avg_price:.2f}, 신뢰도: {signal_confidence:.2f}")
         
         except Exception as e:
             logger.error(f"실시간 가격 처리 중 오류: {str(e)}", exc_info=True)
@@ -212,9 +325,17 @@ class BollingerBandTradingModel(BaseTradingModel):
                         "sell": sum(1 for v in self.trading_signals.values() if v["signal"] == "sell"),
                         "stop_loss": sum(1 for v in self.trading_signals.values() if v["signal"] == "stop_loss")
                     }
-                    logger.info(f"현재 볼린저 밴드 매매 신호: 매수={signal_counts['buy']}개, " +
-                              f"매도={signal_counts['sell']}개, " +
-                              f"손절={signal_counts['stop_loss']}개")
+                    
+                    # 신뢰도 평균 계산
+                    avg_confidence = {
+                        "buy": sum(v["confidence"] for v in self.trading_signals.values() if v["signal"] == "buy") / max(1, signal_counts["buy"]),
+                        "sell": sum(v["confidence"] for v in self.trading_signals.values() if v["signal"] == "sell") / max(1, signal_counts["sell"]),
+                        "stop_loss": sum(v["confidence"] for v in self.trading_signals.values() if v["signal"] == "stop_loss") / max(1, signal_counts["stop_loss"])
+                    }
+                    
+                    logger.info(f"현재 볼린저 밴드 매매 신호: 매수={signal_counts['buy']}개(신뢰도 {avg_confidence['buy']:.2f}), " +
+                              f"매도={signal_counts['sell']}개(신뢰도 {avg_confidence['sell']:.2f}), " +
+                              f"손절={signal_counts['stop_loss']}개(신뢰도 {avg_confidence['stop_loss']:.2f})")
                 
                 # 오래된 신호 제거 (10분 이상 경과)
                 now = datetime.now()
@@ -250,127 +371,155 @@ class BollingerBandTradingModel(BaseTradingModel):
             # 현재 시간
             now = datetime.now()
             
-            # 매매 신호에 따른 거래 결정 처리
+            # 매매 신호 목록 (신뢰도 기준 정렬)
+            buy_signals = []
+            sell_signals = []
+            
+            # 신호 분류 및 정렬 준비
             for symbol, signal_info in list(self.trading_signals.items()):
                 signal = signal_info["signal"]
-                price = signal_info["price"]
-                timestamp = signal_info["timestamp"]
                 
                 # 신호 유효 시간 (10분) 체크
+                timestamp = signal_info["timestamp"]
                 if (now - timestamp).total_seconds() > 600:
                     # 오래된 신호 제거
                     del self.trading_signals[symbol]
                     logger.debug(f"종목 {symbol}의 오래된 신호 제거 (10분 경과)")
                     continue
                 
-                # 1. 매수 신호 처리
+                # 시그널 타입별로 분류
                 if signal == "buy":
-                    # 현재 보유 종목 수 확인
-                    if len(self.positions) >= self.max_positions:
-                        logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
-                        continue
-                    
-                    # 충분한 현금 확인
-                    if self.cash_balance < self.trade_amount_per_stock:
-                        logger.debug(f"현금 부족({self.cash_balance}), 매수 보류: {symbol}")
-                        continue
-                    
-                    # 이미 보유 중인지 확인
-                    if symbol in self.positions:
-                        logger.debug(f"이미 보유 중인 종목 매수 신호 무시: {symbol}")
-                        del self.trading_signals[symbol]
-                        continue
-                    
-                    # 매수 수량 계산
-                    current_price = price
-                    if not current_price or current_price <= 0:
-                        # 제공된 prices 딕셔너리에서 조회
-                        if prices and symbol in prices:
-                            current_price = prices[symbol]
-                        # 또는 stock_cache에서 조회
-                        elif self.stock_cache:
-                            current_price = self.stock_cache.get_price(symbol)
-                            
-                        if not current_price or current_price <= 0:
-                            logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
-                            continue
-                    
-                    quantity = int(self.trade_amount_per_stock / current_price)
-                    if quantity <= 0:
-                        logger.warning(f"종목 {symbol}의 매수 수량이 0, 매수 보류")
-                        continue
-                    
-                    # 매수 결정 추가
-                    decision = {
-                        "symbol": symbol,
-                        "action": "buy",
-                        "quantity": quantity,
-                        "price": current_price,
-                        "reason": "볼린저 밴드 하단 터치 - 매수",
-                        "timestamp": now.isoformat()
-                    }
-                    decisions.append(decision)
-                    
-                    # 거래 이력 업데이트
-                    self.trade_history[symbol] = {
-                        "last_trade": now,
-                        "last_action": "buy"
-                    }
-                    
-                    # 신호 제거
-                    del self.trading_signals[symbol]
-                    logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}")
-                
-                # 2. 매도 신호 처리
+                    buy_signals.append((symbol, signal_info))
                 elif signal in ["sell", "stop_loss"]:
-                    # 보유 중인 종목인지 확인
-                    if symbol not in self.positions:
-                        logger.debug(f"미보유 종목 매도 신호 무시: {symbol}")
-                        del self.trading_signals[symbol]
-                        continue
-                    
-                    position = self.positions[symbol]
-                    total_quantity = position.get("quantity", 0)
-                    
-                    if total_quantity <= 0:
-                        logger.warning(f"종목 {symbol}의 보유 수량이 0, 매도 보류")
-                        continue
-                    
-                    # 매도 결정 추가 (전량)
-                    current_price = price
-                    if not current_price or current_price <= 0:
-                        # 제공된 prices 딕셔너리에서 조회
-                        if prices and symbol in prices:
-                            current_price = prices[symbol]
-                        # 또는 stock_cache에서 조회
-                        elif self.stock_cache:
-                            current_price = self.stock_cache.get_price(symbol)
-                            
-                        if not current_price or current_price <= 0:
-                            logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
-                            continue
-                    
-                    reason = "볼린저 밴드 상단 터치 - 매도" if signal == "sell" else "손절 매도"
-                    
-                    decision = {
-                        "symbol": symbol,
-                        "action": "sell",
-                        "quantity": total_quantity,
-                        "price": current_price,
-                        "reason": reason,
-                        "timestamp": now.isoformat()
-                    }
-                    decisions.append(decision)
-                    
-                    # 거래 이력 업데이트
-                    self.trade_history[symbol] = {
-                        "last_trade": now,
-                        "last_action": "sell"
-                    }
-                    
-                    # 신호 제거
+                    sell_signals.append((symbol, signal_info))
+            
+            # 1. 매도/손절 신호 먼저 처리 (자본 확보를 위해)
+            for symbol, signal_info in sell_signals:
+                signal = signal_info["signal"]
+                price = signal_info["price"]
+                
+                # 보유 중인 종목인지 확인
+                if symbol not in self.positions:
+                    logger.debug(f"미보유 종목 매도 신호 무시: {symbol}")
                     del self.trading_signals[symbol]
-                    logger.info(f"매도 결정: {symbol}, {total_quantity}주, 가격: {current_price:.2f}, 이유: {reason}")
+                    continue
+                
+                position = self.positions[symbol]
+                total_quantity = position.get("quantity", 0)
+                
+                if total_quantity <= 0:
+                    logger.warning(f"종목 {symbol}의 보유 수량이 0, 매도 보류")
+                    continue
+                
+                # 매도 결정 추가 (전량)
+                current_price = price
+                if not current_price or current_price <= 0:
+                    # 제공된 prices 딕셔너리에서 조회
+                    if prices and symbol in prices:
+                        current_price = prices[symbol]
+                    # 또는 stock_cache에서 조회
+                    elif self.stock_cache:
+                        current_price = self.stock_cache.get_price(symbol)
+                        
+                    if not current_price or current_price <= 0:
+                        logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
+                        continue
+                
+                reason = "볼린저 밴드 상단 터치 - 매도" if signal == "sell" else "손절 매도"
+                confidence = signal_info.get("confidence", 0.0)
+                
+                decision = {
+                    "symbol": symbol,
+                    "action": "sell",
+                    "quantity": total_quantity,
+                    "price": current_price,
+                    "reason": f"{reason} (신뢰도: {confidence:.2f})",
+                    "confidence": confidence,
+                    "timestamp": now.isoformat()
+                }
+                decisions.append(decision)
+                
+                # 거래 이력 업데이트
+                self.trade_history[symbol] = {
+                    "last_trade": now,
+                    "last_action": "sell"
+                }
+                
+                # 신호 제거
+                del self.trading_signals[symbol]
+                logger.info(f"매도 결정: {symbol}, {total_quantity}주, 가격: {current_price:.2f}, 이유: {reason}, 신뢰도: {confidence:.2f}")
+            
+            # 2. 매수 신호 처리 (신뢰도 기준 정렬)
+            # 신뢰도 기준 내림차순 정렬
+            buy_signals.sort(key=lambda x: x[1].get("confidence", 0.0), reverse=True)
+            
+            for symbol, signal_info in buy_signals:
+                # 현재 보유 종목 수 확인
+                if len(self.positions) >= self.max_positions:
+                    logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
+                    continue
+                
+                # 충분한 현금 확인
+                if self.cash_balance < self.trade_amount_per_stock:
+                    logger.debug(f"현금 부족({self.cash_balance}), 매수 보류: {symbol}")
+                    continue
+                
+                # 이미 보유 중인지 확인
+                if symbol in self.positions:
+                    logger.debug(f"이미 보유 중인 종목 매수 신호 무시: {symbol}")
+                    del self.trading_signals[symbol]
+                    continue
+                
+                # 매수 수량 계산
+                price = signal_info["price"]
+                current_price = price
+                if not current_price or current_price <= 0:
+                    # 제공된 prices 딕셔너리에서 조회
+                    if prices and symbol in prices:
+                        current_price = prices[symbol]
+                    # 또는 stock_cache에서 조회
+                    elif self.stock_cache:
+                        current_price = self.stock_cache.get_price(symbol)
+                        
+                    if not current_price or current_price <= 0:
+                        logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
+                        continue
+                
+                quantity = int(self.trade_amount_per_stock / current_price)
+                if quantity <= 0:
+                    logger.warning(f"종목 {symbol}의 매수 수량이 0, 매수 보류")
+                    continue
+                
+                # 신뢰도 정보 가져오기
+                confidence = signal_info.get("confidence", 0.0)
+                
+                # 매수 결정 추가
+                decision = {
+                    "symbol": symbol,
+                    "action": "buy",
+                    "quantity": quantity,
+                    "price": current_price,
+                    "reason": f"볼린저 밴드 하단 터치 - 매수 (신뢰도: {confidence:.2f})",
+                    "confidence": confidence,
+                    "timestamp": now.isoformat()
+                }
+                decisions.append(decision)
+                
+                # 거래 이력 업데이트
+                self.trade_history[symbol] = {
+                    "last_trade": now,
+                    "last_action": "buy"
+                }
+                
+                # 신호 제거
+                del self.trading_signals[symbol]
+                logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}, 신뢰도: {confidence:.2f}")
+                
+                # 자금 고갈 시 종료
+                self.cash_balance -= (quantity * current_price)
+                if self.cash_balance < self.trade_amount_per_stock:
+                    logger.debug(f"가용 자금 소진, 매수 신호 처리 중단 (잔액: {self.cash_balance})")
+                    break
             
             return decisions
         

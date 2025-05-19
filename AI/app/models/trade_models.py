@@ -7,9 +7,10 @@ from datetime import datetime
 
 class TradingStrategy(str, Enum):
     """트레이딩 전략 유형"""
-    ENVELOPE = "envelope"
-    BOLLINGER = "bollinger"
+    ENVELOPE = "ENVELOPE"
+    BOLLINGER = "BOLLINGER"
     SHORT_TERM = "SHORT_TERM"
+    DRL_UTRANS = "DRL_UTRANS"
 
 class TradeDecision:
     """매매 결정 모델"""
