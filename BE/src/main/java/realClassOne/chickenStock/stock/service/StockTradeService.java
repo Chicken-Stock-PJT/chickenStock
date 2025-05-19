@@ -1928,4 +1928,27 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 //            log.error("지정가 주문 처리 스케줄러 실행 중 오류 발생", e);
 //        }
 //    }
+
+    // 특정 멤버의 특정 종목 수 조회
+    public int getAvailableSellQuantity(String authorizationHeader, Long stockDataId) {
+        String token = jwtTokenProvider.resolveToken(authorizationHeader);
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+        int holdingQty = holdingPositionRepository
+                .findByMemberIdAndStockDataId(memberId, stockDataId)
+                .map(HoldingPosition::getQuantity)
+                .orElse(0);
+
+        int pendingSellQty = pendingOrderRepository
+                .findByMemberIdAndStockDataIdAndOrderTypeAndStatus(
+                        memberId,
+                        stockDataId,
+                        TradeHistory.TradeType.SELL,
+                        PendingOrder.OrderStatus.PENDING)
+                .stream()
+                .mapToInt(PendingOrder::getQuantity)
+                .sum();
+
+        return Math.max(0, holdingQty - pendingSellQty);
+    }
 }
