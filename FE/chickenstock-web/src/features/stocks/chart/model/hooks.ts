@@ -9,6 +9,7 @@ import {
   ChartType,
   ChartVisibleRange,
   FormattedChartData,
+  TimeInterval,
 } from "./types";
 import { formatVolume } from "@/shared/libs/hooks/numberFormatters";
 import { renderCandlestickTooltip, renderVolumeTooltip } from "../ui/ChartTooltips";
@@ -27,10 +28,7 @@ export const formatChartTime = (date: string) => {
     const day = String(now.getDate()).padStart(2, "0");
     const hour = date.substring(0, 2);
     const minute = date.substring(2, 4);
-    return (
-      (new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime() + 9 * 60 * 60 * 1000) /
-      1000
-    );
+    return new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime() / 1000;
   } else {
     // 기존 형식 처리 (예: "20240321")
     const year = date.substring(0, 4);
@@ -45,8 +43,58 @@ export const formatChartTime = (date: string) => {
   }
 };
 
+export function updateTimestamp(
+  currentTsSec: number,
+  compareTsSec: number,
+  chartType: ChartType,
+  timeInterval: TimeInterval,
+): number {
+  console.log(currentTsSec, compareTsSec);
+  // JS Date 는 밀리초 단위이므로 *1000
+  const compareDate = new Date(compareTsSec * 1000 - 9 * 60 * 60 * 1000);
+  const currentDate = new Date(currentTsSec * 1000);
+
+  // 다음 갱신 시점을 담을 Date 객체 복제
+  const nextDate = new Date(compareDate.getTime());
+
+  switch (chartType) {
+    case "MINUTE":
+      nextDate.setMinutes(nextDate.getMinutes() + Number(timeInterval));
+      console.log(nextDate, currentDate);
+      break;
+
+    case "DAILY":
+      nextDate.setDate(nextDate.getDate() + 1);
+      console.log(nextDate, currentDate);
+      break;
+
+    case "WEEKLY":
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+
+    case "MONTHLY":
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      break;
+
+    case "YEARLY":
+      nextDate.setFullYear(nextDate.getFullYear() + 1);
+      break;
+
+    default:
+      // unrecognized type → 그대로 반환
+      return compareTsSec;
+  }
+
+  // currentDate가 nextDate 이상이면 “더한” 값을, 아니면 원래 값을 돌려줌
+  if (currentDate.getTime() >= nextDate.getTime()) {
+    return Math.floor(nextDate.getTime() / 1000 + 9 * 60 * 60);
+  } else {
+    return compareTsSec;
+  }
+}
+
 // 데이터 포맷팅
-export const formatChartData = (data: ChartData[], chartType: "DAILY" | "YEARLY" | "MINUTE") => {
+export const formatChartData = (data: ChartData[], chartType: ChartType) => {
   // 시간 간격 일정하게 하기 위해 인덱스 기반 접근
   const formattedData = data
     .map((item) => {

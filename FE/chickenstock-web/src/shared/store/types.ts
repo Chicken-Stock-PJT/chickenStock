@@ -5,18 +5,7 @@ export interface AuthState {
   login: (email: string, password: string) => Promise<{ accessToken: string }>;
   socialLogin: (code: string) => Promise<{ accessToken: string }>;
   logout: () => Promise<void>;
-  simpleProfile: SimpleProfile | null;
-  getSimpleProfile: () => Promise<SimpleProfile>;
-  setSimpleProfile: (profile: Partial<SimpleProfile>) => void;
   isLoggedIn: boolean;
-}
-
-export interface SimpleProfile {
-  nickname: string;
-  memberMoney: string;
-  totalAsset: string;
-  returnRate: string;
-  isOauth: string;
 }
 
 export interface LoginResponse {

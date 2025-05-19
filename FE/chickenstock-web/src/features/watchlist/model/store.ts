@@ -27,7 +27,8 @@ const useWatchlistStore = create<WatchlistState>()(
           set((state) => ({
             watchlist: state.watchlist.filter((code) => code !== stockCode),
           })),
-        isInWatchlist: (stockCode: string) => get().watchlist.includes(stockCode),
+        isInWatchlist: (stockCode: string) =>
+          get().watchlist.includes(stockCode) || get().watchlist.includes(stockCode + "_AL"),
       }),
       {
         name: "watchlist",
