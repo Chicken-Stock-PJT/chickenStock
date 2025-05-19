@@ -5,12 +5,13 @@ from datetime import datetime
 
 from app.auth.auth_client import AuthClient
 from app.api.backend_client import BackendClient
+from app.bot.bot_stock_cache import BotStockCache
 
 from app.models.trade_models import TradingStrategy
 from app.strategies.bollinger import BollingerBandTradingModel
 from app.strategies.envelope import EnvelopeTradingModel
 from app.strategies.short_term import ShortTermTradingModel
-from app.bot.bot_stock_cache import BotStockCache
+# from app.strategies.drl_utrans import DRLUTransTradingModel
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class BotInstance:
         
         logger.info(f"봇 인스턴스 생성: {email} (전략: {strategy})")
     
+    # 필요한 부분만 수정한 initialize 메서드
     async def initialize(self, password: str, shared_stock_cache=None):
         """
         봇 초기화 및 로그인
@@ -110,6 +112,12 @@ class BotInstance:
                     self.trading_model = ShortTermTradingModel(self.bot_stock_cache)
                     logger.info(f"봇 {self.email} SHORT_TERM 전략 모델 생성 성공")
                     self.trading_model.set_backend_client(self.backend_client)
+                # elif strategy_enum == TradingStrategy.DRL_UTRANS:
+                #     # DRL-UTrans 전략 추가
+                #     logger.info(f"봇 {self.email} DRL_UTRANS 전략 모델 생성 시도")
+                #     self.trading_model = DRLUTransTradingModel(self.bot_stock_cache)
+                #     logger.info(f"봇 {self.email} DRL_UTRANS 전략 모델 생성 성공")
+                #     self.trading_model.set_backend_client(self.backend_client)
                 else:
                     logger.warning(f"봇 {self.email} 알 수 없는 전략: {strategy_enum}")
                     
