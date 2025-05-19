@@ -30,14 +30,14 @@ const BotList = ({
       description: "안정적인 배당금을 지급하는 우량 기업에 투자하여 장기적인 수익을 추구합니다.",
       profitRate: 15.6,
     },
-    {
-      id: 4,
-      name: "미니 AI",
-      type: "모멘텀 투자형",
-      description:
-        "상승 추세에 있는 주식을 매수하고 하락 추세로 전환될 때 매도하는 추세 추종 전략을 사용합니다.",
-      profitRate: 20.3,
-    },
+    // {
+    //   id: 4,
+    //   name: "미니 AI",
+    //   type: "모멘텀 투자형",
+    //   description:
+    //     "상승 추세에 있는 주식을 매수하고 하락 추세로 전환될 때 매도하는 추세 추종 전략을 사용합니다.",
+    //   profitRate: 20.3,
+    // },
   ];
   return (
     <div className="flex flex-col gap-4">
