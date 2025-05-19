@@ -8,7 +8,7 @@ import {
 
 const baseURL: string = import.meta.env.VITE_BASE_URL;
 
-// axios 인스턴스스
+// axios 인스턴스
 const apiClient = axios.create({
   baseURL,
   headers: {
@@ -18,13 +18,19 @@ const apiClient = axios.create({
   timeout: 10000, // 10초
 });
 
-// 요청 인터셉터터
+// 요청 인터셉터
 apiClient.interceptors.request.use(
   (config) => {
-    // 토큰이 필요한 경우 여기에 추가
-    const token = useAuthStore.getState().accessToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // 공개 API 엔드포인트는 토큰을 추가하지 않음
+    const publicPaths = ["/auth/login", "/auth/register", "/auth/token/refresh-web"];
+    const isPublicRequest = publicPaths.some((path) => config.url?.includes(path));
+
+    if (!isPublicRequest) {
+      // 토큰이 필요한 경우에만 추가
+      const token = useAuthStore.getState().accessToken;
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     }
     return config;
   },
@@ -56,8 +62,11 @@ apiClient.interceptors.response.use(
   async (error: AxiosError): Promise<AxiosResponse | AxiosError> => {
     const originalRequest = error.config as ExtendedAxiosRequestConfig;
 
-    // 401 에러이고 재시도되지 않은 요청인 경우
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // 로그인 페이지 관련 요청이거나 이미 리프레시 토큰 요청인 경우는 무시
+    const isAuthRequest = originalRequest.url?.includes("/auth/token/refresh-web");
+
+    // 401 에러이고 재시도되지 않은 요청이며 인증 요청이 아닌 경우에만 토큰 갱신 시도
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthRequest) {
       if (isRefreshing) {
         // 이미 토큰 갱신 중이면 큐에 추가
         return new Promise<string>((resolve, reject) => {
@@ -86,10 +95,9 @@ apiClient.interceptors.response.use(
         // 리프레시 토큰으로 새 액세스 토큰 요청
         // HTTP-only 쿠키의 리프레시 토큰은 자동으로 요청에 포함됨
         const response = await axios.post<RefreshAccessTokenResponse>(
-          "/auth/token/refresh-web",
+          `${baseURL}/auth/token/refresh-web`,
           {},
           {
-            baseURL,
             withCredentials: true, // 쿠키를 포함하기 위해 필요
           },
         );
@@ -113,15 +121,11 @@ apiClient.interceptors.response.use(
         // 원래 요청 재시도
         return apiClient(originalRequest);
       } catch (refreshError) {
+        console.log(refreshError);
         // 토큰 갱신 실패 처리
         processQueue(refreshError as AxiosError);
 
-        // 로그아웃 처리 - 토큰 갱신에 실패했으므로 사용자를 로그아웃시킴
         void useAuthStore.getState().logout();
-        console.log("로그아웃 처리");
-
-        // 로그인 페이지로 리다이렉트 등의 추가 작업
-        window.location.href = "/login"; // 또는 React Router를 사용하여 리다이렉트
 
         return Promise.reject(refreshError as AxiosError);
       } finally {

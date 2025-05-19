@@ -4,6 +4,12 @@ import useWatchlistStore from "@/features/watchlist/model/store";
 import { useWatchlistToggle } from "@/features/watchlist/model/hooks";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/shared/store/auth";
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/libs/ui/dropdown-menu";
+import { DropdownMenu } from "@/shared/libs/ui/dropdown-menu";
 
 const ChartHeader = ({
   stockName,
@@ -13,6 +19,8 @@ const ChartHeader = ({
   changeRate,
   onChartTypeChange,
   selectedChartType,
+  timeInterval,
+  onTimeIntervalChange,
 }: ChartHeaderProps) => {
   const formattedPrice = (price: string) => Math.abs(Number(price)).toLocaleString();
   const { isInWatchlist } = useWatchlistStore();
@@ -71,14 +79,25 @@ const ChartHeader = ({
           />
         </div>
         <div className="flex items-end gap-1">
-          <button
-            className={`rounded px-2 py-1 text-xs ${
-              selectedChartType === "MINUTE" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
-            }`}
-            onClick={() => onChartTypeChange("MINUTE")}
-          >
-            분
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger className="rounded p-0 text-xs">
+              <button
+                className={`rounded px-2 py-1 text-xs ${
+                  selectedChartType === "MINUTE" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
+                }`}
+              >
+                {timeInterval}분
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => onTimeIntervalChange("1")}>1분</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onTimeIntervalChange("5")}>5분</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onTimeIntervalChange("10")}>10분</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onTimeIntervalChange("15")}>15분</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onTimeIntervalChange("30")}>30분</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onTimeIntervalChange("60")}>60분</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             className={`rounded px-2 py-1 text-xs ${
               selectedChartType === "DAILY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
@@ -87,6 +106,25 @@ const ChartHeader = ({
           >
             일
           </button>
+<<<<<<< FE/chickenstock-web/src/features/stocks/chart/ui/ChartHeader.tsx
+=======
+          <button
+            className={`rounded px-2 py-1 text-xs ${
+              selectedChartType === "WEEKLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
+            }`}
+            onClick={() => onChartTypeChange("WEEKLY")}
+          >
+            주
+          </button>
+          <button
+            className={`rounded px-2 py-1 text-xs ${
+              selectedChartType === "MONTHLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
+            }`}
+            onClick={() => onChartTypeChange("MONTHLY")}
+          >
+            월
+          </button>
+>>>>>>> FE/chickenstock-web/src/features/stocks/chart/ui/ChartHeader.tsx
           <button
             className={`rounded px-2 py-1 text-xs ${
               selectedChartType === "YEARLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
