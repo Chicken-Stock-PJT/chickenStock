@@ -17,6 +17,7 @@ import LoginRedirect from "@/pages/LoginRedirect";
 import FindPasswordPage from "@/pages/FindPasswordPage";
 import ProtectedRoute from "./ProtectedRoute";
 import AiBotPage from "@/pages/AiBotPage";
+import CommunityPage from "@/features/stocks/community/ui";
 
 const router = createBrowserRouter([
   {
@@ -106,6 +107,11 @@ const router = createBrowserRouter([
             element: <StockPage />,
           },
         ],
+      },
+      // 커뮤니티 페이지를 독립적인 라우트로 설정
+      {
+        path: "stocks/:stockCode/community",
+        element: <CommunityPage />,
       },
       {
         path: "ai-bot",
