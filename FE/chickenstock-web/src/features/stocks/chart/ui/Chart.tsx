@@ -209,7 +209,7 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       const lastOpenPrice = Number((lastCandle as CandlestickData<Time>).open);
       const time = updateTimestamp(
         formatChartTime(tradeExecutionData.timestamp),
-        Number(volumeSeriesRef.current.data()[0].time),
+        Number(volumeSeriesRef.current.data()[volumeSeriesRef.current.data().length - 1].time),
         chartType,
         timeInterval,
       ) as Time;
