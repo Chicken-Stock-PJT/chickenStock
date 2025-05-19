@@ -3,14 +3,25 @@ import { useNavigate } from "react-router-dom";
 import { StockProps } from "../model/types";
 import useWatchlistStore from "@/features/watchlist/model/store";
 import { useWatchlistToggle } from "@/features/watchlist/model/hooks";
+import { isNxtStock } from "@/features/stocks/trade/model/nxtStocks";
+import { useEffect, useState } from "react";
 
 const StockListItem = (props: StockProps) => {
+  const [isNxt, setIsNxt] = useState(false);
   const { isInWatchlist } = useWatchlistStore();
   const { toggleWatchlist } = useWatchlistToggle();
 
   const isCurrentInWatchlist = isInWatchlist(props.stockCode);
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkNxtStock = async () => {
+      const result = await isNxtStock(props.stockCode.slice(0, 6));
+      setIsNxt(result);
+    };
+    void checkNxtStock();
+  }, [props.stockCode]);
 
   const handleClick = () => {
     void navigate(`/stocks/${props.stockCode}`);
@@ -73,7 +84,14 @@ const StockListItem = (props: StockProps) => {
         <div className="flex w-full items-center gap-4">
           <p className="min-w-[32px] text-center font-semibold text-gray-600">{props.rank}</p>
           <div className="text-left">
-            <div className="font-medium">{props.stockName}</div>
+            <div className="flex items-center gap-2">
+              <div className="font-medium">{props.stockName}</div>
+              {isNxt && (
+                <div className="rounded-xl bg-primary-300 px-3 py-1 text-xs font-semibold text-gray-900">
+                  NXT
+                </div>
+              )}
+            </div>
             <div className="text-sm text-gray-500">{props.stockCode}</div>
           </div>
         </div>
