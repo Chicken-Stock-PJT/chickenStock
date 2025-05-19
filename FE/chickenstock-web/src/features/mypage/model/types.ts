@@ -1,9 +1,11 @@
 export interface SimpleProfile {
   nickname: string;
-  memberMoney: string;
   totalAsset: string;
   returnRate: string;
   isOauth: string;
+  memberMoney: string;
+  pendingOrderAmount: string;
+  stockValuation: string;
 }
 
 export interface UpdatePasswordRequest {

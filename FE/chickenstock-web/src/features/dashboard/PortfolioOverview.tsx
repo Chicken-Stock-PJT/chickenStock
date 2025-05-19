@@ -8,7 +8,8 @@ interface PortfolioOverviewProps {
   totalReturnRate: number; // 총 수익률 (%)
   todayProfitLoss: number; // 금일 손익
   todayReturnRate: number; // 금일 수익률
-  sectors: number; // 보유 종목 수
+  todayProfitLossRate: number; // 금일 손익률
+  todayTradeAmount: number; // 금일 거래 금액
 }
 const PortfolioOverview = ({
   totalAsset,
@@ -17,7 +18,7 @@ const PortfolioOverview = ({
   totalReturnRate,
   todayProfitLoss,
   todayReturnRate,
-  sectors,
+  todayTradeAmount
 }: PortfolioOverviewProps) => {
   const sectorMention = () => {
     if (sectors === 0) {
