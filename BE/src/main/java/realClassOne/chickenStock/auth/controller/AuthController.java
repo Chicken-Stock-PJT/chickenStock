@@ -103,9 +103,8 @@ public class AuthController {
     @PostMapping("/token/refresh-web")
     public ResponseEntity<WebTokenResponseDTO> refreshAccessToken(
             @CookieValue(name = "refreshToken") String refreshToken,
-            @RequestBody AccessTokenRequestDTO accessToken,
             HttpServletResponse response) {
-        return ResponseEntity.ok(authService.refreshAccessTokenWeb(refreshToken, accessToken, response));
+        return ResponseEntity.ok(authService.refreshAccessTokenWeb(refreshToken, response));
     }
 
     @PostMapping("/token/refresh-mobile")
