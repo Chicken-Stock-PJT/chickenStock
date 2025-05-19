@@ -64,7 +64,7 @@ class AuthClient:
                     self.refresh_token = auth_data.get("refreshToken")
                     
                     # 만료 시간 계산
-                    expires_in = auth_data.get("expiresIn", 3600)  # 기본 1시간
+                    expires_in = 3600 * 9
                     self.access_token_expires_at = datetime.now() + timedelta(seconds=expires_in)
                     
                     # 세션 헤더에 토큰 추가
@@ -95,11 +95,12 @@ class AuthClient:
                 return False
             
             refresh_data = {
+                "accessToken": self.access_token,
                 "refreshToken": self.refresh_token
             }
             
             async with self.session.post(
-                f"{self.backend_url}/api/auth/refresh",
+                f"{self.backend_url}/api/auth/token/refresh-mobile",
                 json=refresh_data
             ) as response:
                 if response.status == 200:
@@ -107,14 +108,11 @@ class AuthClient:
                     
                     # 새 토큰 저장
                     self.access_token = token_data.get("accessToken")
+                    self.refresh_token = token_data.get("refreshToken")
                     
                     # 만료 시간 갱신
-                    access_expires_in = token_data.get("accessTokenExpiresIn", 3600)
+                    access_expires_in = 3600 * 9
                     self.access_token_expires_at = datetime.now() + timedelta(seconds=access_expires_in)
-                    
-                    # 새 리프레시 토큰이 있다면 갱신
-                    if "refreshToken" in token_data:
-                        self.refresh_token = token_data.get("refreshToken")
                     
                     # 세션 헤더 업데이트
                     self.session.headers.update({
