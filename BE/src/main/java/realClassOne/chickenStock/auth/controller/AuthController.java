@@ -9,19 +9,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import realClassOne.chickenStock.auth.dto.common.TokenDto;
 import realClassOne.chickenStock.auth.dto.common.WebTokenResponseDTO;
-import realClassOne.chickenStock.auth.dto.request.ExchangeRequestDTO;
-import realClassOne.chickenStock.auth.dto.request.LoginRequestDTO;
-import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
-import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
+import realClassOne.chickenStock.auth.dto.request.*;
 import realClassOne.chickenStock.auth.dto.response.PasswordResetResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
 import realClassOne.chickenStock.auth.service.AuthService;
-import realClassOne.chickenStock.auth.dto.request.EmailRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.EmailCheckResponseDTO;
 import realClassOne.chickenStock.auth.service.EmailService;
 import realClassOne.chickenStock.auth.dto.response.EmailVerifyResponseDTO;
-import realClassOne.chickenStock.auth.dto.request.EmailVerifyRequestDTO;
-import realClassOne.chickenStock.auth.dto.request.NicknameCheckRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
 import realClassOne.chickenStock.common.util.CookieUtils;
 
@@ -109,7 +103,7 @@ public class AuthController {
     @PostMapping("/token/refresh-web")
     public ResponseEntity<WebTokenResponseDTO> refreshAccessToken(
             @CookieValue(name = "refreshToken") String refreshToken,
-            @CookieValue(name = "Authorization") String accessToken,
+            @RequestBody AccessTokenRequestDTO accessToken,
             HttpServletResponse response) {
         return ResponseEntity.ok(authService.refreshAccessTokenWeb(refreshToken, accessToken, response));
     }
