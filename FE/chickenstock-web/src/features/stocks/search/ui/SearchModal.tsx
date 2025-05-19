@@ -10,6 +10,7 @@ import {
 import { Input } from "@/shared/libs/ui/input";
 import { Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { isNxtStock } from "@/features/stocks/trade/model/nxtStocks";
 
 interface SearchModalProps {
   open: boolean;
@@ -18,9 +19,25 @@ interface SearchModalProps {
 
 export default function SearchModal({ open, onOpenChange }: SearchModalProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [nxtStocks, setNxtStocks] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
 
   const { data: allStocks = [], isLoading, isFetching } = useStocksQuery();
+
+  // NXT 종목 목록 초기화
+  useEffect(() => {
+    const initNxtStocks = async () => {
+      const codes = new Set<string>();
+      for (const stock of allStocks) {
+        const code = stock.shortCode.slice(0, 6);
+        if (await isNxtStock(code)) {
+          codes.add(code);
+        }
+      }
+      setNxtStocks(codes);
+    };
+    void initNxtStocks();
+  }, [allStocks]);
 
   // 검색어에 따른 필터링 및 제한된 결과 표시
   const filteredResults = useMemo(() => {
@@ -89,7 +106,14 @@ export default function SearchModal({ open, onOpenChange }: SearchModalProps) {
                       alt=""
                     />
                     <div>
-                      <div className="font-medium">{stock.shortName}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{stock.shortName}</div>
+                        {nxtStocks.has(stock.shortCode.slice(0, 6)) && (
+                          <div className="rounded-xl bg-primary-300 px-3 py-1 text-xs font-semibold text-gray-900">
+                            NXT
+                          </div>
+                        )}
+                      </div>
                       <div className="text-xs text-muted-foreground">{stock.shortCode}</div>
                     </div>
                   </div>

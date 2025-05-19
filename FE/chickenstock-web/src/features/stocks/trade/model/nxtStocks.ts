@@ -24,8 +24,6 @@ const parseNxtStocks = async () => {
         nxtStockCodes.add(code.substring(1));
       }
     }
-
-    console.log(nxtStockCodes);
     return nxtStockCodes;
   } catch (error) {
     console.error("NXT 상장 종목 목록 파싱 중 오류 발생:", error);
@@ -36,7 +34,6 @@ const parseNxtStocks = async () => {
 // 특정 종목이 NXT 상장 종목인지 확인하는 함수
 export const isNxtStock = async (stockCode: string): Promise<boolean> => {
   const codes = await parseNxtStocks();
-  console.log(codes.has(stockCode));
   return codes.has(stockCode);
 };
 
