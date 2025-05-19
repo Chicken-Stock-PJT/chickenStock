@@ -73,6 +73,9 @@ class BackendClient:
             if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 계좌 정보를 요청할 수 없습니다.")
                 return None
+            
+            if not self.auth_client.is_token_valid:
+                self.auth_client.refresh_access_token()
                 
             # 백엔드 API 요청 헤더
             headers = self.auth_client.get_authorization_header()
@@ -131,6 +134,9 @@ class BackendClient:
             if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 종목 정보를 요청할 수 없습니다.")
                 return None
+            
+            if not self.auth_client.is_token_valid:
+                self.auth_client.refresh_access_token()
                 
             # 백엔드 API 요청 헤더
             headers = self.auth_client.get_authorization_header()
@@ -162,6 +168,9 @@ class BackendClient:
             if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 매수 요청을 보낼 수 없습니다.")
                 return False
+            
+            if not self.auth_client.is_token_valid:
+                self.auth_client.refresh_access_token()
             
             # 백엔드 API 요청 헤더
             headers = self.auth_client.get_authorization_header()
@@ -207,6 +216,9 @@ class BackendClient:
             if not self.auth_client or not self.auth_client.is_authenticated:
                 logger.error("인증되지 않았습니다. 매도 요청을 보낼 수 없습니다.")
                 return False
+            
+            if not self.auth_client.is_token_valid:
+                self.auth_client.refresh_access_token()
             
             # 백엔드 API 요청 헤더
             headers = self.auth_client.get_authorization_header()
