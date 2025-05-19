@@ -125,16 +125,7 @@ apiClient.interceptors.response.use(
         // 토큰 갱신 실패 처리
         processQueue(refreshError as AxiosError);
 
-        // 현재 경로가 이미 로그인 페이지가 아닌 경우에만 로그아웃 및 리다이렉트 처리
-        const currentPath = window.location.pathname;
-        if (currentPath !== "/login") {
-          // 로그아웃 처리 - 토큰 갱신에 실패했으므로 사용자를 로그아웃시킴
-          await useAuthStore.getState().logout();
-          console.log("로그아웃 처리");
-
-          // 로그인 페이지로 리다이렉트
-          window.location.href = "/login";
-        }
+        void useAuthStore.getState().logout();
 
         return Promise.reject(refreshError as AxiosError);
       } finally {
