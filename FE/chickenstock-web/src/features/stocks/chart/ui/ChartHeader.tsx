@@ -95,7 +95,7 @@ const ChartHeader = ({
             }`}
             onClick={() => onChartTypeChange("WEEKLY")}
           >
-            일
+            주
           </button>
           <button
             className={`rounded px-2 py-1 text-xs ${
