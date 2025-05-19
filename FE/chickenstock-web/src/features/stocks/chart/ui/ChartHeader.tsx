@@ -106,8 +106,6 @@ const ChartHeader = ({
           >
             일
           </button>
-<<<<<<< FE/chickenstock-web/src/features/stocks/chart/ui/ChartHeader.tsx
-=======
           <button
             className={`rounded px-2 py-1 text-xs ${
               selectedChartType === "WEEKLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
@@ -124,7 +122,6 @@ const ChartHeader = ({
           >
             월
           </button>
->>>>>>> FE/chickenstock-web/src/features/stocks/chart/ui/ChartHeader.tsx
           <button
             className={`rounded px-2 py-1 text-xs ${
               selectedChartType === "YEARLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
