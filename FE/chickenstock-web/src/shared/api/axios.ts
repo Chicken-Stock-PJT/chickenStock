@@ -121,6 +121,7 @@ apiClient.interceptors.response.use(
         // 원래 요청 재시도
         return apiClient(originalRequest);
       } catch (refreshError) {
+        console.log(refreshError);
         // 토큰 갱신 실패 처리
         processQueue(refreshError as AxiosError);
 
