@@ -410,9 +410,9 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       }
 
       const candleData = data as CandlestickData<Time>;
-      const yearStr = new Date(Number(param.time) * 1000).getFullYear();
-      const dateStr = new Date(Number(param.time) * 1000).toLocaleDateString();
-      const timeStr = new Date(Number(param.time) * 1000).toLocaleTimeString();
+      // const yearStr = new Date(Number(param.time) * 1000).getFullYear();
+      // const dateStr = new Date(Number(param.time) * 1000).toLocaleDateString();
+      // const timeStr = new Date(Number(param.time) * 1000).toLocaleTimeString();
       const price = candleData.close;
       const volumeData = param.seriesData.get(volumeSeries);
       const volume = volumeData && "value" in volumeData ? volumeData.value : 0;
@@ -430,8 +430,30 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
       tooltip.style.display = "block";
       tooltip.style.left = left + "px";
       tooltip.style.top = top + "px";
+
+      // <div style="font-weight: bold">${chartType === "YEARLY" ? yearStr + "년" : dateStr} ${chartType === "MINUTE" ? timeStr.slice(0, 8) : ""}</div>
       tooltip.innerHTML = `
-        <div style="font-weight: bold">${chartType === "YEARLY" ? yearStr + "년" : dateStr} ${chartType === "MINUTE" ? timeStr.slice(0, 8) : ""}</div>
+        <div style="font-weight: bold">${
+          chartType === "MINUTE"
+            ? new Date(Number(param.time) * 1000 - 9 * 60 * 60 * 1000)
+                .toLocaleDateString("ko-KR", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                })
+                .replace(/\. /g, "-")
+                .replace(".", "") +
+              " " +
+              new Date(Number(param.time) * 1000 - 9 * 60 * 60 * 1000).toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              })
+            : chartType === "DAILY"
+              ? new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).toLocaleDateString()
+              : new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).getFullYear() + "년"
+        }</div>
+
         <div>시가: ${candleData.open}</div>
         <div>고가: ${candleData.high}</div>
         <div>저가: ${candleData.low}</div>
