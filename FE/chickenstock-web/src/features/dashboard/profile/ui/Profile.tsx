@@ -1,6 +1,6 @@
 import MyAsset from "@/features/dashboard/ui/MyAsset";
+import { SimpleProfile } from "@/features/mypage/model/types";
 import UserInfo from "@/features/mypage/ui/UserInfo";
-import { SimpleProfile } from "@/shared/store/types";
 
 const Profile = ({ simpleProfile }: { simpleProfile: SimpleProfile }) => {
   return (

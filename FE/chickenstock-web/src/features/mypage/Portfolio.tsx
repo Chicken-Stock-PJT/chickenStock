@@ -2,85 +2,52 @@ import PortfolioChart from "./ui/PortfolioChart";
 import HoldingsList from "../dashboard/ui/HoldingsList";
 import PortfolioOverview from "../dashboard/PortfolioOverview";
 import { useMemberDashboardQuery } from "./model/queries";
-// import { useEffect } from "react";
-// import { useAuthStore } from "@/shared/store/auth";
+import { useEffect } from "react";
+import { queryClient } from "@/shared/api/queryClient";
+import { SimpleProfile } from "@/features/mypage/model/types";
 
 const Portfolio = () => {
-  // useEffect(() => {
-  //   const token = useAuthStore.getState().accessToken;
-
-  //   const portfolioSocket = new WebSocket(`${import.meta.env.VITE_WS_BASE_URL}/portfolio`);
-
-  //   portfolioSocket.send(
-  //     JSON.stringify({
-  //       action: "authenticate",
-  //       token: `Bearer ${token}`,
-  //     }),
-  //   );
-
-  //   portfolioSocket.onopen = () => {
-  //     console.log("Portfolio socket opened");
-  //   };
-
-  //   portfolioSocket.onmessage = (event) => {
-  //     try {
-  //       const data = JSON.parse(event.data as string) as PortfolioSocketResponse;
-  //       console.log(data);
-
-  //       switch (data.type) {
-  //         case "fullPortfolioUpdate": {
-  //           console.log("data", data);
-  //           break;
-  //         }
-  //         case "stockUpdate": {
-  //           console.log("data", data);
-  //           break;
-  //         }
-  //       }
-  //     } catch (error) {
-  //       console.error("WebSocket 메시지 파싱 에러:", error);
-  //     }
-  //   };
-  //   portfolioSocket.onclose = () => {
-  //     console.log("Portfolio socket closed");
-  //   };
-  //   portfolioSocket.onerror = (event) => {
-  //     console.log("Portfolio socket error", event);
-  //   };
-  //   return () => {
-  //     portfolioSocket.close();
-  //   };
-  // }, []);
-
   const { data, isLoading, error, refetch } = useMemberDashboardQuery();
+
+  useEffect(() => {
+    if (data) {
+      // simpleProfile 쿼리 데이터 직접 업데이트
+      queryClient.setQueryData<SimpleProfile>(["simpleProfile"], (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          totalAsset: data.totalAsset.toString(),
+          memberMoney: data.memberMoney.toString(),
+        };
+      });
+    }
+  }, [data]);
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error: {error.message}</div>;
-
-  const portfolio = data!;
+  if (!data) return <div>No data available</div>;
 
   return (
     <div className="space-y-6 text-left">
-      {/* <HoldingsList /> */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <PortfolioChart
-          memberMoney={portfolio.memberMoney}
-          holdings={portfolio.holdings}
-          stockValuation={portfolio.stockValuation}
+          memberMoney={data.memberMoney}
+          holdings={data.holdings}
+          stockValuation={data.stockValuation}
         />
         <PortfolioOverview
-          totalAsset={portfolio.totalAsset}
-          memberMoney={portfolio.memberMoney}
-          totalProfitLoss={portfolio.totalProfitLoss}
-          totalReturnRate={portfolio.totalReturnRate}
-          todayProfitLoss={portfolio.todayProfitLoss}
-          todayReturnRate={portfolio.todayReturnRate}
-          sectors={portfolio.holdingStockCount}
+          totalAsset={data.totalAsset + data.pendingOrderAmount}
+          memberMoney={data.memberMoney}
+          totalProfitLoss={data.totalProfitLoss}
+          totalReturnRate={data.totalReturnRate}
+          todayProfitLoss={data.todayProfitLoss}
+          todayReturnRate={data.todayReturnRate}
+          sectors={data.holdingStockCount}
         />
       </div>
       <div>
         <HoldingsList
-          holdings={portfolio.holdings}
+          holdings={data.holdings}
           onClick={() => void refetch()}
           isLoading={isLoading}
         />

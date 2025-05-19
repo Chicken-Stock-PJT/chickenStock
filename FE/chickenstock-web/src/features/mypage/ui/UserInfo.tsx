@@ -1,5 +1,5 @@
 // UserInfo.tsx
-import { SimpleProfile } from "@/shared/store/types";
+import { SimpleProfile } from "@/features/mypage/model/types";
 import { DollarSign, TrendingUp } from "lucide-react";
 import { InitializeMoneyDialog } from "./InitializeMoneyDialog";
 
@@ -24,7 +24,7 @@ const UserInfo = ({ simpleProfile }: { simpleProfile: SimpleProfile }) => {
               <div className="flex items-center">
                 <DollarSign className="mr-2 size-4 text-muted-foreground" />
                 <span className="text-lg font-semibold">
-                  {Number(simpleProfile.memberMoney).toLocaleString()}원
+                  {Number(simpleProfile.totalAsset).toLocaleString()}원
                 </span>
               </div>
             </div>

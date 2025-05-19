@@ -38,7 +38,7 @@ const Header = () => {
           >
             홈
           </NavLink>
-          <NavLink
+          {/* <NavLink
             to="stocks/005930"
             className={({ isActive }) =>
               `${
@@ -47,7 +47,7 @@ const Header = () => {
             }
           >
             주식
-          </NavLink>
+          </NavLink> */}
 
           {/* <div
             onClick={() => void navigate("/stocks/005930")}

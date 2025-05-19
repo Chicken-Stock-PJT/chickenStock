@@ -1,8 +1,6 @@
 import apiClient from "@/shared/api/axios";
-import { SimpleProfile } from "@/shared/store/types";
 import {
   DailyProfitRateResponse,
-  PortfolioResponse,
   TransactionResponse,
   UpdateNicknameSuccess,
   UpdatePasswordError,
@@ -11,16 +9,16 @@ import {
   PendingOrder,
   CancelOrderRequest,
   CancelOrderResponse,
+  SimpleProfile,
 } from "../model/types";
 import { UpdateNicknameError } from "../model/types";
 import { ErrorResponse } from "react-router-dom";
 import axios, { AxiosError } from "axios";
 import { toast } from "@/shared/libs/hooks/use-toast";
-import { useAuthStore } from "@/shared/store/auth";
 import { InitializeMoneyResponse } from "../model/types";
 import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 
-export const getUserInfo = async () => {
+export const getUserInfo = async (): Promise<SimpleProfile> => {
   const response = await apiClient.get<SimpleProfile>("/members/simple-profile");
   return response.data;
 };
@@ -61,26 +59,6 @@ export const updatePassword = async (
       });
       return errorData;
     }
-    throw error;
-  }
-};
-
-export const getPortfolio = async (): Promise<PortfolioResponse | AxiosError<ErrorResponse>> => {
-  const { setSimpleProfile } = useAuthStore.getState();
-  try {
-    const response = await apiClient.get<PortfolioResponse>("/members/portfolio");
-    if (response.status === 200) {
-      const updatedSimpleProfile = {
-        totalAsset: response.data.totalAsset.toString(),
-        memberMoney: response.data.memberMoney.toString(),
-      };
-      setSimpleProfile(updatedSimpleProfile);
-      return response.data;
-    } else {
-      throw new Error("Portfolio not found");
-    }
-  } catch (error) {
-    console.error("API error:", error);
     throw error;
   }
 };
