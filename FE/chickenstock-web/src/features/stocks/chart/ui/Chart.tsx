@@ -49,8 +49,8 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   };
 
   const handleTimeIntervalChange = (interval: TimeInterval) => {
-    if (interval === timeInterval) return;
     setChartType("MINUTE");
+    if (interval === timeInterval) return;
     setTimeInterval(interval);
     setChartData([]); // 시간 간격 변경 시 데이터 초기화
   };
@@ -175,9 +175,25 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
 
       const newData = {
         time,
-        open: Number((lastCandle as CandlestickData<Time>).open),
-        high: Number((lastCandle as CandlestickData<Time>).high),
-        low: Number((lastCandle as CandlestickData<Time>).low),
+        open: Number(
+          time === Number(lastCandle.time)
+            ? (lastCandle as CandlestickData<Time>).open
+            : (lastCandle as CandlestickData<Time>).close,
+        ),
+        high:
+          time === Number(lastCandle.time)
+            ? Math.max(
+                Number((lastCandle as CandlestickData<Time>).high),
+                Math.abs(Number(stockPriceData.currentPrice)),
+              )
+            : Math.abs(Number(stockPriceData.currentPrice)),
+        low:
+          time === Number(lastCandle.time)
+            ? Math.min(
+                Number((lastCandle as CandlestickData<Time>).low),
+                Math.abs(Number(stockPriceData.currentPrice)),
+              )
+            : Math.abs(Number(stockPriceData.currentPrice)),
         close: Math.abs(Number(stockPriceData.currentPrice)),
       };
       // console.log(newData);
