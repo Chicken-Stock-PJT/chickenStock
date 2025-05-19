@@ -10,7 +10,6 @@ import realClassOne.chickenStock.chat.websocket.handler.ChatWebSocketHandler;
 import realClassOne.chickenStock.notification.entity.Notification;
 import realClassOne.chickenStock.notification.event.CommentNotificationEvent;
 import realClassOne.chickenStock.notification.event.LikeNotificationEvent;
-import realClassOne.chickenStock.notification.event.TradeNotificationEvent;
 import realClassOne.chickenStock.notification.repository.NotificationRepository;
 
 import java.time.LocalDateTime;
@@ -27,6 +26,8 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final ChatWebSocketHandler chatWebSocketHandler;
+    private final FCMTokenService fcmTokenService;
+    private final FCMService fcmService;
     private final ObjectMapper objectMapper;
 
     // 지정가 체결 알림 생성 및 전송
@@ -50,7 +51,7 @@ public class NotificationService {
                 .build();
 
         Notification savedNotification = notificationRepository.save(notification);
-        log.info("알림 DB 저장 완료: 알림ID={}", savedNotification.getId());
+//        log.info("알림 DB 저장 완료: 알림ID={}", savedNotification.getId());
 
         // 직접적인 웹소켓 알림 전송만 사용 (이벤트 발행 제거)
         try {
@@ -65,7 +66,7 @@ public class NotificationService {
         try {
             Long memberId = notification.getMemberId();
             boolean sessionExists = chatWebSocketHandler.hasSession(memberId);
-            log.info("직접 알림 전송: 회원ID={}, 웹소켓 세션 존재={}", memberId, sessionExists);
+//            log.info("직접 알림 전송: 회원ID={}, 웹소켓 세션 존재={}", memberId, sessionExists);
 
             if (sessionExists) {
                 Map<String, Object> payload = new HashMap<>();
@@ -78,10 +79,10 @@ public class NotificationService {
                 payload.put("isRead", notification.isRead());
 
                 String message = objectMapper.writeValueAsString(payload);
-                log.info("직접 전송할 웹소켓 메시지: {}", message);
+//                log.info("직접 전송할 웹소켓 메시지: {}", message);
 
                 chatWebSocketHandler.sendMessageToUser(memberId, message);
-                log.info("웹소켓을 통한 직접 알림 전송 완료: 회원ID={}", memberId);
+//                log.info("웹소켓을 통한 직접 알림 전송 완료: 회원ID={}", memberId);
             } else {
                 log.warn("웹소켓 세션이 없어 직접 알림을 전송할 수 없습니다: 회원ID={}", memberId);
             }
@@ -166,4 +167,31 @@ public class NotificationService {
         unreadNotifications.forEach(Notification::markAsRead);
         notificationRepository.saveAll(unreadNotifications);
     }
+
+    public void createTradeFCMNotification(Long memberId, String stockName, String orderType,
+                                           Integer quantity, Long price) {
+//        log.info("FCM 지정가 체결 알림 생성 시작: 회원ID={}, 종목={}, 타입={}, 수량={}, 가격={}",
+//                memberId, stockName, orderType, quantity, price);
+
+        try {
+            // 회원의 FCM 토큰 목록 조회
+            List<String> tokens = fcmTokenService.getUserTokens(memberId);
+
+            if (tokens.isEmpty()) {
+                log.debug("회원 ID {}의 FCM 토큰이 없어 푸시 알림을 보낼 수 없습니다.", memberId);
+                return;
+            }
+
+            // FCM 서비스를 통해 알림 발송
+            fcmService.sendTradeNotification(tokens, stockName, orderType, quantity, price);
+
+//            log.info("FCM 지정가 체결 알림 전송 완료: 회원ID={}, 종목={}, 토큰 수={}",
+//                    memberId, stockName, tokens.size());
+
+        } catch (Exception e) {
+            log.error("FCM 지정가 체결 알림 전송 중 오류 발생", e);
+        }
+    }
+
+
 }
