@@ -15,9 +15,6 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 
 import java.io.IOException;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
@@ -29,10 +26,6 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
     private final KiwoomWebSocketClient kiwoomWebSocketClient;
     private final ObjectMapper objectMapper;
-
-    private static final DateTimeFormatter formatter =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                    .withZone(ZoneId.of("Asia/Seoul")); // 🌐 [KST 포맷 정의]
 
     // 세션 관리용 맵 - 동시성을 위해 ConcurrentHashMap 사용
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
@@ -378,7 +371,7 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             messageNode.put("currentPrice", data.get("10").asText());      // 현재가
             messageNode.put("priceChange", data.get("11").asText());       // 전일대비
             messageNode.put("changeRate", data.get("12").asText());        // 등락율
-            messageNode.put("timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)); // 🌐 [KST 적용]
+            messageNode.put("timestamp", data.get("20").asText());         // 체결시간
 
             String message = objectMapper.writeValueAsString(messageNode);
 
@@ -420,7 +413,7 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
 
                     if (price != null) {
                         Long totalAmount = price * quantity;
-                        String timestamp = ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter); // 🌐 [KST 적용]
+                        String timestamp = data.get("20").asText();
 
                         // 체결 정보 전송
                         broadcastTradeExecution(originalStockCode, tradeType, quantity, price, totalAmount, timestamp);
@@ -445,7 +438,7 @@ public class StockWebSocketHandler extends TextWebSocketHandler implements Kiwoo
             ObjectNode messageNode = objectMapper.createObjectNode();
             messageNode.put("type", "stockBidAsk");
             messageNode.put("stockCode", originalStockCode);  // 원본 종목 코드 사용
-            messageNode.put("timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)); // 🌐 [KST 적용]  // 호가시간
+            messageNode.put("timestamp", data.get("21").asText());         // 호가시간
 
             // 매도호가 및 수량 (상위 8개)
             ObjectNode askPrices = objectMapper.createObjectNode();
