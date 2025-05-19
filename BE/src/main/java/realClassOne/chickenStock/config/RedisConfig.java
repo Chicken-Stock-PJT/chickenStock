@@ -15,6 +15,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import realClassOne.chickenStock.stock.dto.response.DashboardResponseDTO;
 
@@ -53,16 +54,15 @@ public class RedisConfig {
         return mapper;
     }
 
+    // GenericJackson2JsonRedisSerializer 사용
     @Bean
     public RedisTemplate<String, DashboardResponseDTO> dashboardRedisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, DashboardResponseDTO> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
         template.setKeySerializer(new StringRedisSerializer());
 
-        // 개선된 직렬화 방식 사용
-        Jackson2JsonRedisSerializer<DashboardResponseDTO> serializer =
-                new Jackson2JsonRedisSerializer<>(DashboardResponseDTO.class);
-        serializer.setObjectMapper(redisObjectMapper());
+        ObjectMapper mapper = redisObjectMapper();
+        GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(mapper);
         template.setValueSerializer(serializer);
 
         template.afterPropertiesSet();
