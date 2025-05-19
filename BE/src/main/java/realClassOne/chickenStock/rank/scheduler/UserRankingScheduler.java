@@ -3,6 +3,8 @@ package realClassOne.chickenStock.rank.scheduler;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -31,11 +33,13 @@ public class UserRankingScheduler {
     private final HoldingPositionRepository holdingPositionRepository;
     private final TradeHistoryRepository tradeHistoryRepository;
     private final ZSetOperations<String, String> zSetOperations;
+    private final RedisTemplate<String, String> redisTemplate;
     private final KiwoomStockApiService kiwoomStockApiService;
     private final PendingOrderRepository pendingOrderRepository;
 
     private static final String REDIS_KEY = "ranking:totalAsset";
     private static final String RETURN_RATE_KEY = "ranking:returnRate";
+    private static final String LATEST_PRICE_KEY = "stock:latestPrice"; // 최신 가격 캐시 키
 
     /**
      * 매 1시간마다 회원별 총자산 기준 Redis 랭킹 갱신
@@ -79,6 +83,20 @@ public class UserRankingScheduler {
                 }
             }
         }
+
+        HashOperations<String, String, String> hashOps = redisTemplate.opsForHash(); // HashOps 불러오기
+
+        for (Map.Entry<String, JsonNode> entry : priceMap.entrySet()) {
+            String code = entry.getKey(); // ex. 005930_AL
+            JsonNode stockInfo = entry.getValue();
+            if (stockInfo.has("cur_prc")) {
+                String rawPrice = stockInfo.get("cur_prc").asText().replaceAll("[^0-9]", "");
+                if (!rawPrice.isEmpty()) {
+                    hashOps.put(LATEST_PRICE_KEY, code, rawPrice); // 캐시에 저장
+                }
+            }
+        }
+
         for (Member member : members) {
             List<HoldingPosition> holdings = holdingPositionRepository.findByMember(member);
             long totalAsset = member.getMemberMoney();
@@ -94,7 +112,8 @@ public class UserRankingScheduler {
 
             for (HoldingPosition holding : holdings) {
                 String code = holding.getStockData().getShortCode();
-                JsonNode stockInfo = priceMap.get(code + "_AL"); // _AL 붙여주기
+                String key = code + "_AL"; // _AL 붙여주기
+                JsonNode stockInfo = priceMap.get(key);
                 long price = 0L;
                 if (stockInfo != null && stockInfo.has("cur_prc")) {
                     String rawPrice = stockInfo.get("cur_prc").asText();
@@ -102,7 +121,18 @@ public class UserRankingScheduler {
                     if (!rawPrice.isEmpty()) {
                         price = Long.parseLong(rawPrice);
                     }
+                }else {
+                    // 현재가 없을 때 fallback 캐시 사용
+
+                    String cachedPrice = hashOps.get(LATEST_PRICE_KEY, key);
+                    if (cachedPrice != null && !cachedPrice.isEmpty()) {
+                        price = Long.parseLong(cachedPrice);
+                        log.warn("시세 없음, 캐시된 가격 사용: {} → {}", key, price);
+                    } else {
+                        log.warn("시세 및 캐시 모두 없음: {}", key);
+                    }
                 }
+
                 totalAsset += price * holding.getQuantity();
             }
 
@@ -149,7 +179,8 @@ public class UserRankingScheduler {
                 totalInvestment += investAmount;
 
 
-                JsonNode priceInfo = priceMap.get(shortCode + "_AL");
+                String priceKey = shortCode + "_AL";
+                JsonNode priceInfo = priceMap.get(priceKey);
 
 
                 long currentPrice = 0L;
@@ -158,7 +189,18 @@ public class UserRankingScheduler {
                     if (!rawPrice.isEmpty()) {
                         currentPrice = Long.parseLong(rawPrice);
                     }
+                } else {
+                    // 수익률 계산에서도 캐시 fallback
+                    String cachedPrice = hashOps.get(LATEST_PRICE_KEY, priceKey);
+                    if (cachedPrice != null && !cachedPrice.isEmpty()) {
+                        currentPrice = Long.parseLong(cachedPrice);
+                        log.warn("수익률용 캐시된 가격 사용: {} → {}", priceKey, currentPrice);
+                    } else {
+                        log.warn("수익률용 가격 없음: {}", priceKey);
+                    }
                 }
+
+
 
                 totalEvaluation += currentPrice * holdingQty;
             }
