@@ -58,7 +58,6 @@ class AuthClient:
             ) as response:
                 if response.status == 200:
                     auth_data = await response.json()
-                    logger.info(auth_data)
                     
                     # 토큰 저장
                     self.access_token = auth_data.get("accessToken")

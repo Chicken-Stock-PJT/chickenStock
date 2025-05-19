@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, time
 
@@ -17,6 +18,8 @@ from app.api.kiwoom_api import KiwoomAPI
 from app.bot.bot_manager import BotManager
 
 from app.monitor.cache_monitor import add_monitor_to_app
+from app.data.data_utils import save_all_chart_data, prepare_dataset_for_upload
+# from app.strategies.drl_utrans import DRLUTransTradingModel
 
 # 설정 파일 import
 from app.config import settings
@@ -72,6 +75,8 @@ service_status = {
 # 태스크 관리용 변수들
 trading_loop_task = None
 scheduler_task_instance = None
+
+os.environ['DRL_UTRANS_MODEL_PATH'] = os.path.join(os.path.dirname(__file__), "models/drl_utrans")
 
 async def get_next_run_time(target_hour=9, target_minute=0, target_second=0):
     """다음 실행 시간까지 대기해야 하는 시간(초) 계산"""
@@ -252,6 +257,8 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
 
         await kiwoom_api.initialize_minute_chart_data(filtered_stockcode_list, time_interval=5)
         logger.info(f"모든 종목({len(filtered_stockcode_list)}개)의 5분봉 차트 데이터 초기화 완료")
+
+        save_result = save_all_chart_data(kiwoom_api.stock_cache)
 
         # 모든 전략의 지표 계산 (두 전략 모두 미리 계산)
         # Envelope 지표 계산
@@ -544,6 +551,20 @@ async def scheduler_task():
             # 서비스 다시 초기화
             logger.info(f"서비스 재초기화 시작 (전략: {current_strategy})")
             service_initialized = await initialize_service(current_strategy)
+            
+            now = datetime.now()
+
+            if now.weekday() == 6:
+                try:
+                    logger.info("DRL-UTrans 모델 학습용 데이터 준비 시작")
+                    
+                    # 모델 학습용 데이터 저장 및 압축
+                    save_result = save_all_chart_data(kiwoom_api.stock_cache)
+                    dataset_path = prepare_dataset_for_upload(compress=True)
+                    
+                    logger.info(f"학습용 데이터셋 준비 완료: {dataset_path}")
+                except Exception as e:
+                    logger.error(f"DRL-UTrans 데이터 준비 중 오류: {str(e)}")
             
             if not service_initialized:
                 logger.error("서비스 재초기화 실패")

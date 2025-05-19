@@ -5,16 +5,17 @@ import json
 import random
 from typing import List, Callable, Dict, Any
 from app.cache.stock_cache import StockCache
+from app.auth.kiwoom_auth import KiwoomAuthClient
 
 logger = logging.getLogger(__name__)
 
 class KiwoomWebSocket:
     """키움 API 웹소켓 연결 및 데이터 구독"""
     
-    def __init__(self, base_url: str, stock_cache: StockCache, auth_client=None):
+    def __init__(self, base_url: str, stock_cache: StockCache):
         self.base_url = base_url
         self.stock_cache = stock_cache
-        self.auth_client = auth_client  # 키움 인증 클라이언트 추가
+        self.kiwoom_auth = KiwoomAuthClient()  # 키움 인증 클라이언트 추가
         self.ws = None
         self.session = None  # aiohttp 세션 저장
         self.subscription_groups = []  # 구독 그룹 목록
@@ -46,12 +47,12 @@ class KiwoomWebSocket:
     
     async def refresh_token(self):
         """토큰 갱신"""
-        if not self.auth_client:
+        if not self.kiwoom_auth:
             logger.error("인증 클라이언트가 설정되지 않았습니다")
             return None
         
         logger.info("키움 API 토큰 갱신 시도 중...")
-        new_token = await self.auth_client.get_access_token()
+        new_token = await self.kiwoom_auth.refresh_token()
         
         if new_token:
             logger.info("키움 API 토큰 갱신 성공")
