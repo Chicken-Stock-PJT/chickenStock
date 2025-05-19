@@ -9,6 +9,7 @@ import {
   ChartType,
   ChartVisibleRange,
   FormattedChartData,
+  TimeInterval,
 } from "./types";
 import { formatVolume } from "@/shared/libs/hooks/numberFormatters";
 import { renderCandlestickTooltip, renderVolumeTooltip } from "../ui/ChartTooltips";
@@ -45,8 +46,55 @@ export const formatChartTime = (date: string) => {
   }
 };
 
+export function updateTimestamp(
+  compareTsSec: number,
+  currentTsSec: number,
+  chartType: ChartType,
+  timeInterval: TimeInterval,
+): number {
+  // JS Date 는 밀리초 단위이므로 *1000
+  const compareDate = new Date(compareTsSec * 1000);
+  const currentDate = new Date(currentTsSec * 1000);
+
+  // 다음 갱신 시점을 담을 Date 객체 복제
+  const nextDate = new Date(compareDate.getTime());
+
+  switch (chartType) {
+    case "MINUTE":
+      nextDate.setMinutes(nextDate.getMinutes() + Number(timeInterval));
+      break;
+
+    case "DAILY":
+      nextDate.setDate(nextDate.getDate() + 1);
+      break;
+
+    case "WEEKLY":
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+
+    case "MONTHLY":
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      break;
+
+    case "YEARLY":
+      nextDate.setFullYear(nextDate.getFullYear() + 1);
+      break;
+
+    default:
+      // unrecognized type → 그대로 반환
+      return compareTsSec;
+  }
+
+  // currentDate가 nextDate 이상이면 “더한” 값을, 아니면 원래 값을 돌려줌
+  if (currentDate.getTime() >= nextDate.getTime()) {
+    return Math.floor(nextDate.getTime() / 1000);
+  } else {
+    return compareTsSec;
+  }
+}
+
 // 데이터 포맷팅
-export const formatChartData = (data: ChartData[], chartType: "DAILY" | "YEARLY" | "MINUTE") => {
+export const formatChartData = (data: ChartData[], chartType: ChartType) => {
   // 시간 간격 일정하게 하기 위해 인덱스 기반 접근
   const formattedData = data
     .map((item) => {
