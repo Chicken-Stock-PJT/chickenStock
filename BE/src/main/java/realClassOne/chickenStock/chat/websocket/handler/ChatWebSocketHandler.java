@@ -9,6 +9,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import realClassOne.chickenStock.chat.service.ChatService;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.notification.entity.Notification;
@@ -17,7 +18,10 @@ import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +35,11 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final MemberRepository memberRepository;
     private final NotificationRepository notificationRepository;
     private final ObjectMapper objectMapper;
+    private final ChatService chatService;
+
+    private static final DateTimeFormatter formatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                    .withZone(ZoneId.of("Asia/Seoul"));
 
     // 세션 ID -> WebSocketSession
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
@@ -243,7 +252,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private void handlePing(WebSocketSession session) throws IOException {
         Map<String, Object> pongMessage = Map.of(
                 "type", "pong",
-                "timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()
+                "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter) // 🌐 [KST 적용]
         );
 
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(pongMessage)));
@@ -275,7 +284,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         Map<String, Object> message = Map.of(
                 "type", "userJoined",
                 "nickname", member.getNickname(),
-                "timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()
+                "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter) // 🌐 [KST 적용]
         );
 
         broadcastMessage(objectMapper.writeValueAsString(message));
@@ -288,7 +297,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             Map<String, Object> message = Map.of(
                     "type", "userLeft",
                     "nickname", member.getNickname(),
-                    "timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()
+                    "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter) // 🌐 [KST 적용]
+
             );
 
             broadcastMessage(objectMapper.writeValueAsString(message));
@@ -306,7 +316,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     "notificationType", notification.getType(),
                     "title", notification.getTitle(),
                     "message", notification.getMessage(),
-                    "timestamp", notification.getCreatedAt().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                    "timestamp", notification.getCreatedAt().atZone(ZoneId.of("Asia/Seoul")).format(formatter), // 🌐 [KST 적용]
                     "notificationId", notification.getId(),
                     "isRead", notification.isRead()
             );
@@ -322,7 +332,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 "memberId", member.getMemberId(),
                 "nickname", member.getNickname(),
                 "message", chatMessage,
-                "timestamp", LocalDateTime.now().toInstant(ZoneOffset.UTC).toEpochMilli()
+                "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter) // 🌐 [KST 적용]
         );
 
         broadcastMessage(objectMapper.writeValueAsString(message));
@@ -379,7 +389,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 "notificationType", notification.getType(),
                 "title", notification.getTitle(),
                 "message", notification.getMessage(),
-                "timestamp", notification.getCreatedAt().toInstant(ZoneOffset.UTC).toEpochMilli(),
+                "timestamp", notification.getCreatedAt().atZone(ZoneId.of("Asia/Seoul")).format(formatter), // 🌐 [KST 적용]
                 "isRead", notification.isRead()
         );
 
