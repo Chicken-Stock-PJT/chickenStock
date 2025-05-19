@@ -462,18 +462,22 @@ class BotInstance:
     
     def get_account_info(self) -> Dict:
         """계좌 정보 반환"""
+        self.update_account_info()
         return self.account_info
     
     def get_cash(self) -> float:
         """예수금 조회"""
+        self.get_account_info()
         return self.account_info.get('cash_balance', 0)
     
     def get_holdings(self) -> List:
         """보유 종목 목록 조회"""
+        self.get_account_info()
         return self.account_info.get('positions', [])
     
     def get_holding(self, symbol: str) -> Optional[Dict]:
         """특정 종목 보유 정보 조회"""
+        self.get_account_info()
         holdings = self.get_holdings()
         for holding in holdings:
             if holding.get('stockName') == symbol:
