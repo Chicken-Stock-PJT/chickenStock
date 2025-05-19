@@ -74,6 +74,7 @@ class Settings(BaseSettings):
                 strategy=strategy2
             ))
 
+        # 계정 3 설정 로드
         email3 = os.getenv("ACCOUNT_3_EMAIL")
         password3 = os.getenv("ACCOUNT_3_PASSWORD")
         strategy3 = os.getenv("ACCOUNT_3_STRATEGY")
@@ -84,6 +85,18 @@ class Settings(BaseSettings):
                 password=password3,
                 strategy=strategy3
             ))
+
+        # 계정 4 설정 로드
+        # email4 = os.getenv("ACCOUNT_4_EMAIL")
+        # password4 = os.getenv("ACCOUNT_4_PASSWORD")
+        # strategy4 = os.getenv("ACCOUNT_4_STRATEGY")
+        
+        # if email4 and password4 and strategy4:
+        #     accounts.append(AccountConfig(
+        #         email=email4,
+        #         password=password4,
+        #         strategy=strategy4
+        #     ))
             
         self.ADDITIONAL_ACCOUNTS = accounts
 

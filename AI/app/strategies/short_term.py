@@ -469,16 +469,22 @@ class ShortTermTradingModel:
         stop_loss_triggered = (avg_price > 0) and (price < avg_price * (1 - self.stop_loss_pct / 100))
         
         # 이익 실현 조건 확인
-        take_profit = self._check_take_profit(candle_data, price, avg_price)
+        take_profit, profit_stage = self._check_take_profit(symbol, candle_data, price, avg_price)
         
         if stop_loss_triggered:
             # 손절 신호 처리
             self._handle_sell_signal(symbol, price, "손절 조건 충족", now)
         
         elif take_profit:
-            # 이익 실현 신호 처리
-            self._handle_sell_signal(symbol, price, "이익 실현", now)
-    
+            # 이익 실현 신호 처리 - 단계 정보 포함
+            reason = f"{profit_stage}차 이익 실현 (고점 대비 {profit_stage}% 하락)"
+            
+            # 분할 매도 상태 정보에 매도 단계 저장
+            if symbol in self.division_status:
+                self.division_status[symbol]['profit_stage'] = profit_stage
+            
+            self._handle_sell_signal(symbol, price, reason, now)
+        
     def _handle_buy_signal(self, symbol: str, price: float, reason: str, now: datetime) -> None:
         """매수 신호 처리 - 분할 매수 적용"""
         # 이미 보유 중인지 확인
@@ -1123,34 +1129,63 @@ class ShortTermTradingModel:
             logger.error(f"일목균형표 기준선 확인 중 오류: {str(e)}")
             return False
 
-    def _check_take_profit(self, candle_data: List[Dict[str, Any]], current_price: float, avg_price: float) -> bool:
-        """이익 실현 조건 확인"""
+    def _check_take_profit(self, symbol: str, candle_data: List[Dict[str, Any]], current_price: float, avg_price: float) -> Tuple[bool, int]:
+        """이익 실현 조건 확인
+        Returns:
+            Tuple[bool, int]: (이익실현여부, 매도단계 1 또는 2)
+        """
         try:
             if not candle_data or len(candle_data) < 5 or avg_price <= 0 or current_price <= 0:
-                return False
+                return False, 0
             
             # 수익률 계산
             profit_pct = ((current_price / avg_price) - 1) * 100
             
             # 최소 5% 이상 수익 발생 확인
             if profit_pct < 5.0:
-                return False
+                return False, 0
             
-            # 최근 고점 확인
-            recent_candles = candle_data[:5]
+            # 최근 30개 캔들 사용
+            lookback_candles = min(30, len(candle_data))
+            recent_candles = candle_data[:lookback_candles]
             highest_prices = self._extract_candle_data(recent_candles, 'high', 2)
             
             if not highest_prices:
-                return False
+                return False, 0
                 
             highest = max(highest_prices)
             
-            # 고점에서 2% 이상 하락 확인
-            if highest > current_price:
-                drop_pct = ((highest - current_price) / highest) * 100
-                return drop_pct >= 2.0
+            # 고점 정보를 영구 저장 (분할 매도 상태 정보에 추가)
+            if symbol and symbol in self.division_status:
+                # 이미 저장된 고점이 없거나 새로운 고점이 더 높으면 업데이트
+                if 'highest_price' not in self.division_status[symbol] or highest > self.division_status[symbol]['highest_price']:
+                    self.division_status[symbol]['highest_price'] = highest
+                    logger.info(f"종목 {symbol}의 신규 고점 기록: {highest:.2f}")
+            else:
+                # 분할 매도 상태 정보가 없으면 초기화
+                if symbol:
+                    self.division_status[symbol] = {
+                        'buy_count': 1,  # 이미 매수한 상태로 가정
+                        'sell_count': 0,
+                        'last_division': datetime.now(),
+                        'highest_price': highest
+                    }
             
-            return False
+            # 저장된 고점 사용
+            saved_highest = self.division_status.get(symbol, {}).get('highest_price', highest)
+            
+            # 고점에서 하락 비율 계산
+            if saved_highest > current_price:
+                drop_pct = ((saved_highest - current_price) / saved_highest) * 100
+                
+                # 1차 매도 (1% 하락)
+                if drop_pct >= 2.0 and drop_pct < 3.0:
+                    return True, 2
+                # 2차 매도 (2% 이상 하락)
+                elif drop_pct >= 3.0:
+                    return True, 3
+            
+            return False, 0
         except Exception as e:
             logger.error(f"이익 실현 조건 확인 중 오류: {str(e)}")
-            return False
+            return False, 0

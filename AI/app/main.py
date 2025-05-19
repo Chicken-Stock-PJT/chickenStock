@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, time
 
@@ -17,6 +18,8 @@ from app.api.kiwoom_api import KiwoomAPI
 from app.bot.bot_manager import BotManager
 
 from app.monitor.cache_monitor import add_monitor_to_app
+from app.data.data_utils import save_all_chart_data, prepare_dataset_for_upload
+# from app.strategies.drl_utrans import DRLUTransTradingModel
 
 # 설정 파일 import
 from app.config import settings
@@ -73,6 +76,8 @@ service_status = {
 trading_loop_task = None
 scheduler_task_instance = None
 
+os.environ['DRL_UTRANS_MODEL_PATH'] = os.path.join(os.path.dirname(__file__), "models/drl_utrans")
+
 async def get_next_run_time(target_hour=9, target_minute=0, target_second=0):
     """다음 실행 시간까지 대기해야 하는 시간(초) 계산"""
     now = datetime.now()
@@ -103,18 +108,19 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         # 변수 초기화
         default_email = None
         default_password = None
-        
+
         # 토큰 관리자 초기화
         if not token_manager:
             token_manager = TokenManager()
             await token_manager.initialize()
         
-        # 키움 API 토큰 발급
-        kiwoom_auth_client = KiwoomAuthClient()
+        # 키움 API 토큰 발급을 위한 클라이언트
+        kiwoom_auth_client = KiwoomAuthClient()  # 명확한 변수명으로 변경
         kiwoom_auth_client.set_token_manager(token_manager)
         await kiwoom_auth_client.initialize()
         
-        kiwoom_token = await kiwoom_auth_client.get_access_token()
+        # 명시적으로 토큰 갱신
+        kiwoom_token = await kiwoom_auth_client.refresh_token()
         if not kiwoom_token:
             logger.error("키움 API 토큰 발급 실패")
             return False
@@ -252,6 +258,8 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         await kiwoom_api.initialize_minute_chart_data(filtered_stockcode_list, time_interval=5)
         logger.info(f"모든 종목({len(filtered_stockcode_list)}개)의 5분봉 차트 데이터 초기화 완료")
 
+        save_result = save_all_chart_data(kiwoom_api.stock_cache)
+
         # 모든 전략의 지표 계산 (두 전략 모두 미리 계산)
         # Envelope 지표 계산
         logger.info("Envelope 지표 계산 시작")
@@ -262,7 +270,7 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         logger.info("볼린저 밴드 지표 계산 시작")
         kiwoom_api.stock_cache.calculate_bollinger_bands()
         logger.info("볼린저 밴드 지표 계산 완료")
-        
+
         # 마지막 데이터 업데이트 시간 기록
         service_status["last_data_update"] = datetime.now()
         
@@ -493,7 +501,7 @@ async def trading_loop():
 
 async def scheduler_task():
     """매일 오전 7시에 서버 초기화 및 데이터 갱신을 실행하는 스케줄러"""
-    global kiwoom_api, service_status, bot_manager
+    global kiwoom_api, service_status, bot_manager, backend_client, auth_client
     
     logger.info("스케줄러 작업 시작됨")
     
@@ -519,10 +527,23 @@ async def scheduler_task():
                 await bot_manager.cleanup()
                 logger.info("봇 매니저 리소스 정리 완료")
             
+            # 백엔드 클라이언트 명시적 종료
+            if backend_client:
+                await backend_client.close()
+                logger.info("백엔드 클라이언트 종료 완료")
+                backend_client = None  # 변수 초기화
+            
+            # 인증 클라이언트 명시적 종료
+            if auth_client:
+                await auth_client.close()
+                logger.info("인증 클라이언트 종료 완료")
+                auth_client = None  # 변수 초기화
+            
             # 키움 API 연결 종료
             if kiwoom_api:
                 await kiwoom_api.close()
                 logger.info("키움 API 연결 종료 완료")
+                kiwoom_api = None  # 변수 초기화
             
             # 잠시 대기 (리소스 정리를 위한 시간)
             await asyncio.sleep(5)
@@ -530,6 +551,20 @@ async def scheduler_task():
             # 서비스 다시 초기화
             logger.info(f"서비스 재초기화 시작 (전략: {current_strategy})")
             service_initialized = await initialize_service(current_strategy)
+            
+            now = datetime.now()
+
+            if now.weekday() == 6:
+                try:
+                    logger.info("DRL-UTrans 모델 학습용 데이터 준비 시작")
+                    
+                    # 모델 학습용 데이터 저장 및 압축
+                    save_result = save_all_chart_data(kiwoom_api.stock_cache)
+                    dataset_path = prepare_dataset_for_upload(compress=True)
+                    
+                    logger.info(f"학습용 데이터셋 준비 완료: {dataset_path}")
+                except Exception as e:
+                    logger.error(f"DRL-UTrans 데이터 준비 중 오류: {str(e)}")
             
             if not service_initialized:
                 logger.error("서비스 재초기화 실패")
