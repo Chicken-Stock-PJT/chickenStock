@@ -130,11 +130,10 @@ def save_chart_data_to_csv(symbol: str, chart_data: List[Any], output_dir=None) 
         
         # 파일명 생성
         timestamp = datetime.now().strftime("%Y%m%d")
-        csv_file = os.path.join(output_dir, f"{symbol}_{timestamp}.csv")
+        csv_file = os.path.join(output_dir, f"{symbol}.csv")
         
         # CSV 파일로 저장
         df.to_csv(csv_file, index=False)
-        logger.info(f"종목 {symbol}의 차트 데이터 저장 완료: {csv_file}")
         
         return csv_file
     
