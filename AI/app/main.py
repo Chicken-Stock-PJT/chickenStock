@@ -58,7 +58,7 @@ class BotStatusResponse(BaseModel):
 
 # 전역 변수
 token_manager = None
-auth_client = None
+auth_manager = None  # AuthClient 대신 AuthClient 사용
 kiwoom_api = None
 backend_client = None
 bot_manager = None
@@ -94,7 +94,7 @@ async def get_next_run_time(target_hour=9, target_minute=0, target_second=0):
 
 async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOPE):
     """자동매매 서비스 초기화 및 시작"""
-    global auth_client, kiwoom_api, backend_client, service_status, token_manager, bot_manager
+    global auth_manager, kiwoom_api, backend_client, service_status, token_manager, bot_manager
     global trading_loop_task, scheduler_task_instance
     
     try:
@@ -115,7 +115,7 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
             await token_manager.initialize()
         
         # 키움 API 토큰 발급을 위한 클라이언트
-        kiwoom_auth_client = KiwoomAuthClient()  # 명확한 변수명으로 변경
+        kiwoom_auth_client = KiwoomAuthClient()
         kiwoom_auth_client.set_token_manager(token_manager)
         await kiwoom_auth_client.initialize()
         
@@ -126,7 +126,7 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
             return False
 
         # 백엔드 서버 로그인 확인
-        if not auth_client or not auth_client.is_authenticated:
+        if not auth_manager or not auth_manager.is_authenticated:
             logger.info("백엔드 서버 로그인 확인")
             
             # 설정에서 기본 계정 가져오기
@@ -140,13 +140,13 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
                 logger.error("기본 계정 정보가 없습니다. settings.py에서 DEFAULT_EMAIL과 DEFAULT_PASSWORD를 설정하세요.")
                 return False
             
-            # 인증 클라이언트 초기화
-            if not auth_client:
-                auth_client = AuthClient()
-                await auth_client.initialize()
+            # 인증 매니저 초기화
+            if not auth_manager:
+                auth_manager = AuthClient()
+                await auth_manager.initialize()
             
             # 백엔드 서버 로그인
-            success = await auth_client.login(default_email, default_password)
+            success = await auth_manager.login(default_email, default_password)
             if not success:
                 logger.error("백엔드 서버 자동 로그인 실패")
                 return False
@@ -163,7 +163,7 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         # 백엔드 클라이언트 초기화
         if not backend_client:
             backend_client = BackendClient()
-            backend_client.set_auth_client(auth_client)
+            backend_client.set_auth_manager(auth_manager)  # AuthClient 대신 AuthClient 사용
             await backend_client.start()
         
         # 키움 API 연결
@@ -387,31 +387,8 @@ async def trading_loop():
                     try:
                         logger.info(f"봇 [{email}] 처리 시작 (전략: {bot.strategy})")
                         
-                        # 인증 상태 확인
-                        if not bot.auth_client or not bot.auth_client.is_authenticated:
-                            logger.warning(f"봇 [{email}]의 인증이 유효하지 않습니다. 재로그인을 시도합니다.")
-                            
-                            # 봇의 인증 정보가 있는지 확인
-                            if hasattr(bot, 'email') and hasattr(bot, 'password') and bot.email and bot.password:
-                                # 재로그인 시도
-                                try:
-                                    logger.info(f"봇 [{email}] 재로그인 시도 중...")
-                                    login_success = await bot.auth_client.login(bot.email, bot.password)
-                                    
-                                    if login_success:
-                                        logger.info(f"봇 [{email}] 재로그인 성공")
-                                        # 백엔드 클라이언트에도 새 인증 정보 전달
-                                        if bot.backend_client:
-                                            bot.backend_client.set_auth_client(bot.auth_client)
-                                    else:
-                                        logger.error(f"봇 [{email}] 재로그인 실패. 이 봇의 거래는 건너뜁니다.")
-                                        return
-                                except Exception as e:
-                                    logger.error(f"봇 [{email}] 재로그인 중 오류 발생: {str(e)}")
-                                    return
-                            else:
-                                logger.error(f"봇 [{email}]의 인증 정보가 없습니다. 이 봇의 거래는 건너뜁니다.")
-                                return
+                        # 계좌 정보 업데이트 (인증 확인은 내부에서 처리됨)
+                        await bot.update_account_info()
                         
                         # 계좌 정보 로그 출력
                         cash = bot.get_cash()
@@ -501,7 +478,7 @@ async def trading_loop():
 
 async def scheduler_task():
     """매일 오전 7시에 서버 초기화 및 데이터 갱신을 실행하는 스케줄러"""
-    global kiwoom_api, service_status, bot_manager, backend_client, auth_client
+    global kiwoom_api, service_status, bot_manager, backend_client, auth_manager
     
     logger.info("스케줄러 작업 시작됨")
     
@@ -533,11 +510,11 @@ async def scheduler_task():
                 logger.info("백엔드 클라이언트 종료 완료")
                 backend_client = None  # 변수 초기화
             
-            # 인증 클라이언트 명시적 종료
-            if auth_client:
-                await auth_client.close()
-                logger.info("인증 클라이언트 종료 완료")
-                auth_client = None  # 변수 초기화
+            # 인증 매니저 명시적 종료
+            if auth_manager:
+                await auth_manager.close()
+                logger.info("인증 매니저 종료 완료")
+                auth_manager = None  # 변수 초기화
             
             # 키움 API 연결 종료
             if kiwoom_api:
@@ -586,7 +563,7 @@ async def scheduler_task():
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행"""
-    global bot_manager, auth_client, token_manager, backend_client, kiwoom_api
+    global bot_manager, auth_manager, token_manager, backend_client, kiwoom_api
     
     logger.info("애플리케이션 시작 중...")
     
@@ -604,11 +581,17 @@ async def startup_event():
         
         if not service_initialized:
             logger.error("서비스 초기화 실패")
-            return
+            logger.info("서비스 초기화 재시도")
+            asyncio.sleep(300)
+            service_initialized = await initialize_service(default_strategy)
+
+            if not service_initialized:
+                logger.error("서비스 초기화 실패")
+                shutdown_event()
             
         logger.info("서비스 초기화 성공")
 
-        # 모니터링 기능 추가 - 이 부분이 중요합니다!
+        # 모니터링 기능 추가
         add_monitor_to_app(app, kiwoom_api, bot_manager)
         logger.info("모니터링 기능 추가 완료")
         
@@ -620,7 +603,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """애플리케이션 종료 시 실행"""
-    global bot_manager, auth_client, kiwoom_api, token_manager, backend_client
+    global bot_manager, auth_manager, kiwoom_api, token_manager, backend_client
     global trading_loop_task, scheduler_task_instance
     
     logger.info("애플리케이션 종료 중...")
@@ -663,10 +646,10 @@ async def shutdown_event():
             await kiwoom_api.close()
             logger.info("키움 API 연결 종료 완료")
         
-        # 인증 클라이언트 종료
-        if auth_client:
-            await auth_client.close()
-            logger.info("인증 클라이언트 종료 완료")
+        # 인증 매니저 종료
+        if auth_manager:
+            await auth_manager.close()
+            logger.info("인증 매니저 종료 완료")
         
         # 토큰 관리자 종료
         if token_manager:
