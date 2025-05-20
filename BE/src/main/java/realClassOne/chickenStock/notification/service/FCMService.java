@@ -12,10 +12,10 @@ import org.springframework.stereotype.Service;
 import javax.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 
 @Slf4j
 @Service
@@ -105,57 +105,41 @@ public class FCMService {
     /**
      * FCM을 통해 지정가 체결 알림 전송 (사용자 ID 기반)
      */
-    public void sendTradeNotificationToMember(Long memberId, String stockName, String orderType,
-                                              Integer quantity, Long price) {
+    public boolean sendTradeNotificationToMember(Long memberId, String stockName, String orderType,
+                                                 Integer quantity, Long price) {
         try {
             // 회원의 FCM 토큰 목록 조회
             List<String> tokens = fcmTokenService.getUserTokens(memberId);
 
             if (tokens.isEmpty()) {
                 log.debug("회원 ID {}의 FCM 토큰이 없어 푸시 알림을 보낼 수 없습니다.", memberId);
-                return;
+                return false;
             }
 
             // 토큰 목록으로 알림 전송
-            BatchResponse response = sendTradeNotification(tokens, stockName, orderType, quantity, price);
+            boolean result = sendTradeNotification(memberId, tokens, stockName, orderType, quantity, price);
 
-            // 무효한 토큰 정리 로직 추가
-            if (response != null && response.getFailureCount() > 0) {
-                List<SendResponse> responses = response.getResponses();
-                for (int i = 0; i < responses.size(); i++) {
-                    if (!responses.get(i).isSuccessful()) {
-                        SendResponse failedResponse = responses.get(i);
-                        String failedToken = tokens.get(i);
-
-                        // FirebaseMessagingException에서 유효하지 않은 토큰 판별
-                        FirebaseMessagingException error = failedResponse.getException();
-                        if (error != null &&
-                                (error.getMessagingErrorCode() == MessagingErrorCode.INVALID_ARGUMENT ||
-                                        error.getMessagingErrorCode() == MessagingErrorCode.UNREGISTERED)) {
-                            // 무효한 토큰 제거
-                            log.info("무효한 FCM 토큰 삭제: {}", failedToken);
-                            fcmTokenService.removeUserToken(memberId, failedToken);
-                        }
-                    }
-                }
+            if (result) {
+                log.info("FCM 지정가 체결 알림 전송 성공: 회원ID={}, 종목={}", memberId, stockName);
+            } else {
+                log.warn("FCM 지정가 체결 알림 전송 실패 또는 부분 성공: 회원ID={}, 종목={}", memberId, stockName);
             }
 
-//            log.info("FCM 지정가 체결 알림 전송 완료: 회원ID={}, 종목={}, 토큰 수={}",
-//                    memberId, stockName, tokens.size());
-
+            return result;
         } catch (Exception e) {
             log.error("회원 FCM 알림 전송 중 오류 발생", e);
+            return false;
         }
     }
 
     /**
-     * 수정: FCM을 통해 지정가 체결 알림 전송 (토큰 목록 기반) - 응답 반환
+     * FCM을 통해 지정가 체결 알림 전송 (토큰 목록 기반) - 성공 여부 반환
      */
-    public BatchResponse sendTradeNotification(List<String> tokens, String stockName, String orderType,
-                                               Integer quantity, Long price) {
+    public boolean sendTradeNotification(Long memberId, List<String> tokens, String stockName, String orderType,
+                                         Integer quantity, Long price) {
         if (tokens == null || tokens.isEmpty()) {
             log.warn("FCM 토큰이 없어 알림을 전송할 수 없습니다.");
-            return null;
+            return false;
         }
 
         try {
@@ -173,73 +157,121 @@ public class FCMService {
             data.put("price", price.toString());
 
             // 여러 기기에 동시 알림 전송
-            return sendMessageToTokens(tokens, title, body, data);
+            return sendMessageToTokens(memberId, tokens, title, body, data);
         } catch (Exception e) {
             log.error("FCM 메시지 전송 중 예외 발생", e);
-            return null;
+            return false;
         }
     }
 
     /**
      * 단일 기기 알림 전송
      */
-    public void sendMessageToToken(String token, String title, String body, Map<String, String> data) {
-        Message message = Message.builder()
-                .setNotification(Notification.builder()
-                        .setTitle(title)
-                        .setBody(body)
-                        .build())
-                .putAllData(data)
-                .setToken(token)
-                .build();
-
+    public boolean sendMessageToToken(String token, String title, String body, Map<String, String> data) {
         try {
-            String response = FirebaseMessaging.getInstance().sendAsync(message).get();
-//            log.info("FCM 메시지 전송 성공: {}", response);
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("FCM 메시지 전송 실패", e);
-            Thread.currentThread().interrupt();
+            Message message = Message.builder()
+                    .setNotification(Notification.builder()
+                            .setTitle(title)
+                            .setBody(body)
+                            .build())
+                    .putAllData(data)
+                    .setToken(token)
+                    .build();
+
+            // 비동기 대신 동기 방식으로 전송
+            String response = FirebaseMessaging.getInstance().send(message);
+            log.info("FCM 메시지 전송 성공: 토큰={}, 응답={}", token, response);
+            return true;
+        } catch (FirebaseMessagingException e) {
+            log.error("FCM 메시지 전송 실패: 토큰={}, 오류={}", token, e.getMessage());
+            return false;
         }
     }
 
     /**
-     * 여러 기기에 동시 알림 전송 (BatchResponse 반환)
+     * 여러 기기에 개별적으로 알림 전송
      */
-    public BatchResponse sendMessageToTokens(List<String> tokens, String title, String body, Map<String, String> data) {
+    public boolean sendMessageToTokens(Long memberId, List<String> tokens, String title, String body, Map<String, String> data) {
         if (tokens == null || tokens.isEmpty()) {
             log.warn("FCM 토큰 목록이 비어 있습니다. 알림을 보낼 수 없습니다.");
-            return null;
+            return false;
         }
 
-        MulticastMessage message = MulticastMessage.builder()
-                .setNotification(Notification.builder()
-                        .setTitle(title)
-                        .setBody(body)
-                        .build())
-                .putAllData(data)
-                .addAllTokens(tokens)
-                .build();
+        log.info("FCM 메시지 전송 시작: 토큰 수={}, 제목='{}'", tokens.size(), title);
 
-        try {
-            BatchResponse response = FirebaseMessaging.getInstance().sendMulticastAsync(message).get();
-//            log.info("FCM 메시지 전송 완료: 성공 {}, 실패 {}",
-//                    response.getSuccessCount(), response.getFailureCount());
+        int successCount = 0;
+        List<String> invalidTokens = new ArrayList<>();
 
-            if (response.getFailureCount() > 0) {
-                List<SendResponse> responses = response.getResponses();
-                for (int i = 0; i < responses.size(); i++) {
-                    if (!responses.get(i).isSuccessful()) {
-                        log.warn("FCM 메시지 전송 실패: 토큰={}, 오류={}",
-                                tokens.get(i), responses.get(i).getException().getMessage());
+        // 각 토큰에 대해 개별적으로 메시지 전송
+        for (String token : tokens) {
+            try {
+                Message message = Message.builder()
+                        .setNotification(com.google.firebase.messaging.Notification.builder()
+                                .setTitle(title)
+                                .setBody(body)
+                                .build())
+                        .putAllData(data)
+                        .setToken(token)
+                        .build();
+
+                // 동기식으로 전송
+                String response = FirebaseMessaging.getInstance().send(message);
+                successCount++;
+                log.info("FCM 메시지 전송 성공: 토큰={}, 응답={}", token, response);
+            } catch (FirebaseMessagingException e) {
+                // 토큰이 더 이상 유효하지 않은 경우 자동으로 제거
+                if (e.getMessagingErrorCode() == MessagingErrorCode.INVALID_ARGUMENT ||
+                        e.getMessagingErrorCode() == MessagingErrorCode.UNREGISTERED) {
+                    log.warn("무효한 FCM 토큰 발견: {}, 오류: {}", token, e.getMessage());
+                    invalidTokens.add(token);
+
+                    // 무효한 토큰 제거
+                    if (memberId != null) {
+                        fcmTokenService.removeUserToken(memberId, token);
                     }
+                } else {
+                    log.error("FCM 메시지 전송 실패: 토큰={}, 오류={}", token, e.getMessage());
                 }
             }
+        }
 
-            return response;
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("FCM 메시지 전송 중 예외 발생", e);
-            Thread.currentThread().interrupt();
-            return null;
+        // 무효한 토큰을 자동으로 제거한 결과 보고
+        if (!invalidTokens.isEmpty()) {
+            log.info("FCM 메시지 전송 중 무효한 토큰 {}개가 자동으로 제거되었습니다.", invalidTokens.size());
+        }
+
+        boolean allSuccess = successCount == tokens.size();
+        log.info("FCM 메시지 전송 완료: 성공={}, 실패={}", successCount, tokens.size() - successCount);
+
+        return successCount > 0; // 하나 이상 성공하면 true 반환
+    }
+
+    /**
+     * 테스트용 메시지 전송
+     */
+    public boolean sendTestMessage(Long memberId, String title, String body, Map<String, String> data) {
+        try {
+            // 회원의 FCM 토큰 목록 조회
+            List<String> tokens = fcmTokenService.getUserTokens(memberId);
+
+            if (tokens.isEmpty()) {
+                log.debug("회원 ID {}의 FCM 토큰이 없어 테스트 알림을 보낼 수 없습니다.", memberId);
+                return false;
+            }
+
+            // 토큰 목록으로 알림 전송
+            boolean success = sendMessageToTokens(memberId, tokens, title, body, data);
+
+            if (success) {
+                log.info("FCM 테스트 알림 전송 성공: 회원ID={}", memberId);
+            } else {
+                log.warn("FCM 테스트 알림 전송 실패: 회원ID={}", memberId);
+            }
+
+            return success;
+        } catch (Exception e) {
+            log.error("테스트 알림 전송 중 오류 발생", e);
+            return false;
         }
     }
 }
