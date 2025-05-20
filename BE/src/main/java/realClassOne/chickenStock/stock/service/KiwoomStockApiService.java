@@ -16,6 +16,7 @@ import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
+import realClassOne.chickenStock.stock.trade.service.KiwoomApiCircuitBreaker;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,7 +34,8 @@ public class KiwoomStockApiService {
 
     private static final String API_ENDPOINT = "/api/dostk/mrkcond";
 
-
+    private final WebClient webClient;
+    private final KiwoomApiCircuitBreaker circuitBreaker;
     private final KiwoomAuthService authService;
     private final ObjectMapper objectMapper;
     private final StockDataRepository stockDataRepository;

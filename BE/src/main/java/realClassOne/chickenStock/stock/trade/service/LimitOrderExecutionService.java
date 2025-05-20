@@ -1,4 +1,4 @@
-package realClassOne.chickenStock.stock.service;
+package realClassOne.chickenStock.stock.trade.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -19,11 +19,14 @@ import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.PendingOrder;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
+import realClassOne.chickenStock.stock.event.OrderExecutionEvent;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 import realClassOne.chickenStock.stock.repository.PendingOrderRepository;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
+import realClassOne.chickenStock.stock.service.StockChartService;
+import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 import realClassOne.chickenStock.stock.websocket.handler.PortfolioWebSocketHandler;
 import realClassOne.chickenStock.stock.websocket.handler.StockWebSocketHandler;
 
@@ -51,6 +54,9 @@ public class LimitOrderExecutionService {
     private final FeeTaxService feeTaxService;
     private final StockWebSocketHandler stockWebSocketHandler;
     private final NotificationService notificationService;
+    private final StockTradeService stockTradeService;
+    private final StockPriceCacheService stockPriceCacheService;
+    private final KiwoomWebSocketClient kiwoomWebSocketClient;
 
     // API 호출 제한 관리를 위한 스케줄러
     private final ScheduledExecutorService apiScheduler = Executors.newScheduledThreadPool(1);
@@ -64,6 +70,12 @@ public class LimitOrderExecutionService {
 
     // 차트 데이터 캐시 (종목코드 -> 차트 데이터)
     private final Map<String, CandleData> chartCache = new ConcurrentHashMap<>();
+
+    @org.springframework.context.event.EventListener
+    @Transactional
+    public void handleOrderExecutionEvent(OrderExecutionEvent event) {
+        processOrdersForCurrent(event.getOrder(), event.getCurrentPrice());
+    }
 
     // 캔들 데이터 클래스
     private static class CandleData {
@@ -576,5 +588,132 @@ public class LimitOrderExecutionService {
     public void cleanupCache() {
         chartCache.entrySet().removeIf(entry -> !entry.getValue().isValid());
         log.debug("차트 캐시 정리 완료. 남은 항목 수: {}", chartCache.size());
+    }
+
+    /**
+     * 지정가 매수 주문 생성 후 현재가 기준으로 즉시 체결 가능한지 확인
+     */
+    private boolean checkImmediateExecutionForBuy(PendingOrder order) {
+        try {
+            // 현재가 조회 - StockTradeService 사용
+            Long currentPrice = stockTradeService.getCurrentStockPriceWithRetry(order.getStockData().getShortCode());
+            if (currentPrice == null) {
+                return false;
+            }
+
+            // 매수 주문은 지정가보다 현재가가 낮거나 같을 때 체결 가능
+            if (order.getTargetPrice() >= currentPrice) {
+                log.info("지정가 매수 주문 즉시 체결 가능: 주문ID={}, 지정가={}, 현재가={}",
+                        order.getOrderId(), order.getTargetPrice(), currentPrice);
+
+                // 주문 데이터로 캔들 데이터 생성 (높은값/낮은값 모두 현재가로 설정)
+                CandleData candleData = new CandleData(
+                        order.getStockData().getShortCode(),
+                        currentPrice,  // 고가
+                        currentPrice,  // 저가
+                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                );
+
+                // 기존 LimitOrderExecutionService의 체결 메서드 사용
+                executeLimitOrder(order, currentPrice);
+                return true;
+            }
+
+            return false;
+        } catch (Exception e) {
+            log.error("즉시 체결 확인 중 오류: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 지정가 매도 주문 생성 후 현재가 기준으로 즉시 체결 가능한지 확인
+     */
+    private boolean checkImmediateExecutionForSell(PendingOrder order) {
+        try {
+            // 현재가 조회 - StockTradeService 사용
+            Long currentPrice = stockTradeService.getCurrentStockPriceWithRetry(order.getStockData().getShortCode());
+            if (currentPrice == null) {
+                return false;
+            }
+
+            // 매도 주문은 지정가보다 현재가가 높거나 같을 때 체결 가능
+            if (order.getTargetPrice() <= currentPrice) {
+                log.info("지정가 매도 주문 즉시 체결 가능: 주문ID={}, 지정가={}, 현재가={}",
+                        order.getOrderId(), order.getTargetPrice(), currentPrice);
+
+                // 주문 데이터로 캔들 데이터 생성 (높은값/낮은값 모두 현재가로 설정)
+                CandleData candleData = new CandleData(
+                        order.getStockData().getShortCode(),
+                        currentPrice,  // 고가
+                        currentPrice,  // 저가
+                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                );
+
+                // 기존 LimitOrderExecutionService의 체결 메서드 사용
+                executeLimitOrder(order, currentPrice);
+                return true;
+            }
+
+            return false;
+        } catch (Exception e) {
+            log.error("즉시 체결 확인 중 오류: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 현재가를 기준으로 지정가 주문 즉시 처리 (이벤트로 호출됨)
+     */
+    @Transactional
+    public void processOrdersForCurrent(PendingOrder order, Long currentPrice) {
+        try {
+            log.info("지정가 주문 즉시 체결 시작 - ID: {}, 종목: {}, 타입: {}, 지정가: {}, 현재가: {}",
+                    order.getOrderId(), order.getStockData().getShortCode(),
+                    order.getOrderType(), order.getTargetPrice(), currentPrice);
+
+            // 주문 상태 확인
+            if (order.getStatus() != PendingOrder.OrderStatus.PENDING) {
+                log.warn("처리 불가능한 주문 상태: {}, ID: {}", order.getStatus(), order.getOrderId());
+                return;
+            }
+
+            // 체결가 결정 (지정가와 현재가 중 적절한 값 선택)
+            Long executionPrice = order.getOrderType() == TradeHistory.TradeType.BUY ?
+                    Math.min(order.getTargetPrice(), currentPrice) :  // 매수는 더 낮은 가격으로
+                    Math.max(order.getTargetPrice(), currentPrice);   // 매도는 더 높은 가격으로
+
+            // 현재가를 캐시에 업데이트 - 다른 주문에서도 활용할 수 있도록
+            stockPriceCacheService.updatePriceAndNotify(order.getStockData().getShortCode(), currentPrice);
+
+            try {
+                // 주문 체결 처리
+                executeLimitOrder(order, executionPrice);
+            } finally {
+                // 체결 처리 완료 후 구독 해제 시도
+                try {
+                    String purpose = "PENDING_ORDER_" + order.getOrderId();
+                    if (kiwoomWebSocketClient.hasSubscriptionPurpose(order.getStockData().getShortCode(), purpose)) {
+                        log.info("주문 체결 후 구독 목적 해제: 주문ID={}, 종목={}, 목적={}",
+                                order.getOrderId(), order.getStockData().getShortCode(), purpose);
+                        kiwoomWebSocketClient.unsubscribeStockForPurpose(order.getStockData().getShortCode(), purpose);
+                    }
+                } catch (Exception e) {
+                    log.warn("주문 체결 후 구독 해제 중 오류 발생: {}", e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.error("지정가 주문 즉시 체결 중 오류 발생 - ID: {}", order.getOrderId(), e);
+        }
+    }
+
+    private Long getCurrentPrice(String stockCode) {
+        try {
+            // stockPriceCacheService 사용
+            return stockPriceCacheService.getCurrentStockPrice(stockCode);
+        } catch (Exception e) {
+            log.error("현재가 조회 중 오류 발생: {}", stockCode, e);
+            return null;
+        }
     }
 }

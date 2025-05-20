@@ -1309,4 +1309,26 @@ public class KiwoomWebSocketClient {
         }
     }
 
+    /**
+     * 최신 주식 현재가 반환 메서드
+     * @param stockCode 종목 코드
+     * @return 현재가 (실패 시 null)
+     */
+    public Long getLatestPrice(String stockCode) {
+        if (stockCode == null) return null;
+
+        String normalized = normalizeStockCode(stockCode);
+        JsonNode data = getLatestStockPriceData(normalized);
+
+        if (data != null && data.has("10")) {
+            try {
+                String priceStr = data.get("10").asText().replace(",", "").replace("+", "").replace("-", "").trim();
+                return Long.parseLong(priceStr);
+            } catch (NumberFormatException e) {
+                log.error("가격 변환 오류: {}", data.get("10").asText(), e);
+                return null;
+            }
+        }
+        return null;
+    }
 }
