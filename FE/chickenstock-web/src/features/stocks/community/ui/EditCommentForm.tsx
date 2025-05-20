@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/EditCommentForm.tsx
 import React, { useState } from "react";
 import { useUpdateCommentMutation } from "../model/mutations";
 import AlertModal from "./AlertModal";

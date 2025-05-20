@@ -1,5 +1,3 @@
-// @/features/stocks/community/utils/formatDate.ts
-
 /**
  * 날짜를 상대적 시간 또는 형식화된 날짜로 변환합니다.
  * @param dateString ISO 형식의 날짜 문자열

@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/index.tsx
 import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { useCommentsQuery } from "../model/queries";
