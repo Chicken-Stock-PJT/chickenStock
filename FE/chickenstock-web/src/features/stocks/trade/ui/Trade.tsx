@@ -12,11 +12,13 @@ import { isNxtStock } from "../model/nxtStocks";
 import { TradeAlert } from "./TradeAlert";
 import { queryClient } from "@/shared/api/queryClient";
 import { Button } from "@/shared/libs/ui/button";
+import { useGetAvailableQuantity } from "../model/queries";
 
 const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: string }) => {
   console.log(currentPrice);
   const [isNxt, setIsNxt] = useState<boolean>(false);
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
+  const [isSell, setIsSell] = useState<boolean>(false); // true: 매도, false: 매수
   const [quantity, setQuantity] = useState<number>(1); // 수량
   const lowPrice = 50000; // 최저 가격 (예시로 50000으로 설정, 실제로는 API에서 받아와야 함)
   const [price, setPrice] = useState<number>(currentPrice); // 가격 (지정가 주문 시 사용)
@@ -25,6 +27,8 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   const priceInputRef = useRef<HTMLInputElement>(null); // 가격 input ref
   const memberMoney =
     queryClient.getQueryData<{ memberMoney: number }>(["simpleProfile"])?.memberMoney ?? 0;
+
+  const { data: availableQuantity } = useGetAvailableQuantity(stockCode);
 
   useEffect(() => {
     const fetchIsNxt = async () => {
@@ -117,7 +121,11 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   };
 
   const handleMaxQuantity = () => {
-    setQuantity(Math.floor(memberMoney / (price || currentPrice)));
+    if (isSell) {
+      setQuantity(availableQuantity?.availableQuantity ?? 0);
+    } else {
+      setQuantity(Math.floor(memberMoney / (price || currentPrice)));
+    }
   };
 
   // 가격 감소 핸들러
@@ -234,6 +242,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                 data-[state=active]:font-semibold
                 data-[state=active]:text-chart-red
               "
+                onClick={() => setIsSell(false)}
               >
                 매수
               </TabsTrigger>
@@ -245,6 +254,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                 data-[state=active]:font-semibold
                 data-[state=active]:text-chart-blue
               "
+                onClick={() => setIsSell(true)}
               >
                 매도
               </TabsTrigger>
@@ -378,12 +388,12 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                 <label htmlFor="quantity" className="text-sm font-bold text-gray-500">
                   수량
                 </label>
-                {/* <Button
-                  className="rounded-full bg-primary-500 text-white"
+                <Button
+                  className="rounded-lg bg-primary-300 font-semibold text-black"
                   onClick={handleMaxQuantity}
                 >
                   최대
-                </Button> */}
+                </Button>
               </div>
               <div className="relative flex items-center">
                 <button
