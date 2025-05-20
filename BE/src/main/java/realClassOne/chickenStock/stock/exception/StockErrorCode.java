@@ -36,7 +36,8 @@ public enum StockErrorCode implements ErrorCode {
     INSUFFICIENT_STOCK_QUANTITY(HttpStatus.BAD_REQUEST, "STOCK-E026", "보유 수량이 부족합니다"),
     UNAUTHORIZED_ORDER_ACCESS(HttpStatus.FORBIDDEN, "STOCK-E027", "해당 주문에 접근 권한이 없습니다"),
     ORDER_NOT_CANCELABLE(HttpStatus.BAD_REQUEST, "STOCK-E028", "취소할 수 없는 주문입니다"),
-    ORDER_INQUIRY_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E029", "주문 조회 중 오류가 발생했습니다");
+    ORDER_INQUIRY_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "STOCK-E029", "주문 조회 중 오류가 발생했습니다"),
+    TRADE_RESTRICTED(HttpStatus.BAD_REQUEST, "STOCK-E030", "비정상적인 요청");
 
     private final HttpStatus httpStatus;
     private final String code;
