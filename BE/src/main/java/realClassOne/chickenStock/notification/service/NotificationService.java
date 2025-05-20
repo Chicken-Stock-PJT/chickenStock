@@ -170,28 +170,22 @@ public class NotificationService {
 
     public void createTradeFCMNotification(Long memberId, String stockName, String orderType,
                                            Integer quantity, Long price) {
-//        log.info("FCM 지정가 체결 알림 생성 시작: 회원ID={}, 종목={}, 타입={}, 수량={}, 가격={}",
-//                memberId, stockName, orderType, quantity, price);
+        log.info("FCM 지정가 체결 알림 생성 시작: 회원ID={}, 종목={}, 타입={}, 수량={}, 가격={}",
+                memberId, stockName, orderType, quantity, price);
 
         try {
-            // 회원의 FCM 토큰 목록 조회
-            List<String> tokens = fcmTokenService.getUserTokens(memberId);
+            // FCM 서비스를 통해 알림 발송 - memberId를 직접 전달
+            boolean success = fcmService.sendTradeNotificationToMember(
+                    memberId, stockName, orderType, quantity, price);
 
-            if (tokens.isEmpty()) {
-                log.debug("회원 ID {}의 FCM 토큰이 없어 푸시 알림을 보낼 수 없습니다.", memberId);
-                return;
+            if (success) {
+                log.info("FCM 지정가 체결 알림 전송 성공: 회원ID={}, 종목={}", memberId, stockName);
+            } else {
+                log.warn("FCM 지정가 체결 알림 전송 실패: 회원ID={}, 종목={}", memberId, stockName);
             }
-
-            // FCM 서비스를 통해 알림 발송
-            fcmService.sendTradeNotification(tokens, stockName, orderType, quantity, price);
-
-//            log.info("FCM 지정가 체결 알림 전송 완료: 회원ID={}, 종목={}, 토큰 수={}",
-//                    memberId, stockName, tokens.size());
-
         } catch (Exception e) {
             log.error("FCM 지정가 체결 알림 전송 중 오류 발생", e);
         }
     }
-
 
 }
