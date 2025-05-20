@@ -24,9 +24,9 @@ public class FeeTaxService {
         return Math.round(amount * 0.00015);
     }
 
-    // 매도 수수료 계산 (0.015%)
+    // 매도 수수료 계산 (0.05%)
     public long calculateSellFee(long amount) {
-        return Math.round(amount * 0.00015);
+        return Math.round(amount * 0.0005);
     }
 
     // 매도 세금 계산 (0.18%)

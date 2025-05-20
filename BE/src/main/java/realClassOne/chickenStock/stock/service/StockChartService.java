@@ -430,9 +430,9 @@ public class StockChartService {
             case "DAILY":
                 return "stk_dt_pole_chart_qry";
             case "WEEKLY":
-                return "stk_stk_pole_chart_qry";
+                return "stk_wk_pole_chart_qry";
             case "MONTHLY":
-                return "stk_mth_pole_chart_qry";
+                return "stk_mt_pole_chart_qry";
             case "YEARLY":
                 return "stk_yr_pole_chart_qry";
             case "MINUTE":
