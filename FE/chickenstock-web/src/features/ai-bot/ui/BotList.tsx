@@ -1,7 +1,7 @@
 import { botList } from "@/features/ai-bot/model/bot-list";
 import BotProfileCard from "./BotProfileCard";
 import { Button } from "@/shared/libs/ui/button";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,

@@ -1,5 +1,5 @@
 import { botList } from "@/features/ai-bot/model/bot-list";
-import { Bot, DollarSign, TrendingUp } from "lucide-react";
+import { DollarSign, TrendingUp } from "lucide-react";
 
 const AiInfo = ({
   aiBotId,
