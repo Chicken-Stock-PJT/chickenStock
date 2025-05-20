@@ -6,20 +6,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import realClassOne.chickenStock.common.exception.CustomException;
-import realClassOne.chickenStock.member.entity.Member;
-import realClassOne.chickenStock.member.exception.MemberErrorCode;
-import realClassOne.chickenStock.member.repository.MemberRepository;
-import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.dto.common.PendingOrderDTO;
 import realClassOne.chickenStock.stock.dto.request.TradeRequestDTO;
-import realClassOne.chickenStock.stock.dto.request.TradeTaskDTO;
 import realClassOne.chickenStock.stock.dto.response.OrderCancelResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.TradeResponseDTO;
-import realClassOne.chickenStock.stock.service.StockTradeService;
-import realClassOne.chickenStock.stock.service.trade.TradeQueueService;
-import realClassOne.chickenStock.stock.service.trade.TradingSecurityService;
+import realClassOne.chickenStock.stock.service.trade.StockTradeFacadeService;
+
 
 import java.util.List;
 
@@ -29,74 +21,15 @@ import java.util.List;
 @Slf4j
 public class StockTradingController {
 
-    private final StockTradeService stockTradeService;
-    private final JwtTokenProvider jwtTokenProvider;
-    private final MemberRepository memberRepository;
-    private final TradeQueueService tradeQueueService;
-    private final TradingSecurityService tradingSecurityService;
+    private final StockTradeFacadeService tradeFacadeService;
 
     @PostMapping("/buy")
-    public ResponseEntity<TradeResponseDTO> buyStock(@RequestHeader("Authorization") String authorization,
-                                                     @RequestBody @Valid TradeRequestDTO request) {
+    public ResponseEntity<TradeResponseDTO> buyStock(
+            @RequestHeader("Authorization") String authorization,
+            @RequestBody @Valid TradeRequestDTO request) {
         try {
-            // 토큰에서 회원 정보 추출
-            String token = jwtTokenProvider.resolveToken(authorization);
-            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
-
-            Member member = memberRepository.findById(memberId)
-                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
-
-            // 비정상 거래 패턴 체크
-            boolean isAbnormal = tradingSecurityService.checkAbnormalTradingPattern(
-                    memberId, request.getStockCode(), "BUY");
-
-            // 제한된 회원인지 체크
-            boolean isRestricted = tradingSecurityService.isRestricted(memberId);
-
-            if (isAbnormal || isRestricted) {
-                return ResponseEntity
-                        .status(HttpStatus.FORBIDDEN)
-                        .body(TradeResponseDTO.builder()
-                                .status("ERROR")
-                                .message("비정상적인 거래 패턴이 감지되어 제한되었습니다.")
-                                .build());
-            }
-
-            // 시장가 주문인 경우 즉시 처리
-            if (Boolean.TRUE.equals(request.getMarketOrder())) {
-                return ResponseEntity.ok(stockTradeService.buyStock(authorization, request));
-            }
-
-            // 지정가 주문인 경우 큐에 넣어 비동기 처리
-            boolean queued = tradeQueueService.queueTradeRequest(
-                    new TradeTaskDTO(member, "BUY", request));
-
-            if (!queued) {
-                return ResponseEntity
-                        .status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(TradeResponseDTO.builder()
-                                .status("ERROR")
-                                .message("시스템이 현재 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.")
-                                .build());
-            }
-
-            return ResponseEntity.accepted().body(
-                    TradeResponseDTO.builder()
-                            .status("PENDING")
-                            .message("매수 주문이 접수되었습니다.")
-                            .stockCode(request.getStockCode())
-                            .quantity(request.getQuantity())
-                            .unitPrice(request.getPrice())
-                            .totalPrice(request.getPrice() * request.getQuantity())
-                            .build());
-
-        } catch (CustomException e) {
-            return ResponseEntity
-                    .status(HttpStatus.BAD_REQUEST)
-                    .body(TradeResponseDTO.builder()
-                            .status("ERROR")
-                            .message(e.getMessage())
-                            .build());
+            TradeResponseDTO response = tradeFacadeService.processBuyOrder(authorization, request);
+            return getResponseEntityForTradeResponse(response);
         } catch (Exception e) {
             log.error("매수 처리 중 오류 발생", e);
             return ResponseEntity
@@ -109,67 +42,12 @@ public class StockTradingController {
     }
 
     @PostMapping("/sell")
-    public ResponseEntity<TradeResponseDTO> sellStock(@RequestHeader("Authorization") String authorization,
-                                                      @RequestBody @Valid TradeRequestDTO request) {
+    public ResponseEntity<TradeResponseDTO> sellStock(
+            @RequestHeader("Authorization") String authorization,
+            @RequestBody @Valid TradeRequestDTO request) {
         try {
-            // 토큰에서 회원 정보 추출
-            String token = jwtTokenProvider.resolveToken(authorization);
-            Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
-
-            Member member = memberRepository.findById(memberId)
-                    .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
-
-            // 비정상 거래 패턴 체크
-            boolean isAbnormal = tradingSecurityService.checkAbnormalTradingPattern(
-                    memberId, request.getStockCode(), "SELL");
-
-            // 제한된 회원인지 체크
-            boolean isRestricted = tradingSecurityService.isRestricted(memberId);
-
-            if (isAbnormal || isRestricted) {
-                return ResponseEntity
-                        .status(HttpStatus.FORBIDDEN)
-                        .body(TradeResponseDTO.builder()
-                                .status("ERROR")
-                                .message("비정상적인 거래 패턴이 감지되어 제한되었습니다.")
-                                .build());
-            }
-
-            // 시장가 주문인 경우 즉시 처리
-            if (Boolean.TRUE.equals(request.getMarketOrder())) {
-                return ResponseEntity.ok(stockTradeService.sellStock(authorization, request));
-            }
-
-            // 지정가 주문인 경우 큐에 넣어 비동기 처리
-            boolean queued = tradeQueueService.queueTradeRequest(
-                    new TradeTaskDTO(member, "SELL", request));
-
-            if (!queued) {
-                return ResponseEntity
-                        .status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(TradeResponseDTO.builder()
-                                .status("ERROR")
-                                .message("시스템이 현재 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.")
-                                .build());
-            }
-
-            return ResponseEntity.accepted().body(
-                    TradeResponseDTO.builder()
-                            .status("PENDING")
-                            .message("매도 주문이 접수되었습니다.")
-                            .stockCode(request.getStockCode())
-                            .quantity(request.getQuantity())
-                            .unitPrice(request.getPrice())
-                            .totalPrice(request.getPrice() * request.getQuantity())
-                            .build());
-
-        } catch (CustomException e) {
-            return ResponseEntity
-                    .status(HttpStatus.BAD_REQUEST)
-                    .body(TradeResponseDTO.builder()
-                            .status("ERROR")
-                            .message(e.getMessage())
-                            .build());
+            TradeResponseDTO response = tradeFacadeService.processSellOrder(authorization, request);
+            return getResponseEntityForTradeResponse(response);
         } catch (Exception e) {
             log.error("매도 처리 중 오류 발생", e);
             return ResponseEntity
@@ -181,18 +59,36 @@ public class StockTradingController {
         }
     }
 
-    // 주문 취소 API
     @PostMapping("/cancel-order/{orderId}")
     public ResponseEntity<OrderCancelResponseDTO> cancelOrder(
             @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable Long orderId) {
+        boolean result = tradeFacadeService.cancelPendingOrder(authorizationHeader, orderId);
+        return result ?
+                ResponseEntity.ok(OrderCancelResponseDTO.success()) :
+                ResponseEntity.badRequest().body(OrderCancelResponseDTO.fail());
+    }
 
-        boolean result = stockTradeService.cancelPendingOrder(authorizationHeader, orderId);
+    @GetMapping("/pending-orders")
+    public ResponseEntity<List<PendingOrderDTO>> getPendingOrders(
+            @RequestHeader("Authorization") String authorization) {
+        try {
+            List<PendingOrderDTO> pendingOrders = tradeFacadeService.getPendingOrdersByMember(authorization);
+            return ResponseEntity.ok(pendingOrders);
+        } catch (Exception e) {
+            log.error("미체결 주문 조회 중 오류 발생", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
 
-        if (result) {
-            return ResponseEntity.ok(OrderCancelResponseDTO.success());
+    // 응답 상태에 따른 ResponseEntity 생성 헬퍼 메서드
+    private ResponseEntity<TradeResponseDTO> getResponseEntityForTradeResponse(TradeResponseDTO response) {
+        if ("ERROR".equals(response.getStatus())) {
+            return ResponseEntity.badRequest().body(response);
+        } else if ("PENDING".equals(response.getStatus())) {
+            return ResponseEntity.accepted().body(response);
         } else {
-            return ResponseEntity.badRequest().body(OrderCancelResponseDTO.fail());
+            return ResponseEntity.ok(response);
         }
     }
 }

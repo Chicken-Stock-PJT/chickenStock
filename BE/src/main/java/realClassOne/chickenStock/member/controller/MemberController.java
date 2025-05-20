@@ -2,19 +2,23 @@ package realClassOne.chickenStock.member.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import realClassOne.chickenStock.common.exception.CustomException;
 import realClassOne.chickenStock.member.dto.request.NicknameChangeRequestDTO;
 import realClassOne.chickenStock.member.dto.response.*;
 import realClassOne.chickenStock.member.service.MemberService;
 import jakarta.validation.Valid;
 import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 import realClassOne.chickenStock.stock.dto.response.DashboardResponseDTO;
+import realClassOne.chickenStock.stock.dto.response.InitializeMoneyResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.PortfolioResponseDTO;
 import realClassOne.chickenStock.stock.service.DashboardService;
 import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.service.StockTradeService;
+import realClassOne.chickenStock.stock.service.trade.StockTradeFacadeService;
 
 import java.time.LocalDateTime;
 
@@ -25,9 +29,9 @@ public class MemberController {
     // 회원 정보조회/ 수정, 탈퇴, 프로필 관리 등 기타 회원 데이터 관련 API
 
     private final MemberService memberService;
-    private final StockTradeService stockTradeService;
     private final PortfolioService portfolioService;
     private final DashboardService dashboardService;
+    private final StockTradeFacadeService stockTradeFacadeService;
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
@@ -63,12 +67,21 @@ public class MemberController {
         return ResponseEntity.ok(responseDTO);
     }
 
-    // 회원 기본금 초기화 API (1억)
+    // 회원 자금 초기화 API
     @PostMapping("/initialize-money")
-    public ResponseEntity<Object> initializeMemberMoney(
-            @RequestHeader("Authorization") String authorizationHeader) {
-
-        return ResponseEntity.ok(stockTradeService.initializeMemberMoney(authorizationHeader));
+    public ResponseEntity<InitializeMoneyResponseDTO> initializeMemberMoney(
+            @RequestHeader("Authorization") String authorization) {
+        try {
+            // stockTradeService 대신 memberService 활용
+            InitializeMoneyResponseDTO response = memberService.initializeMemberMoney(authorization);
+            return ResponseEntity.ok(response);
+        } catch (CustomException e) {
+            return ResponseEntity.badRequest().body(
+                    new InitializeMoneyResponseDTO("error", e.getMessage(), null));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    new InitializeMoneyResponseDTO("error", "시스템 오류가 발생했습니다.", null));
+        }
     }
 
     // 보유 주식 포트폴리오 조회 API

@@ -1,7 +1,5 @@
 package realClassOne.chickenStock.stock.service.trade;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -9,99 +7,85 @@ import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class StockPriceCacheService {
 
-    private final RedisTemplate<String, String> redisTemplate;
+    private final RedisTemplate<String, Object> redisTemplate;
     private final KiwoomStockApiService kiwoomStockApiService;
-    private final ObjectMapper objectMapper;
 
-    // 캐시 키 접두사 및 TTL 설정
-    private static final String PRICE_CACHE_KEY_PREFIX = "stock:price:";
-    private static final long PRICE_CACHE_TTL_SECONDS = 3; // 2-3초 TTL
-
-    // API 요청 제한을 위한 세마포어 (초당 3회 제한)
-    private final Semaphore kiwoomApiSemaphore = new Semaphore(3);
+    private static final String CACHE_KEY_PREFIX = "stock:price:";
+    private static final long CACHE_TTL_SECONDS = 3; // 3초 캐시 유효시간
 
     /**
-     * 종목 현재가 조회 (캐싱 적용)
-     * 1. 캐시 확인
-     * 2. 캐시에 없으면 API 호출 (API 제한 적용)
-     * 3. 결과 캐싱 후 반환
+     * 캐시에서만 종목 가격을 조회 (API 호출 없음)
+     * @param stockCode 종목 코드
+     * @return 캐시된 가격 (없으면 null)
+     */
+    public Long getFromCacheOnly(String stockCode) {
+        try {
+            String cacheKey = CACHE_KEY_PREFIX + stockCode;
+            Object cached = redisTemplate.opsForValue().get(cacheKey);
+
+            if (cached != null) {
+                // Integer와 Long 모두 처리할 수 있도록 안전한 변환
+                if (cached instanceof Integer) {
+                    Integer intPrice = (Integer) cached;
+                    Long longPrice = intPrice.longValue();
+                    log.debug("캐시에서 종목 {} 가격 조회(Integer->Long 변환): {}", stockCode, longPrice);
+                    return longPrice;
+                } else if (cached instanceof Long) {
+                    Long price = (Long) cached;
+                    log.debug("캐시에서 종목 {} 가격 조회: {}", stockCode, price);
+                    return price;
+                } else if (cached instanceof Number) {
+                    // 다른 숫자 타입도 처리
+                    Number number = (Number) cached;
+                    Long price = number.longValue();
+                    log.debug("캐시에서 종목 {} 가격 조회(Number->Long 변환): {}", stockCode, price);
+                    return price;
+                } else if (cached instanceof String) {
+                    // 문자열인 경우 파싱 시도
+                    try {
+                        String strValue = (String) cached;
+                        strValue = strValue.replace(",", "").replace("+", "").replace("-", "").trim();
+                        Long price = Long.parseLong(strValue);
+                        log.debug("캐시에서 종목 {} 가격 조회(String->Long 변환): {}", stockCode, price);
+                        return price;
+                    } catch (NumberFormatException e) {
+                        log.warn("캐시된 문자열 가격 파싱 실패: {}", cached);
+                    }
+                } else {
+                    // 문자열이나 다른 타입인 경우
+                    log.warn("캐시에서 종목 {} 가격 조회 실패: 예상치 못한 데이터 타입 ({})",
+                            stockCode, cached.getClass().getName());
+                    redisTemplate.delete(cacheKey); // 잘못된 타입의 데이터 삭제
+                    return null;
+                }
+            }
+        } catch (Exception e) {
+            log.error("캐시에서 종목 {} 가격 조회 중 오류: {}", stockCode, e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * 종목 현재가를 조회 (캐시 → API 호출 순)
+     * @param stockCode 종목 코드
+     * @return 현재가 (실패 시 null)
      */
     public Long getCurrentStockPrice(String stockCode) {
-        String cacheKey = PRICE_CACHE_KEY_PREFIX + stockCode;
-
-        // 1. 캐시 확인
-        String cachedPrice = redisTemplate.opsForValue().get(cacheKey);
+        // 캐시에서 먼저 조회
+        Long cachedPrice = getFromCacheOnly(stockCode);
         if (cachedPrice != null) {
-            try {
-                log.debug("캐시에서 종목 {} 가격 조회: {}", stockCode, cachedPrice);
-                return Long.parseLong(cachedPrice);
-            } catch (NumberFormatException e) {
-                log.warn("캐시된 가격 변환 오류: {}", cachedPrice);
-                // 캐시 삭제 후 다시 조회
-                redisTemplate.delete(cacheKey);
-            }
+            return cachedPrice;
         }
 
-        // 2. API 호출 (세마포어 적용)
+        // 캐시에 없으면 API 호출
         try {
-            // API 요청 제한 적용 (3초 타임아웃)
-            if (!kiwoomApiSemaphore.tryAcquire(3, TimeUnit.SECONDS)) {
-                log.warn("API 요청 한도 초과. 종목 {} 가격 조회 실패", stockCode);
-                return null;
-            }
-
-            try {
-                // 키움 API 호출
-                Long currentPrice = fetchCurrentPriceFromAPI(stockCode);
-
-                if (currentPrice != null) {
-                    // 3. 결과 캐싱 (2-3초 TTL)
-                    redisTemplate.opsForValue().set(cacheKey, String.valueOf(currentPrice),
-                            PRICE_CACHE_TTL_SECONDS, TimeUnit.SECONDS);
-                    log.debug("종목 {} 가격 캐싱 완료: {} (TTL: {}초)",
-                            stockCode, currentPrice, PRICE_CACHE_TTL_SECONDS);
-                }
-
-                return currentPrice;
-            } finally {
-                // 333ms 후에 세마포어 반환 (초당 3회 제한 맞추기)
-                schedulePermitRelease(333);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("API 세마포어 획득 중 인터럽트 발생", e);
-            return null;
-        } catch (Exception e) {
-            log.error("종목 {} 가격 조회 중 오류 발생", stockCode, e);
-            return null;
-        }
-    }
-
-    /**
-     * 시간 간격을 두고 세마포어 반환 (API 요청 간격 유지)
-     */
-    private void schedulePermitRelease(long delayMs) {
-        CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS)
-                .execute(() -> kiwoomApiSemaphore.release());
-    }
-
-    /**
-     * 키움 API에서 현재가 조회
-     */
-    private Long fetchCurrentPriceFromAPI(String stockCode) {
-        try {
-            // 1. 먼저 getStockInfo 메서드 시도
             StockInfoResponseDTO stockInfo = kiwoomStockApiService.getStockInfo(stockCode);
             if (stockInfo != null) {
                 String priceStr = stockInfo.getCurrentPrice()
@@ -109,107 +93,81 @@ public class StockPriceCacheService {
                         .replace("+", "")
                         .replace("-", "")
                         .trim();
-                return Long.parseLong(priceStr);
-            }
+                Long price = Long.parseLong(priceStr);
 
-            // 2. 실패시 getStockBasicInfo 메서드 시도
-            JsonNode stockBasicInfo = kiwoomStockApiService.getStockBasicInfo(stockCode);
-            if (stockBasicInfo != null && stockBasicInfo.has("cur_prc")) {
-                String priceStr = stockBasicInfo.get("cur_prc").asText()
+                // 캐시에 저장 (Long으로 저장되도록 명시적으로 변환)
+                String cacheKey = CACHE_KEY_PREFIX + stockCode;
+                redisTemplate.opsForValue().set(cacheKey, price, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+                log.debug("종목 {} 가격 캐싱 완료: {} (TTL: {}초)", stockCode, price, CACHE_TTL_SECONDS);
+
+                return price;
+            }
+        } catch (Exception e) {
+            log.error("종목 {} 가격 조회 실패: {}", stockCode, e.getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * 캐시 무효화
+     */
+    public void invalidateCache(String stockCode) {
+        String cacheKey = CACHE_KEY_PREFIX + stockCode;
+        redisTemplate.delete(cacheKey);
+        log.debug("종목 {} 가격 캐시 무효화", stockCode);
+    }
+
+    /**
+     * 강제로 캐시 갱신 및 반환 (락 획득 실패 시 폴백)
+     */
+    public Long refreshAndGetPrice(String stockCode) {
+        try {
+            // 기존 캐시 즉시 무효화
+            invalidateCache(stockCode);
+
+            // API 직접 호출하여 최신 데이터 가져오기
+            StockInfoResponseDTO stockInfo = kiwoomStockApiService.getStockInfo(stockCode);
+            if (stockInfo != null) {
+                String priceStr = stockInfo.getCurrentPrice()
                         .replace(",", "")
                         .replace("+", "")
                         .replace("-", "")
                         .trim();
-                return Long.parseLong(priceStr);
-            }
+                Long price = Long.parseLong(priceStr);
 
-            log.warn("종목 {} API 응답에서 현재가를 찾을 수 없음", stockCode);
-            return null;
+                // 캐시에 새로 저장
+                String cacheKey = CACHE_KEY_PREFIX + stockCode;
+                redisTemplate.opsForValue().set(cacheKey, price, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+                log.info("종목 {} 가격 강제 리프레시 완료: {} (TTL: {}초)", stockCode, price, CACHE_TTL_SECONDS);
+
+                return price;
+            }
         } catch (Exception e) {
-            log.error("종목 {} API 가격 조회 중 오류 발생", stockCode, e);
-            return null;
+            log.error("종목 {} 가격 강제 리프레시 실패: {}", stockCode, e.getMessage());
         }
+
+        return null;
     }
 
     /**
-     * 여러 종목의 가격을 일괄 조회 (배치 처리)
+     * 여러 종목의 가격을 일괄 리프레시 (배치 처리용)
      */
-    public Map<String, Long> getCurrentStockPrices(List<String> stockCodes) {
-        Map<String, Long> results = new HashMap<>();
-        Map<String, String> missingInCache = new HashMap<>();
+    public int batchRefreshPrices(String... stockCodes) {
+        int successCount = 0;
 
-        // 1. 캐시에서 먼저 조회
         for (String stockCode : stockCodes) {
-            String cacheKey = PRICE_CACHE_KEY_PREFIX + stockCode;
-            String cachedPrice = redisTemplate.opsForValue().get(cacheKey);
-
-            if (cachedPrice != null) {
-                try {
-                    results.put(stockCode, Long.parseLong(cachedPrice));
-                } catch (NumberFormatException e) {
-                    missingInCache.put(cacheKey, stockCode);
+            try {
+                Long price = refreshAndGetPrice(stockCode);
+                if (price != null) {
+                    successCount++;
                 }
-            } else {
-                missingInCache.put(cacheKey, stockCode);
+            } catch (Exception e) {
+                log.error("배치 리프레시 중 종목 {} 처리 실패: {}", stockCode, e.getMessage());
             }
         }
 
-        // 2. 캐시에 없는 종목만 API 호출 (최대 3개씩 병렬 처리)
-        if (!missingInCache.isEmpty()) {
-            List<String> missingCodes = new ArrayList<>(missingInCache.values());
-            int batchSize = 3; // 세마포어 크기와 일치
-
-            for (int i = 0; i < missingCodes.size(); i += batchSize) {
-                List<String> batch = missingCodes.subList(i,
-                        Math.min(i + batchSize, missingCodes.size()));
-
-                // 병렬 처리
-                List<CompletableFuture<Void>> futures = batch.stream()
-                        .map(code -> CompletableFuture.runAsync(() -> {
-                            Long price = getCurrentStockPrice(code);
-                            if (price != null) {
-                                results.put(code, price);
-                            }
-                        }))
-                        .collect(Collectors.toList());
-
-                // 배치 완료 대기
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-                // API 요청 간격 조절 (배치 간 1초 대기)
-                if (i + batchSize < missingCodes.size()) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            }
-        }
-
-        return results;
-    }
-
-    /**
-     * 캐시 상태 확인
-     */
-    public Map<String, Object> getCacheStats() {
-        Map<String, Object> stats = new HashMap<>();
-        Set<String> keys = redisTemplate.keys(PRICE_CACHE_KEY_PREFIX + "*");
-
-        stats.put("cacheSize", keys != null ? keys.size() : 0);
-        stats.put("availablePermits", kiwoomApiSemaphore.availablePermits());
-
-        return stats;
-    }
-
-    /**
-     * 특정 종목의 가격 캐시를 무효화합니다.
-     * @param stockCode 종목 코드
-     */
-    public void invalidateCache(String stockCode) {
-        String cacheKey = PRICE_CACHE_KEY_PREFIX + stockCode;
-        redisTemplate.delete(cacheKey);
-        log.debug("종목 {} 가격 캐시 무효화", stockCode);
+        log.info("배치 가격 리프레시 완료: {}/{} 성공", successCount, stockCodes.length);
+        return successCount;
     }
 }

@@ -5,6 +5,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ import realClassOne.chickenStock.member.dto.request.PasswordChangeRequestDTO;
 import realClassOne.chickenStock.member.repository.WatchListRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.dto.response.DashboardResponseDTO;
+import realClassOne.chickenStock.stock.dto.response.InitializeMoneyResponseDTO;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 
@@ -60,6 +62,7 @@ public class MemberService {
     private final StockDataRepository stockDataRepository;
     private final KiwoomStockApiService kiwoomStockApiService;
     private final DashboardService dashboardService;
+    private final EntityManager entityManager;
 
     @Transactional(readOnly = true)
     public MemberResponseDto getCurrentUser() {
@@ -993,5 +996,83 @@ public class MemberService {
             log.error("보유 주식 조회 중 오류 발생", e);
             throw new CustomException(StockErrorCode.OPERATION_FAILED, "보유 주식 조회 중 오류가 발생했습니다");
         }
+    }
+
+    @Transactional
+    public InitializeMoneyResponseDTO initializeMemberMoney(String authorization) {
+        String token = jwtTokenProvider.resolveToken(authorization);
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
+
+        // 회원 정보 먼저 불러와서 초기화 여부 확인
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        // 이미 초기화를 한 경우 예외 발생
+        if (!List.of(1L, 2L, 3L, 4L).contains(member.getMemberId())) { // BOT일 경우 초기화 무제한
+            if (member.isMoneyInitialized()) {
+                throw new CustomException(MemberErrorCode.MONEY_ALREADY_INITIALIZED);
+            }
+        }
+
+        // 1. 모든 엔티티를 JPQL을 사용하여 직접 삭제 (순서 중요: 외래 키 제약조건 고려)
+
+        // 1.1 보류 중인 주문(PendingOrder) 삭제
+        int deletedPendingOrders = entityManager.createQuery(
+                        "DELETE FROM PendingOrder p WHERE p.member.id = :memberId")
+                .setParameter("memberId", memberId)
+                .executeUpdate();
+
+        // 1.2 거래 내역(TradeHistory) 삭제
+        int deletedTradeHistories = entityManager.createQuery(
+                        "DELETE FROM TradeHistory t WHERE t.member.id = :memberId")
+                .setParameter("memberId", memberId)
+                .executeUpdate();
+
+        // 1.3 보유 포지션(HoldingPosition) 삭제
+        int deletedPositions = entityManager.createQuery(
+                        "DELETE FROM HoldingPosition h WHERE h.member.id = :memberId")
+                .setParameter("memberId", memberId)
+                .executeUpdate();
+
+        // 1.4 투자 요약(InvestmentSummary) 삭제
+        int deletedSummaries = entityManager.createQuery(
+                        "DELETE FROM InvestmentSummary i WHERE i.member.id = :memberId")
+                .setParameter("memberId", memberId)
+                .executeUpdate();
+
+        // 변경사항을 DB에 반영
+        entityManager.flush();
+
+        // 중요: 영속성 컨텍스트 초기화
+        entityManager.clear();
+
+        // 2. 새로운 상태로 회원 정보 다시 로드
+        member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        // 3. 회원 자금 초기화 (1억원)
+        member.updateMemberMoney(100_000_000L);
+        member.markMoneyInitialized(); // 초기화 여부 true로 변경
+
+        // 4. 새로운 투자 요약 생성
+        InvestmentSummary summary = InvestmentSummary.of(
+                member,
+                0L,  // 총 투자금
+                0L,  // 총 평가액
+                0L,  // 총 손익
+                0.0  // 수익률
+        );
+
+        // 5. 저장 및 반영
+        memberRepository.save(member);
+
+        // 6. 변경사항 즉시 적용을 위한 플러시
+        memberRepository.flush();
+
+        return new InitializeMoneyResponseDTO(
+                "success",
+                "회원 기본금이 1억원으로 초기화되었으며, 모든 주식 관련 데이터가 삭제되었습니다.",
+                memberId
+        );
     }
 }
