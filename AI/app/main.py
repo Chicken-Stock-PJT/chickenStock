@@ -19,7 +19,7 @@ from app.bot.bot_manager import BotManager
 
 from app.monitor.cache_monitor import add_monitor_to_app
 from app.data.data_utils import save_all_chart_data, prepare_dataset_for_upload
-# from app.strategies.drl_utrans import DRLUTransTradingModel
+from app.strategies.drl_utrans import DRLUTransTradingModel
 
 # 설정 파일 import
 from app.config import settings
@@ -76,9 +76,9 @@ service_status = {
 trading_loop_task = None
 scheduler_task_instance = None
 
-os.environ['DRL_UTRANS_MODEL_PATH'] = os.path.join(os.path.dirname(__file__), "models/drl_utrans")
+os.environ['DRL_UTRANS_MODEL_PATH'] = os.path.join(os.path.dirname(__file__), "models")
 
-async def get_next_run_time(target_hour=9, target_minute=0, target_second=0):
+async def get_next_run_time(target_hour=7, target_minute=0, target_second=0):
     """다음 실행 시간까지 대기해야 하는 시간(초) 계산"""
     now = datetime.now()
     target_time = datetime.now().replace(hour=target_hour, minute=target_minute, second=target_second, microsecond=0)
