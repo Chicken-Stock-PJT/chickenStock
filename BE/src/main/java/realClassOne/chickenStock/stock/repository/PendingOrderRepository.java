@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import realClassOne.chickenStock.member.entity.Member;
 import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.PendingOrder;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 
 import java.util.List;
@@ -85,7 +86,11 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
                                                          @Param("currentPrice") Long currentPrice);
 
     // 풀매도를 위한 메서드
-    List<PendingOrder> findByMemberIdAndStockDataIdAndOrderTypeAndStatus(
-            Long memberId, Long stockDataId, TradeHistory.TradeType orderType, PendingOrder.OrderStatus status);
+    List<PendingOrder> findByMemberAndStockDataAndOrderTypeAndStatus(
+            Member member,
+            StockData stockData,
+            TradeHistory.TradeType orderType,
+            PendingOrder.OrderStatus status
+    );
 
 }

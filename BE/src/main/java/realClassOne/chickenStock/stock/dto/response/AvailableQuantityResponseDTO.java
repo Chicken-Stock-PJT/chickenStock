@@ -6,6 +6,6 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public class AvailableQuantityResponseDTO {
-    private Long stockDataId;
+    private String shortCode;
     private int availableQuantity;
 }

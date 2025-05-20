@@ -1930,22 +1930,32 @@ public class StockTradeService implements KiwoomWebSocketClient.StockDataListene
 //    }
 
     // 특정 멤버의 특정 종목 수 조회
-    public int getAvailableSellQuantity(String authorizationHeader, Long stockDataId) {
+    public int getAvailableSellQuantity(String authorizationHeader, String shortCode) {
         String token = jwtTokenProvider.resolveToken(authorizationHeader);
         Long memberId = jwtTokenProvider.getMemberIdFromToken(token);
 
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(MemberErrorCode.MEMBER_NOT_FOUND));
+
+        StockData stockData = stockDataRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new CustomException(StockErrorCode.STOCK_NOT_FOUND));
+
+        // 보유 수량 조회
         int holdingQty = holdingPositionRepository
-                .findByMemberIdAndStockDataId(memberId, stockDataId)
+                .findByMemberAndStockData(member, stockData)
                 .map(HoldingPosition::getQuantity)
                 .orElse(0);
 
-        int pendingSellQty = pendingOrderRepository
-                .findByMemberIdAndStockDataIdAndOrderTypeAndStatus(
-                        memberId,
-                        stockDataId,
+        // 팬딩 매도 주문 수량 합산
+        List<PendingOrder> pendingOrders =
+                pendingOrderRepository.findByMemberAndStockDataAndOrderTypeAndStatus(
+                        member,
+                        stockData,
                         TradeHistory.TradeType.SELL,
-                        PendingOrder.OrderStatus.PENDING)
-                .stream()
+                        PendingOrder.OrderStatus.PENDING
+                );
+
+        int pendingSellQty = pendingOrders.stream()
                 .mapToInt(PendingOrder::getQuantity)
                 .sum();
 

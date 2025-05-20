@@ -53,12 +53,12 @@ public class StockController {
     }
 
     // 특정 멤버가 가지고 있는 특정 종목의 주식 수 조회
-    @GetMapping("/api/stocks/{stockDataId}/available-quantity")
+    @GetMapping("/{shortCode}/available-quantity")
     public ResponseEntity<AvailableQuantityResponseDTO> getAvailableSellQuantity(
-            @PathVariable Long stockDataId,
+            @PathVariable String shortCode,
             @RequestHeader("Authorization") String authorizationHeader) {
 
-        int availableQty = stockTradeService.getAvailableSellQuantity(authorizationHeader, stockDataId);
-        return ResponseEntity.ok(new AvailableQuantityResponseDTO(stockDataId, availableQty));
+        int availableQty = stockTradeService.getAvailableSellQuantity(authorizationHeader, shortCode);
+        return ResponseEntity.ok(new AvailableQuantityResponseDTO(shortCode, availableQty));
     }
 }
