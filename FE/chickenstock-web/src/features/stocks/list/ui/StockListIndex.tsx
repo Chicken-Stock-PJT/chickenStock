@@ -32,7 +32,7 @@ const StockListIndex = ({ rankingType }: StockListIndexProps) => {
   };
 
   return (
-    <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-lg bg-primary-50 p-4 text-gray-700">
+    <div className="sticky top-0 z-10 hidden items-center justify-between rounded-t-lg bg-primary-50 p-4 text-gray-700 lg:flex">
       {getColumns().map((column) => (
         <div
           key={column.id}
