@@ -62,7 +62,14 @@ const WatchList = () => {
         <div className="divide-y">
           {filteredWatchlist.length > 0 ? (
             filteredWatchlist.map((stock) => (
-              <div key={stock.stockCode} className="flex items-center hover:bg-gray-50">
+              <div
+                key={stock.stockCode}
+                className="flex items-center hover:bg-gray-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void navigate(`/stocks/${stock.stockCode}`);
+                }}
+              >
                 <Heart
                   className="ml-4 size-4 cursor-pointer"
                   stroke="red"
@@ -122,7 +129,10 @@ const WatchList = () => {
               <div
                 key={stock.stockCode}
                 className="group relative flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-gray-50 active:bg-gray-100"
-                onClick={() => void navigate(`/stocks/${stock.stockCode}`)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void navigate(`/stocks/${stock.stockCode}`);
+                }}
               >
                 {/* 왼쪽 컨테이너 */}
                 <div className="flex flex-1 items-center gap-3">
