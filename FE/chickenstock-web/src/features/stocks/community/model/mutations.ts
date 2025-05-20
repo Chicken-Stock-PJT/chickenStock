@@ -1,4 +1,3 @@
-// @/features/stocks/community/model/mutations.ts
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createComment, createReply, updateComment, deleteComment, toggleLike } from "../api";
 
