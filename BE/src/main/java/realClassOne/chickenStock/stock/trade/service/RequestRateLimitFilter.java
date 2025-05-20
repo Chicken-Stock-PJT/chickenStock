@@ -1,4 +1,4 @@
-package realClassOne.chickenStock.stock.service.trade;
+package realClassOne.chickenStock.stock.trade.service;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;

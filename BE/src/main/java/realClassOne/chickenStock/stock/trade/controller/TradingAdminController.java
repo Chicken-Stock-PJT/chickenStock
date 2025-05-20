@@ -1,16 +1,14 @@
-package realClassOne.chickenStock.stock.controller;
+package realClassOne.chickenStock.stock.trade.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import realClassOne.chickenStock.common.exception.CustomException;
-import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.dto.response.CommonResponseDTO;
-import realClassOne.chickenStock.stock.service.trade.TradingSecurityService;
+import realClassOne.chickenStock.stock.trade.service.TradingSecurityService;
 
 import java.util.Map;
 

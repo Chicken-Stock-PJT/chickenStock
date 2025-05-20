@@ -1,4 +1,4 @@
-package realClassOne.chickenStock.stock.service.trade;
+package realClassOne.chickenStock.stock.trade.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -7,7 +7,15 @@ import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 
+import java.time.DayOfWeek;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -169,5 +177,102 @@ public class StockPriceCacheService {
 
         log.info("배치 가격 리프레시 완료: {}/{} 성공", successCount, stockCodes.length);
         return successCount;
+    }
+
+    /**
+     * 장 시간 중인지 확인 (가격 캐싱 필요 여부 결정)
+     */
+    public boolean isMarketHours() {
+        LocalDateTime now = LocalDateTime.now();
+
+        // 주말인 경우
+        DayOfWeek day = now.getDayOfWeek();
+        if (day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY) {
+            return false;
+        }
+
+        // 거래 시간 체크
+        LocalTime time = now.toLocalTime();
+        LocalTime marketOpen = LocalTime.of(8, 0);
+        LocalTime marketClose = LocalTime.of(20, 00);
+
+        return !time.isBefore(marketOpen) && time.isBefore(marketClose);
+    }
+
+    /**
+     * 가격 업데이트 및 이벤트 발행
+     * 웹소켓 등으로 가격 업데이트 시 호출
+     */
+    public void updatePriceAndNotify(String stockCode, Long price) {
+        // 캐시 업데이트
+        String cacheKey = CACHE_KEY_PREFIX + stockCode;
+        redisTemplate.opsForValue().set(cacheKey, price, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+
+        // 여기서 필요하다면 이벤트 발행하여 관련 처리 트리거
+        // 예: 대기 중인 지정가 주문 체결 검사 등
+
+        log.debug("종목 {} 가격 업데이트: {}", stockCode, price);
+    }
+
+    /**
+     * 여러 종목 가격 한번에 조회 (배치 처리)
+     */
+    public Map<String, Long> getBatchStockPrices(List<String> stockCodes) {
+        Map<String, Long> result = new HashMap<>();
+
+        // 캐시 키 리스트 생성
+        List<String> cacheKeys = stockCodes.stream()
+                .map(code -> CACHE_KEY_PREFIX + code)
+                .collect(Collectors.toList());
+
+        // 모든 캐시 키에 대한 값을 한번에 조회
+        List<Object> cachedValues = redisTemplate.opsForValue().multiGet(cacheKeys);
+
+        if (cachedValues != null) {
+            for (int i = 0; i < stockCodes.size(); i++) {
+                Object cached = cachedValues.get(i);
+                if (cached != null) {
+                    // 안전한 변환
+                    if (cached instanceof Number) {
+                        result.put(stockCodes.get(i), ((Number) cached).longValue());
+                    } else if (cached instanceof String) {
+                        try {
+                            String strValue = (String) cached;
+                            strValue = strValue.replace(",", "").replace("+", "").replace("-", "").trim();
+                            result.put(stockCodes.get(i), Long.parseLong(strValue));
+                        } catch (NumberFormatException e) {
+                            log.warn("캐시된 문자열 가격 파싱 실패: {}", cached);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 캐시에 없는 종목 목록
+        List<String> missingCodes = new ArrayList<>();
+        for (String code : stockCodes) {
+            if (!result.containsKey(code)) {
+                missingCodes.add(code);
+            }
+        }
+
+        // 캐시에 없는 종목은 API로 조회 (배치 또는 개별)
+        if (!missingCodes.isEmpty()) {
+            // API 호출 구현
+            // (필요 시 구현)
+        }
+
+        return result;
+    }
+
+    /**
+     * 캐시된 가격이 최신인지 확인
+     */
+    public boolean isCacheFresh(String stockCode) {
+        String cacheKey = CACHE_KEY_PREFIX + stockCode;
+        Long ttl = redisTemplate.getExpire(cacheKey);
+
+        // TTL이 없거나 기준보다 작으면 최신이 아님
+        return ttl != null && ttl > (CACHE_TTL_SECONDS / 2);
     }
 }

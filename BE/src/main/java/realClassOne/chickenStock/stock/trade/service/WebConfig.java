@@ -1,4 +1,4 @@
-package realClassOne.chickenStock.stock.service.trade;
+package realClassOne.chickenStock.stock.trade.service;
 
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;

@@ -1,4 +1,4 @@
-package realClassOne.chickenStock.stock.service;
+package realClassOne.chickenStock.stock.trade.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +25,8 @@ import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
 import realClassOne.chickenStock.stock.repository.PendingOrderRepository;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
 import realClassOne.chickenStock.stock.repository.TradeHistoryRepository;
-import realClassOne.chickenStock.stock.service.trade.StockPriceCacheService;
+import realClassOne.chickenStock.stock.service.StockChartService;
+import realClassOne.chickenStock.stock.websocket.client.KiwoomWebSocketClient;
 import realClassOne.chickenStock.stock.websocket.handler.PortfolioWebSocketHandler;
 import realClassOne.chickenStock.stock.websocket.handler.StockWebSocketHandler;
 
@@ -55,6 +56,7 @@ public class LimitOrderExecutionService {
     private final NotificationService notificationService;
     private final StockTradeService stockTradeService;
     private final StockPriceCacheService stockPriceCacheService;
+    private final KiwoomWebSocketClient kiwoomWebSocketClient;
 
     // API 호출 제한 관리를 위한 스케줄러
     private final ScheduledExecutorService apiScheduler = Executors.newScheduledThreadPool(1);
@@ -681,9 +683,25 @@ public class LimitOrderExecutionService {
                     Math.min(order.getTargetPrice(), currentPrice) :  // 매수는 더 낮은 가격으로
                     Math.max(order.getTargetPrice(), currentPrice);   // 매도는 더 높은 가격으로
 
-            // 주문 체결 처리
-            executeLimitOrder(order, executionPrice);
+            // 현재가를 캐시에 업데이트 - 다른 주문에서도 활용할 수 있도록
+            stockPriceCacheService.updatePriceAndNotify(order.getStockData().getShortCode(), currentPrice);
 
+            try {
+                // 주문 체결 처리
+                executeLimitOrder(order, executionPrice);
+            } finally {
+                // 체결 처리 완료 후 구독 해제 시도
+                try {
+                    String purpose = "PENDING_ORDER_" + order.getOrderId();
+                    if (kiwoomWebSocketClient.hasSubscriptionPurpose(order.getStockData().getShortCode(), purpose)) {
+                        log.info("주문 체결 후 구독 목적 해제: 주문ID={}, 종목={}, 목적={}",
+                                order.getOrderId(), order.getStockData().getShortCode(), purpose);
+                        kiwoomWebSocketClient.unsubscribeStockForPurpose(order.getStockData().getShortCode(), purpose);
+                    }
+                } catch (Exception e) {
+                    log.warn("주문 체결 후 구독 해제 중 오류 발생: {}", e.getMessage());
+                }
+            }
         } catch (Exception e) {
             log.error("지정가 주문 즉시 체결 중 오류 발생 - ID: {}", order.getOrderId(), e);
         }

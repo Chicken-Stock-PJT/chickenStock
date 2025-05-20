@@ -1,4 +1,4 @@
-package realClassOne.chickenStock.stock.service;
+package realClassOne.chickenStock.stock.trade.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
