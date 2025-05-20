@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/ReplyForm.tsx
 import React, { useState } from "react";
 import { useCreateReplyMutation } from "../model/mutations";
 import { useAuthStore } from "@/shared/store/auth";
