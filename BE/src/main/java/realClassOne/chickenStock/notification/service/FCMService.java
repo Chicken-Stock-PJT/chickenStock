@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
@@ -24,18 +25,77 @@ public class FCMService {
     @Value("${firebase.config.project-id}")
     private String projectId;
 
+    @Value("${firebase.config.type}")
+    private String type;
+
+    @Value("${firebase.config.private-key-id}")
+    private String privateKeyId;
+
+    @Value("${firebase.config.private-key}")
+    private String privateKey;
+
+    @Value("${firebase.config.client-email}")
+    private String clientEmail;
+
+    @Value("${firebase.config.client-id}")
+    private String clientId;
+
+    @Value("${firebase.config.auth-uri}")
+    private String authUri;
+
+    @Value("${firebase.config.token-uri}")
+    private String tokenUri;
+
+    @Value("${firebase.config.auth-provider-x509-cert-url}")
+    private String authProviderCertUrl;
+
+    @Value("${firebase.config.client-x509-cert-url}")
+    private String clientCertUrl;
+
+    @Value("${firebase.config.universe_domain}")
+    private String universeDomain;
+
     private final FCMTokenService fcmTokenService;
 
     @PostConstruct
     public void initialize() {
         try {
             if (FirebaseApp.getApps().isEmpty()) {
+                // yml 파일의 설정으로 JSON 형식의 서비스 계정 키를 생성
+                String serviceAccountJson = String.format(
+                        "{\n" +
+                                "  \"type\": \"%s\",\n" +
+                                "  \"project_id\": \"%s\",\n" +
+                                "  \"private_key_id\": \"%s\",\n" +
+                                "  \"private_key\": \"%s\",\n" +
+                                "  \"client_email\": \"%s\",\n" +
+                                "  \"client_id\": \"%s\",\n" +
+                                "  \"auth_uri\": \"%s\",\n" +
+                                "  \"token_uri\": \"%s\",\n" +
+                                "  \"auth_provider_x509_cert_url\": \"%s\",\n" +
+                                "  \"client_x509_cert_url\": \"%s\",\n" +
+                                "  \"universe_domain\": \"%s\"\n" +
+                                "}",
+                        type, projectId, privateKeyId, privateKey.replace("\\n", "\n"),
+                        clientEmail, clientId, authUri, tokenUri,
+                        authProviderCertUrl, clientCertUrl, universeDomain
+                );
+
+                log.info("Firebase 초기화 시작 - projectId: {}", projectId);
+
+                // 생성된 JSON 문자열로부터 GoogleCredentials 객체 생성
+                GoogleCredentials credentials = GoogleCredentials.fromStream(
+                        new ByteArrayInputStream(serviceAccountJson.getBytes())
+                );
+
+                // Firebase 초기화
                 FirebaseOptions options = FirebaseOptions.builder()
-                        .setCredentials(GoogleCredentials.getApplicationDefault())
+                        .setCredentials(credentials)
                         .setProjectId(projectId)
                         .build();
 
                 FirebaseApp.initializeApp(options);
+                log.info("Firebase 초기화 성공");
             }
         } catch (IOException e) {
             log.error("Firebase 초기화 중 오류 발생", e);
