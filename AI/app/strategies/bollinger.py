@@ -17,9 +17,19 @@ class BollingerBandTradingModel(BaseTradingModel):
         self.max_positions = 20  # 최대 보유 종목 수 (Envelope 모델보다 적게 설정)
         self.trade_amount_per_stock = 6000000  # 종목당 매매 금액 (600만원)
         
+        # 분할 매수 설정
+        self.split_purchase_count = 3  # 분할 매수 횟수
+        self.split_purchase_percentages = [0.4, 0.3, 0.3]  # 분할 매수 비율
+        self.split_purchase_tracking = {}  # 분할 매수 추적 {symbol: {"current_step": 1, "purchases": [{"price": price, "quantity": qty, "timestamp": datetime}]}}
+        
         # 볼린저 밴드 설정 (StockCache와 동일하게 유지)
         self.bb_period = 26  # 기간 (26일)
         self.bb_std_dev = 2.0  # 표준편차 승수 (2)
+        
+        # 보수적 매수 신호 설정
+        self.buy_percentB_threshold = 0.05  # 더 낮은 %B 기준값 (0.1 -> 0.05)
+        self.min_confidence_threshold = 0.6  # 높은 신뢰도 기준 (0.5 -> 0.6)
+        self.buy_cooldown_hours = 24  # 매수 신호 쿨다운 시간 (시간)
         
         # 실행 상태
         self.is_running = False
@@ -40,9 +50,6 @@ class BollingerBandTradingModel(BaseTradingModel):
         self.account_info = {}
         self.positions = {}
         self.cash_balance = 0
-        
-        # 신뢰도 관련 설정
-        self.min_confidence_threshold = 0.5  # 신호 처리를 위한 최소 신뢰도 기준
         
         logger.info("볼린저 밴드 트레이딩 모델 초기화 완료")
     
@@ -103,11 +110,11 @@ class BollingerBandTradingModel(BaseTradingModel):
         confidence *= period_confidence
         
         # 3. %B 기반 신뢰도 계산 (매수/매도 신호에 따라 다름)
-        signal_type = "buy" if percent_b <= 0.1 else "sell" if percent_b >= 0.9 else "none"
+        signal_type = "buy" if percent_b <= self.buy_percentB_threshold else "sell" if percent_b >= 0.9 else "none"
         
         if signal_type == "buy":
-            # 매수 신호: %B가 0에 가까울수록 신뢰도 증가 (0.1 기준)
-            pb_confidence = 1.0 - (percent_b / 0.1)
+            # 매수 신호: %B가 0에 가까울수록 신뢰도 증가 (더 엄격한 기준으로 계산)
+            pb_confidence = 1.0 - (percent_b / self.buy_percentB_threshold)
             pb_confidence = max(0.0, min(1.0, pb_confidence))
             
             # 가격이 밴드 하단보다 얼마나 낮은지 확인 (밴드 하단보다 낮을수록 신뢰도↑)
@@ -117,8 +124,12 @@ class BollingerBandTradingModel(BaseTradingModel):
             # 밴드 폭이 넓을수록 (변동성이 클수록) 신뢰도 가중
             band_width_factor = min(1.0, band_width / 0.05) if band_width > 0 else 0.5
             
+            # 보수적인 매수 신호를 위한 추가 조건
+            # 가격이 지속적으로 하락하고 있는지 확인 (밴드의 중앙값이 하락 추세인 경우 신뢰도 하향)
+            trend_factor = 0.7  # 하락 추세시 신뢰도 감소 (기본값)
+            
             # 최종 매수 신호 신뢰도 (단순 가중 평균)
-            confidence = (confidence * 0.2) + (pb_confidence * 0.5) + (band_position * 0.2) + (band_width_factor * 0.1)
+            confidence = ((confidence * 0.2) + (pb_confidence * 0.5) + (band_position * 0.2) + (band_width_factor * 0.1)) * trend_factor
             
         elif signal_type == "sell":
             # 매도 신호: %B가 1에 가까울수록 신뢰도 증가 (0.9 기준)
@@ -161,6 +172,48 @@ class BollingerBandTradingModel(BaseTradingModel):
         self.last_processed_times[symbol] = now
         return True
     
+    def _check_buy_cooldown(self, symbol):
+        """매수 쿨다운 기간 체크 (True: 매수 가능, False: 쿨다운 중)"""
+        now = datetime.now()
+        last_trade = self.trade_history.get(symbol, {})
+        last_trade_time = last_trade.get("last_trade", None)
+        
+        # 마지막 거래가 없으면 매수 가능
+        if not last_trade_time:
+            return True
+        
+        # 쿨다운 시간 체크
+        elapsed_hours = (now - last_trade_time).total_seconds() / 3600
+        return elapsed_hours >= self.buy_cooldown_hours
+    
+    def _can_make_split_purchase(self, symbol):
+        """분할 매수 가능 여부 확인"""
+        # 분할 매수 추적 정보가 없으면 첫 번째 매수 가능
+        if symbol not in self.split_purchase_tracking:
+            return True
+        
+        # 현재 분할 매수 단계가 최대 단계보다 작으면 매수 가능
+        tracking_info = self.split_purchase_tracking[symbol]
+        return tracking_info["current_step"] < self.split_purchase_count
+    
+    def _calculate_split_purchase_amount(self, symbol):
+        """다음 분할 매수 금액 계산"""
+        # 분할 매수 추적 정보가 없으면 첫 번째 매수액 계산
+        if symbol not in self.split_purchase_tracking:
+            return self.trade_amount_per_stock * self.split_purchase_percentages[0]
+        
+        # 다음 매수 단계 계산
+        tracking_info = self.split_purchase_tracking[symbol]
+        next_step = tracking_info["current_step"]
+        
+        # 매수 단계가 유효한지 확인
+        if next_step >= self.split_purchase_count:
+            logger.warning(f"종목 {symbol}의 분할 매수 완료 (최대 {self.split_purchase_count}회)")
+            return 0
+        
+        # 다음 매수 금액 계산
+        return self.trade_amount_per_stock * self.split_purchase_percentages[next_step]
+    
     async def handle_realtime_price(self, symbol, price, indicators=None):
         """실시간 가격 데이터 처리"""
         if not self.is_running:
@@ -198,34 +251,34 @@ class BollingerBandTradingModel(BaseTradingModel):
                 # 데이터가 충분하지 않으면 신호 생성하지 않음
                 return
             
-            # 거래량 데이터 조회 부분 제거 - 신뢰도 계산에 사용하지 않음
-            
             # 현재 시간
             now = datetime.now()
             
             # 이미 처리된 신호인지 확인
             last_trade = self.trade_history.get(symbol, {})
             last_action = last_trade.get("last_action", "")
-            last_trade_time = last_trade.get("last_trade", None)
             
-            # 계좌 정보에서 보유 종목 확인 - 독립적인 positions 사용
+            # 계좌 정보에서 보유 종목 확인
             is_holding = symbol in self.positions
+            
+            # 분할 매수 가능 여부 확인
+            can_make_split_purchase = self._can_make_split_purchase(symbol)
             
             # 매매 신호 신뢰도 계산
             signal_confidence = 0.0
             
             # 볼린저 밴드 기반 매매 신호 로직
-            # 1. 매수 신호: %B가 0.1 이하 (하단 밴드 아래거나 근처)
-            if percent_b <= 0.1 and not is_holding:
-                # 이미 매수한 종목이면 신호 무시
-                if last_action == "buy":
-                    logger.debug(f"이미 매수한 종목: {symbol}, 신호 무시")
+            # 1. 매수 신호: %B가 임계값 이하 (기존 0.1 -> 0.05, 더 엄격한 조건)
+            if percent_b <= self.buy_percentB_threshold and (is_holding and can_make_split_purchase or not is_holding):
+                # 매수 쿨다운 체크
+                if not self._check_buy_cooldown(symbol):
+                    logger.debug(f"쿨다운 기간 중인 종목: {symbol}, 매수 신호 무시")
                     return
                 
-                # 매수 신호 신뢰도 계산 (거래량 제외)
+                # 매수 신호 신뢰도 계산 (보수적인 계산)
                 signal_confidence = self._calculate_signal_confidence(symbol, price, bb_indicators)
                 
-                # 최소 신뢰도 이상인 경우만 신호 등록
+                # 최소 신뢰도 이상인 경우만 신호 등록 (더 높은 임계값)
                 if signal_confidence >= self.min_confidence_threshold:
                     self.trading_signals[symbol] = {
                         "signal": "buy",
@@ -237,20 +290,16 @@ class BollingerBandTradingModel(BaseTradingModel):
                             "lower": lower_band,
                             "percentB": percent_b
                         },
-                        "confidence": signal_confidence
+                        "confidence": signal_confidence,
+                        "is_split_purchase": is_holding and can_make_split_purchase
                     }
-                    logger.info(f"볼린저 밴드 매수 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}, 신뢰도: {signal_confidence:.2f}")
+                    logger.info(f"볼린저 밴드 매수 신호 발생: {symbol}, 현재가: {price:.2f}, %B: {percent_b:.2f}, 신뢰도: {signal_confidence:.2f}, 분할매수: {'예' if is_holding and can_make_split_purchase else '아니오'}")
                 else:
                     logger.debug(f"볼린저 밴드 매수 신호 무시 (낮은 신뢰도): {symbol}, 신뢰도: {signal_confidence:.2f}")
             
             # 2. 매도 신호: %B가 0.9 이상 (상단 밴드 위거나 근처)
             elif percent_b >= 0.9 and is_holding:
-                # 이미 매도한 종목이면 신호 무시
-                if last_action == "sell":
-                    logger.debug(f"이미 매도한 종목: {symbol}, 신호 무시")
-                    return
-                
-                # 매도 신호 신뢰도 계산 (거래량 제외)
+                # 매도 신호 신뢰도 계산
                 signal_confidence = self._calculate_signal_confidence(symbol, price, bb_indicators)
                 
                 # 최소 신뢰도 이상인 경우만 신호 등록 (매도는 좀 더 낮게 설정)
@@ -351,6 +400,7 @@ class BollingerBandTradingModel(BaseTradingModel):
     
     async def get_trade_decisions(self, prices: Dict[str, float] = None) -> List[Dict[str, Any]]:
         """매매 의사결정 목록 반환"""
+
         if not self.is_running:
             logger.warning("볼린저 밴드 트레이딩 모델이 실행 중이지 않습니다.")
             return []
@@ -445,6 +495,10 @@ class BollingerBandTradingModel(BaseTradingModel):
                     "last_action": "sell"
                 }
                 
+                # 분할 매수 추적 정보 초기화
+                if symbol in self.split_purchase_tracking:
+                    del self.split_purchase_tracking[symbol]
+                
                 # 신호 제거
                 del self.trading_signals[symbol]
                 logger.info(f"매도 결정: {symbol}, {total_quantity}주, 가격: {current_price:.2f}, 이유: {reason}, 신뢰도: {confidence:.2f}")
@@ -454,20 +508,23 @@ class BollingerBandTradingModel(BaseTradingModel):
             buy_signals.sort(key=lambda x: x[1].get("confidence", 0.0), reverse=True)
             
             for symbol, signal_info in buy_signals:
-                # 현재 보유 종목 수 확인
-                if len(self.positions) >= self.max_positions:
+                # 분할 매수 여부 확인
+                is_split_purchase = signal_info.get("is_split_purchase", False)
+                
+                # 현재 보유 종목 수 확인 (분할 매수는 이미 보유 중이므로 제외)
+                if len(self.positions) >= self.max_positions and not is_split_purchase:
                     logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
                     continue
                 
-                # 충분한 현금 확인
-                if self.cash_balance < self.trade_amount_per_stock:
-                    logger.debug(f"현금 부족({self.cash_balance}), 매수 보류: {symbol}")
+                # 매수 금액 계산 (분할 매수의 경우 다음 단계 금액 계산)
+                purchase_amount = self._calculate_split_purchase_amount(symbol)
+                if purchase_amount <= 0:
+                    logger.debug(f"종목 {symbol}의 매수 금액이 0, 매수 보류")
                     continue
                 
-                # 이미 보유 중인지 확인
-                if symbol in self.positions:
-                    logger.debug(f"이미 보유 중인 종목 매수 신호 무시: {symbol}")
-                    del self.trading_signals[symbol]
+                # 충분한 현금 확인
+                if self.cash_balance < purchase_amount:
+                    logger.debug(f"현금 부족({self.cash_balance}), 매수 보류: {symbol}")
                     continue
                 
                 # 매수 수량 계산
@@ -485,7 +542,7 @@ class BollingerBandTradingModel(BaseTradingModel):
                         logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
                         continue
                 
-                quantity = int(self.trade_amount_per_stock / current_price)
+                quantity = int(purchase_amount / current_price)
                 if quantity <= 0:
                     logger.warning(f"종목 {symbol}의 매수 수량이 0, 매수 보류")
                     continue
@@ -493,15 +550,44 @@ class BollingerBandTradingModel(BaseTradingModel):
                 # 신뢰도 정보 가져오기
                 confidence = signal_info.get("confidence", 0.0)
                 
+                # 분할 매수 추적 정보 업데이트
+                next_step = 0
+                if symbol in self.split_purchase_tracking:
+                    tracking_info = self.split_purchase_tracking[symbol]
+                    next_step = tracking_info["current_step"]
+                    tracking_info["current_step"] += 1
+                    tracking_info["purchases"].append({
+                        "price": current_price,
+                        "quantity": quantity,
+                        "timestamp": now
+                    })
+                else:
+                    self.split_purchase_tracking[symbol] = {
+                        "current_step": 1,
+                        "purchases": [{
+                            "price": current_price,
+                            "quantity": quantity,
+                            "timestamp": now
+                        }]
+                    }
+                
+                # 분할 매수 단계에 따른 메시지
+                purchase_msg = ""
+                if is_split_purchase:
+                    next_step += 1  # 표시용 (1부터 시작)
+                    purchase_msg = f"분할매수 {next_step}/{self.split_purchase_count}"
+                
                 # 매수 결정 추가
                 decision = {
                     "symbol": symbol,
                     "action": "buy",
                     "quantity": quantity,
                     "price": current_price,
-                    "reason": f"볼린저 밴드 하단 터치 - 매수 (신뢰도: {confidence:.2f})",
+                    "reason": f"볼린저 밴드 하단 터치 - 매수 {purchase_msg} (신뢰도: {confidence:.2f})",
                     "confidence": confidence,
-                    "timestamp": now.isoformat()
+                    "timestamp": now.isoformat(),
+                    "is_split_purchase": is_split_purchase,
+                    "split_step": next_step if is_split_purchase else 0
                 }
                 decisions.append(decision)
                 
@@ -513,11 +599,11 @@ class BollingerBandTradingModel(BaseTradingModel):
                 
                 # 신호 제거
                 del self.trading_signals[symbol]
-                logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}, 신뢰도: {confidence:.2f}")
+                logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}, {purchase_msg}, 신뢰도: {confidence:.2f}")
                 
                 # 자금 고갈 시 종료
                 self.cash_balance -= (quantity * current_price)
-                if self.cash_balance < self.trade_amount_per_stock:
+                if self.cash_balance < self._calculate_split_purchase_amount("MIN_AMOUNT"):
                     logger.debug(f"가용 자금 소진, 매수 신호 처리 중단 (잔액: {self.cash_balance})")
                     break
             

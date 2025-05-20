@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from sklearn.preprocessing import StandardScaler
 from sklearn.exceptions import NotFittedError
+import torch.serialization
 
 from app.strategies.base import BaseTradingModel
 
@@ -30,11 +31,11 @@ class DRLUTransTradingModel(BaseTradingModel):
         # 매매 관련 설정
         self.max_positions = 15  # 최대 보유 종목 수
         self.trade_amount_per_stock = 6000000  # 종목당 매매 금액 (600만원)
-        self.min_holding_period = 1  # 최소 보유 기간 (일)
+        # self.min_holding_period 삭제 (최소 보유 기간 제약 제거)
         
         # 모델 설정
         self.model_path = os.environ.get('DRL_UTRANS_MODEL_PATH', 
-                                       os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                                                     "models/drl_utrans"))
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = None
@@ -42,8 +43,8 @@ class DRLUTransTradingModel(BaseTradingModel):
         
         # 거래 관련 설정
         self.action_map = {0: "hold", 1: "buy", 2: "sell"}  # DRL-UTrans 모델의 액션 매핑
-        self.confidence_threshold = 0.6  # 매매 결정 신뢰도 임계값
-        self.weight_threshold = 0.3  # 매매 가중치 임계값 (최소 30% 이상 매매 비중)
+        self.confidence_threshold = 0.75  # 매매 결정 신뢰도 임계값 (0.6 -> 0.75로 상향)
+        self.weight_threshold = 0.5  # 매매 가중치 임계값 (0.3 -> 0.5로 상향)
         
         # 매매 신호 저장 딕셔너리
         self.trading_signals = {}  # {symbol: {"action": int, "weight": float, "price": float, "timestamp": datetime}}
@@ -73,8 +74,13 @@ class DRLUTransTradingModel(BaseTradingModel):
         self.is_running = False
         self.is_model_loaded = False
         
+        # 매수 신호 제한 설정 (1일 최대 매수 신호 개수)
+        self.max_daily_buy_signals = 15  # 하루 최대 15개 매수 신호로 제한 (5->15로 증가)
+        self.daily_buy_signals_count = 0  # 당일 매수 신호 카운트
+        self.last_reset_date = datetime.now().date()  # 마지막 리셋 날짜
+        
         logger.info("DRL-UTrans 트레이딩 모델 초기화 완료")
-    
+        
     async def load_model(self):
         """DRL-UTrans 모델 로드 (PyTorch 2.6 호환성 문제 해결)"""
         try:
@@ -96,15 +102,12 @@ class DRLUTransTradingModel(BaseTradingModel):
                     input_dim = 26  # 기술적 지표 + 포트폴리오 정보
                     seq_len = 20    # 시퀀스 길이
                     action_dim = 3  # 액션: hold, buy, sell
-                    
-                    # NumPy 버전 로깅
-                    import numpy as np
+
                     logger.info(f"NumPy 버전: {np.__version__}")
                     
                     # ===== 오류 해결: 안전한 전역 함수 등록 =====
                     # 메시지에서 권장하는 대로 안전한 전역 함수 등록
                     try:
-                        import torch.serialization
                         torch.serialization.add_safe_globals(['numpy._core.multiarray.scalar'])
                         logger.info("안전한 전역 함수 등록 완료: numpy._core.multiarray.scalar")
                     except Exception as e:
@@ -166,7 +169,6 @@ class DRLUTransTradingModel(BaseTradingModel):
                         logger.info("스케일러 파일 로드 완료")
                     else:
                         # 기본 스케일러 생성
-                        from sklearn.preprocessing import StandardScaler
                         scalers['default'] = StandardScaler()
                         logger.info("스케일러 파일 없음, 기본 스케일러 생성")
                     
@@ -384,26 +386,33 @@ class DRLUTransTradingModel(BaseTradingModel):
             # 특성 배열로 변환
             features_array = features_df.values
             
-            # ===== 수정된 부분: 스케일링 로직 =====
             # 스케일링 (종목별 스케일러 사용)
-            if symbol in self.scalers:
-                # 기존 스케일러 사용 (이미 fit된 스케일러)
-                scaler = self.scalers[symbol]
-                features_scaled = scaler.transform(features_array)
-            elif 'default' in self.scalers:
-                # 기본 스케일러 확인
-                scaler = self.scalers['default']
-                # 스케일러가 fit 되었는지 확인
-                try:
-                    features_scaled = scaler.transform(features_array)
-                except sklearn.exceptions.NotFittedError:
-                    # fit 되지 않은 경우 먼저 fit 수행
-                    scaler.fit(features_array)
+            if symbol in self.scalers or 'default' in self.scalers:
+                # 기존 스케일러 가져오기
+                scaler = self.scalers.get(symbol, self.scalers.get('default'))
+                
+                # 스케일러가 feature_names를 사용했는지 확인 (set_output 사용 여부 확인)
+                has_feature_names = hasattr(scaler, 'feature_names_in_')
+                
+                if has_feature_names:
+                    # 스케일러에 저장된 feature_names 가져오기
+                    feature_names = scaler.feature_names_in_
+                    
+                    # feature_names가 있다면 DataFrame으로 변환하여 동일한 열 이름 사용
+                    try:
+                        features_df = pd.DataFrame(features_array, columns=feature_names)
+                        features_scaled = scaler.transform(features_df)
+                    except Exception as e:
+                        # DataFrame 변환 실패 시 기존 방식으로 진행
+                        logger.warning(f"DataFrame 변환 실패, 기존 방식으로 스케일링: {str(e)}")
+                        features_scaled = scaler.transform(features_array)
+                else:
+                    # feature_names가 없는 스케일러라면 그냥 변환
                     features_scaled = scaler.transform(features_array)
             else:
-                # 새 스케일러 생성 및 fit
+                # 새 스케일러 생성
                 scaler = StandardScaler()
-                scaler.fit(features_array)  # 먼저 fit 수행
+                scaler.fit(features_array)
                 features_scaled = scaler.transform(features_array)
                 self.scalers[symbol] = scaler
             
@@ -615,7 +624,13 @@ class DRLUTransTradingModel(BaseTradingModel):
             current_price = self.stock_cache.get_price(symbol) if self.stock_cache else 0
             if current_price <= 0:
                 logger.warning(f"종목 {symbol} 현재가를 가져올 수 없습니다.")
-                return
+            
+            # 일일 매수 신호 제한 확인 및 필요시 카운터 리셋
+            current_date = datetime.now().date()
+            if current_date != self.last_reset_date:
+                self.daily_buy_signals_count = 0
+                self.last_reset_date = current_date
+                logger.info(f"일일 매수 신호 카운터 리셋 (날짜 변경: {current_date})")
             
             # 예측 결과 해석 및 매매 신호 생성
             action = prediction["action"]
@@ -639,6 +654,11 @@ class DRLUTransTradingModel(BaseTradingModel):
             
             # 2. 미보유 종목에 대한 매수 신호 (액션=1, 확률>임계값)
             elif action == 1 and not self.is_holding(symbol):
+                # 일일 매수 신호 제한 확인
+                if self.daily_buy_signals_count >= self.max_daily_buy_signals:
+                    logger.debug(f"일일 매수 신호 제한({self.max_daily_buy_signals}개)에 도달, 신호 생성 보류: {symbol}")
+                    return
+                    
                 if action_prob >= self.confidence_threshold and action_weight >= self.weight_threshold:
                     # 매수 신호 생성
                     self.trading_signals[symbol] = {
@@ -651,6 +671,9 @@ class DRLUTransTradingModel(BaseTradingModel):
                         "timestamp": prediction["timestamp"]
                     }
                     logger.info(f"종목 {symbol} 매수 신호 생성: 확률={action_prob:.4f}, 가중치={action_weight:.4f}")
+                    
+                    # 일일 매수 신호 카운트 증가
+                    self.daily_buy_signals_count += 1
             
         except Exception as e:
             logger.error(f"종목 {symbol} 예측 처리 중 오류: {str(e)}", exc_info=True)
@@ -822,6 +845,7 @@ class DRLUTransTradingModel(BaseTradingModel):
       # 예: DRL-UTrans 모델에 필요한 특별한 계좌 정보 처리
       logger.debug(f"DRL-UTrans 계좌 정보 추가 처리 완료")
       
+    
     async def get_trade_decisions(self, prices: Dict[str, float] = None) -> List[Dict[str, Any]]:
         """매매 의사결정 목록 반환"""
         if not self.is_running:
@@ -875,8 +899,6 @@ class DRLUTransTradingModel(BaseTradingModel):
                 action = signal_info["action"]
                 confidence = signal_info["confidence"]
                 weight = signal_info["weight"]
-                price = signal_info["price"]
-                state_value = signal_info.get("value", 0)
                 
                 # 보유 중인 종목인지 확인
                 if symbol not in self.positions:
@@ -895,30 +917,11 @@ class DRLUTransTradingModel(BaseTradingModel):
                 # weight는 0~1 사이의 값 (0.3 이상이어야 신호 생성)
                 sell_quantity = max(1, int(total_quantity * weight))
                 
-                # 현재가 확인
-                current_price = price
-                if not current_price or current_price <= 0:
-                    # 제공된 prices 딕셔너리에서 조회
-                    if prices and symbol in prices:
-                        current_price = prices[symbol]
-                    # 또는 stock_cache에서 조회
-                    elif self.stock_cache:
-                        current_price = self.stock_cache.get_price(symbol)
-                        
-                    if not current_price or current_price <= 0:
-                        logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
-                        continue
-                
-                # 매도 결정 추가
+                # 매도 결정 추가 (시장가 거래이므로 종목과 수량만 포함)
                 decision = {
                     "symbol": symbol,
                     "action": "sell",
-                    "quantity": sell_quantity,
-                    "price": current_price,
-                    "reason": f"DRL-UTrans 모델 매도 신호 (확률: {confidence:.2f}, 가중치: {weight:.2f}, 가치: {state_value:.2f})",
-                    "confidence": confidence,
-                    "weight": weight,
-                    "timestamp": now.isoformat()
+                    "quantity": sell_quantity
                 }
                 decisions.append(decision)
                 
@@ -930,10 +933,19 @@ class DRLUTransTradingModel(BaseTradingModel):
                 
                 # 신호 제거
                 del self.trading_signals[symbol]
-                logger.info(f"매도 결정: {symbol}, {sell_quantity}주, 가격: {current_price:.2f}, 이유: DRL-UTrans 모델 매도 신호")
+                logger.info(f"매도 결정: {symbol}, {sell_quantity}주, 이유: DRL-UTrans 모델 매도 신호")
             
             # 2. 매수 신호 처리 (신뢰도 기준 정렬했으므로 순서대로 처리)
+            # 보수적인 매수를 위해 상위 5개 신호만 처리 (3->5로 증가)
+            max_buy_signals = 5
+            buy_count = 0
+            
             for symbol, signal_info in buy_signals:
+                # 최대 매수 신호 제한
+                if buy_count >= max_buy_signals:
+                    logger.debug(f"최대 매수 신호 개수({max_buy_signals})에 도달, 신호 처리 중단")
+                    break
+                    
                 # 현재 보유 종목 수 확인
                 if len(self.positions) >= self.max_positions:
                     logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
@@ -953,25 +965,31 @@ class DRLUTransTradingModel(BaseTradingModel):
                 # 매수 관련 정보 가져오기
                 confidence = signal_info["confidence"]
                 weight = signal_info["weight"]
-                price = signal_info["price"]
-                state_value = signal_info.get("value", 0)
+                
+                # 보수적인 매수를 위해 신호 필터링 강화
+                # 매수 신호의 신뢰도와 가중치가 더 높은 기준 적용
+                if confidence < 0.75:  # 신뢰도 임계값 0.6 -> 0.75로 상향
+                    logger.debug(f"종목 {symbol}의 신뢰도가 낮음({confidence:.2f}), 매수 보류")
+                    continue
+                    
+                if weight < 0.5:  # 가중치 임계값 0.3 -> 0.5로 상향
+                    logger.debug(f"종목 {symbol}의 가중치가 낮음({weight:.2f}), 매수 보류")
+                    continue
                 
                 # 현재가 확인
-                current_price = price
-                if not current_price or current_price <= 0:
-                    # 제공된 prices 딕셔너리에서 조회
-                    if prices and symbol in prices:
-                        current_price = prices[symbol]
-                    # 또는 stock_cache에서 조회
-                    elif self.stock_cache:
-                        current_price = self.stock_cache.get_price(symbol)
+                current_price = 0
+                # 제공된 prices 딕셔너리에서 조회
+                if prices and symbol in prices:
+                    current_price = prices[symbol]
+                # 또는 stock_cache에서 조회
+                elif self.stock_cache:
+                    current_price = self.stock_cache.get_price(symbol)
                         
-                    if not current_price or current_price <= 0:
-                        logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
-                        continue
+                if not current_price or current_price <= 0:
+                    logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
+                    continue
                 
                 # 매수 금액 계산 (비중에 따라 결정)
-                # weight는 0~1 사이의 값 (0.3 이상이어야 신호 생성)
                 buy_amount = self.trade_amount_per_stock * weight
                 
                 # 매수 수량 계산
@@ -980,16 +998,11 @@ class DRLUTransTradingModel(BaseTradingModel):
                     logger.warning(f"종목 {symbol}의 매수 수량이 0, 매수 보류")
                     continue
                 
-                # 매수 결정 추가
+                # 매수 결정 추가 (시장가 거래이므로 종목과 수량만 포함)
                 decision = {
                     "symbol": symbol,
                     "action": "buy",
-                    "quantity": quantity,
-                    "price": current_price,
-                    "reason": f"DRL-UTrans 모델 매수 신호 (확률: {confidence:.2f}, 가중치: {weight:.2f}, 가치: {state_value:.2f})",
-                    "confidence": confidence,
-                    "weight": weight,
-                    "timestamp": now.isoformat()
+                    "quantity": quantity
                 }
                 decisions.append(decision)
                 
@@ -1001,7 +1014,10 @@ class DRLUTransTradingModel(BaseTradingModel):
                 
                 # 신호 제거
                 del self.trading_signals[symbol]
-                logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}, 이유: DRL-UTrans 모델 매수 신호")
+                logger.info(f"매수 결정: {symbol}, {quantity}주, 이유: DRL-UTrans 모델 매수 신호")
+                
+                # 처리된 매수 신호 카운트 증가
+                buy_count += 1
                 
                 # 자금 고갈 시 종료
                 self.cash_balance -= (quantity * current_price)

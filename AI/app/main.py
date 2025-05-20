@@ -366,27 +366,31 @@ async def trading_loop():
     logger.info("거래 처리 루프 시작")
     
     # 마지막 처리 시간 초기화
-    last_processing_time = datetime.now()
+    last_account_update_time = datetime.now()
+    last_trading_decision_time = datetime.now()
+    
+    # 타이머 설정 (초 단위)
+    ACCOUNT_UPDATE_INTERVAL = 30  # 계좌 정보 조회 간격 (30초)
+    TRADING_DECISION_INTERVAL = 60  # 거래 처리 간격 (60초)
     
     while service_status["is_running"]:
         try:
             # 현재 시간
             current_time = datetime.now()
             
-            # 10초마다 계좌 정보 업데이트 및 매매 결정 처리
-            if (current_time - last_processing_time).total_seconds() >= 10:
-                # 모든 실행 중인 봇의 매매 결정 처리
-                running_bots = bot_manager.get_running_bots()
-                logger.info(f"실행 중인 봇 수: {len(running_bots)}")
+            # 실행 중인 봇 조회
+            running_bots = bot_manager.get_running_bots()
+            
+            # 30초마다 계좌 정보만 업데이트
+            if (current_time - last_account_update_time).total_seconds() >= ACCOUNT_UPDATE_INTERVAL:
+                logger.info(f"계좌 정보 업데이트 시작 (실행 중인 봇 수: {len(running_bots)})")
                 
                 # 병렬 처리를 위한 태스크 리스트
-                bot_tasks = []
+                account_update_tasks = []
                 
-                # 각 봇에 대한 처리 함수 정의
-                async def process_bot(email, bot):
+                # 각 봇에 대한 계좌 정보 업데이트 함수 정의
+                async def update_account_for_bot(email, bot):
                     try:
-                        logger.info(f"봇 [{email}] 처리 시작 (전략: {bot.strategy})")
-                        
                         # 계좌 정보 업데이트 (인증 확인은 내부에서 처리됨)
                         await bot.update_account_info()
                         
@@ -394,6 +398,36 @@ async def trading_loop():
                         cash = bot.get_cash()
                         holdings = bot.get_holdings()
                         logger.info(f"봇 [{email}] 계좌 정보 업데이트 성공: 예수금={cash}, 보유종목수={len(holdings)}")
+                    except Exception as e:
+                        logger.error(f"봇 [{email}]의 계좌 정보 업데이트 중 오류: {str(e)}")
+                
+                # 각 봇에 대한 계좌 업데이트 태스크 생성
+                for email, bot in running_bots.items():
+                    account_update_tasks.append(update_account_for_bot(email, bot))
+                
+                # 모든 계좌 업데이트 태스크를 병렬로 실행 (타임아웃 10초로 설정)
+                try:
+                    await asyncio.wait_for(asyncio.gather(*account_update_tasks), timeout=10.0)
+                    logger.info("모든 봇의 계좌 정보 업데이트 완료")
+                except asyncio.TimeoutError:
+                    logger.warning("일부 봇의 계좌 정보 업데이트가 시간 초과로 완료되지 않았습니다.")
+                except Exception as e:
+                    logger.error(f"계좌 정보 업데이트 중 오류 발생: {str(e)}")
+                
+                # 마지막 계좌 업데이트 시간 갱신
+                last_account_update_time = current_time
+            
+            # 60초마다 매매 결정 처리
+            if (current_time - last_trading_decision_time).total_seconds() >= TRADING_DECISION_INTERVAL:
+                logger.info(f"매매 결정 처리 시작 (실행 중인 봇 수: {len(running_bots)})")
+                
+                # 병렬 처리를 위한 태스크 리스트
+                trading_decision_tasks = []
+                
+                # 각 봇에 대한 매매 결정 처리 함수 정의
+                async def process_trading_decisions(email, bot):
+                    try:
+                        logger.info(f"봇 [{email}] 매매 결정 처리 시작 (전략: {bot.strategy})")
                         
                         if bot.trading_model:
                             # 현재가 정보는 bot_stock_cache를 통해 가져오도록 수정
@@ -445,26 +479,26 @@ async def trading_loop():
                                         logger.error(f"봇 [{email}]의 거래 요청 전송 중 오류: {str(e)}")
                             except Exception as e:
                                 logger.error(f"봇 [{email}]의 매매 결정 처리 중 오류: {str(e)}")
-                                
-                        logger.info(f"봇 [{email}] 처리 완료")
+                        
+                        logger.info(f"봇 [{email}] 매매 결정 처리 완료")
                     except Exception as e:
-                        logger.error(f"봇 [{email}]의 매매 처리 중 오류: {str(e)}")
+                        logger.error(f"봇 [{email}]의 매매 결정 처리 중 오류: {str(e)}")
                 
-                # 각 봇에 대한 태스크 생성
+                # 각 봇에 대한 매매 결정 태스크 생성
                 for email, bot in running_bots.items():
-                    bot_tasks.append(process_bot(email, bot))
+                    trading_decision_tasks.append(process_trading_decisions(email, bot))
                 
-                # 모든 봇 태스크를 병렬로 실행 (타임아웃 10초로 설정)
+                # 모든 매매 결정 태스크를 병렬로 실행 (타임아웃 20초로 설정)
                 try:
-                    # asyncio.wait_for를 사용하여 전체 gather에 타임아웃 설정
-                    await asyncio.wait_for(asyncio.gather(*bot_tasks), timeout=10.0)
+                    await asyncio.wait_for(asyncio.gather(*trading_decision_tasks), timeout=20.0)
+                    logger.info("모든 봇의 매매 결정 처리 완료")
                 except asyncio.TimeoutError:
-                    logger.warning("일부 봇 처리가 시간 초과로 완료되지 않았습니다.")
+                    logger.warning("일부 봇의 매매 결정 처리가 시간 초과로 완료되지 않았습니다.")
                 except Exception as e:
-                    logger.error(f"봇 병렬 처리 중 오류 발생: {str(e)}")
+                    logger.error(f"매매 결정 처리 중 오류 발생: {str(e)}")
                 
-                # 마지막 처리 시간 업데이트
-                last_processing_time = current_time
+                # 마지막 매매 결정 시간 갱신
+                last_trading_decision_time = current_time
             
             # 1초 대기
             await asyncio.sleep(1)
