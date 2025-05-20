@@ -7,10 +7,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import realClassOne.chickenStock.member.entity.Member;
+import realClassOne.chickenStock.stock.entity.HoldingPosition;
 import realClassOne.chickenStock.stock.entity.PendingOrder;
+import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.entity.TradeHistory;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long> {
@@ -81,4 +84,13 @@ public interface PendingOrderRepository extends JpaRepository<PendingOrder, Long
     List<PendingOrder> findExecutableOrdersWithRelations(@Param("stockCode") String stockCode,
                                                          @Param("orderType") TradeHistory.TradeType orderType,
                                                          @Param("currentPrice") Long currentPrice);
+
+    // 풀매도를 위한 메서드
+    List<PendingOrder> findByMemberAndStockDataAndOrderTypeAndStatus(
+            Member member,
+            StockData stockData,
+            TradeHistory.TradeType orderType,
+            PendingOrder.OrderStatus status
+    );
+
 }

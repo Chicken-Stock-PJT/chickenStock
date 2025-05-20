@@ -3,15 +3,14 @@ package realClassOne.chickenStock.stock.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import realClassOne.chickenStock.stock.dto.response.AvailableQuantityResponseDTO;
 import realClassOne.chickenStock.stock.dto.common.StockResponse;
 import realClassOne.chickenStock.stock.dto.response.StockAskBidResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 import realClassOne.chickenStock.stock.service.StockInfoService;
+import realClassOne.chickenStock.stock.service.StockTradeService;
 
 import java.util.List;
 
@@ -23,6 +22,7 @@ public class StockController {
 
     private final StockInfoService stockInfoService;
     private final KiwoomStockApiService kiwoomStockApiService;
+    private final StockTradeService stockTradeService;
 
     // 모든 주식 정보 요청 API
     @GetMapping("/all")
@@ -50,5 +50,15 @@ public class StockController {
     public ResponseEntity<StockInfoResponseDTO> getStockInfo(@PathVariable String stockCode) {
         StockInfoResponseDTO response = kiwoomStockApiService.getStockInfo(stockCode);
         return ResponseEntity.ok(response);
+    }
+
+    // 특정 멤버가 가지고 있는 특정 종목의 주식 수 조회
+    @GetMapping("/{shortCode}/available-quantity")
+    public ResponseEntity<AvailableQuantityResponseDTO> getAvailableSellQuantity(
+            @PathVariable String shortCode,
+            @RequestHeader("Authorization") String authorizationHeader) {
+
+        int availableQty = stockTradeService.getAvailableSellQuantity(authorizationHeader, shortCode);
+        return ResponseEntity.ok(new AvailableQuantityResponseDTO(shortCode, availableQty));
     }
 }
