@@ -1,5 +1,4 @@
-# Python 3.9 슬림 이미지를 기본 이미지로 사용
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 # 작업 디렉토리 설정
 WORKDIR /app
