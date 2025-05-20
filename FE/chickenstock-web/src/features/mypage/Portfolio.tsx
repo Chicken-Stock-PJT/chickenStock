@@ -40,12 +40,14 @@ const Portfolio = () => {
         />
         <PortfolioOverview
           totalAsset={data.totalAsset + data.pendingOrderAmount}
-          memberMoney={data.memberMoney}
           totalProfitLoss={data.totalProfitLoss}
           totalReturnRate={data.totalReturnRate}
+          memberMoney={data.memberMoney}
+          pendingOrderAmount={data.pendingOrderAmount}
+          stockValuation={data.stockValuation}
+          todayTradeAmount={data.todayTradeAmount}
           todayProfitLoss={data.todayProfitLoss}
           todayReturnRate={data.todayReturnRate}
-          todayTradeAmount={data.todayTradeAmount}
         />
       </div>
       <div>

@@ -10,15 +10,12 @@ interface PortfolioChartProps {
 
 const PortfolioChart = ({ holdings, stockValuation, cash }: PortfolioChartProps) => {
   const options = {
-    // series: [memberMoney, ...positions.map((position) => position.valuationAmount)],
-
     series: [cash, ...holdings.map((holding) => holding.valuationAmount)],
     options: {
       chart: {
         type: "donut" as const,
       },
-      // labels: ["현금", ...positions.map((position) => position.stockName)],
-      labels: ["순 현금자산", ...holdings.map((holding) => holding.stockName)],
+      labels: ["가용 현금", ...holdings.map((holding) => holding.stockName)],
       responsive: [
         {
           breakpoint: 480,
