@@ -45,4 +45,5 @@ public interface HoldingPositionRepository extends JpaRepository<HoldingPosition
     int deleteByMemberIdAndStockDataIdNative(@Param("memberId") Long memberId, @Param("stockDataId") Long stockDataId);
 
     List<HoldingPosition> findAllByMemberAndStockDataAndActiveTrue(Member member, StockData stockData);
+
 }
