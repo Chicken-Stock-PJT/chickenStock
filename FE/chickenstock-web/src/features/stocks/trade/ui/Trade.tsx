@@ -281,7 +281,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                   수량
                 </label>
                 <Button
-                  className="rounded-full bg-primary-500 text-white"
+                  className="rounded-lg bg-primary-300 font-semibold text-black"
                   onClick={handleMaxQuantity}
                 >
                   최대
