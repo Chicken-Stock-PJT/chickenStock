@@ -46,6 +46,9 @@ public class PendingOrder {
     @Column(name = "expected_tax")
     private Long expectedTax; // 매도 주문시 예상 세금
 
+    @Version
+    private Long version;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "DATETIME(0)")
     private LocalDateTime createdAt;
 
