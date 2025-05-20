@@ -10,7 +10,7 @@ import realClassOne.chickenStock.stock.dto.response.StockAskBidResponseDTO;
 import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.service.KiwoomStockApiService;
 import realClassOne.chickenStock.stock.service.StockInfoService;
-import realClassOne.chickenStock.stock.service.StockTradeService;
+import realClassOne.chickenStock.stock.trade.service.StockTradeService;
 
 import java.util.List;
 
