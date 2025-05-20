@@ -16,6 +16,7 @@ import realClassOne.chickenStock.stock.dto.response.StockInfoResponseDTO;
 import realClassOne.chickenStock.stock.entity.StockData;
 import realClassOne.chickenStock.stock.exception.StockErrorCode;
 import realClassOne.chickenStock.stock.repository.StockDataRepository;
+import realClassOne.chickenStock.stock.service.trade.KiwoomApiCircuitBreaker;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,7 +34,8 @@ public class KiwoomStockApiService {
 
     private static final String API_ENDPOINT = "/api/dostk/mrkcond";
 
-
+    private final WebClient webClient;
+    private final KiwoomApiCircuitBreaker circuitBreaker;
     private final KiwoomAuthService authService;
     private final ObjectMapper objectMapper;
     private final StockDataRepository stockDataRepository;
@@ -141,10 +143,12 @@ public class KiwoomStockApiService {
      */
     public StockAskBidResponseDTO getStockAskBidInfo(String stockCode) {
         try {
-            log.info("키움 API를 통해 종목 [{}]의 호가 정보 조회 시작", stockCode);
 
             // 1. 접근 토큰 가져오기
             String accessToken = authService.getAccessToken();
+
+            // 종목코드 변환 추가 (SOR 방식 사용을 위해 _AL 추가)
+            String stockCodeForAPI = convertStockCode(stockCode);
 
             // 2. WebClient 구성
             WebClient webClient = WebClient.builder()
@@ -157,7 +161,7 @@ public class KiwoomStockApiService {
                     .build();
 
             // 3. 요청 본문 생성
-            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCode);
+            String requestBody = String.format("{\"stk_cd\":\"%s\"}", stockCodeForAPI);
 
             // 4. API 호출 및 응답 처리
             String responseBody = webClient.post()
@@ -179,12 +183,6 @@ public class KiwoomStockApiService {
                 throw new CustomException(StockErrorCode.API_REQUEST_FAILED,
                         "키움 API 응답 오류: " + responseDTO.getReturnMsg());
             }
-
-            log.info("종목 [{}]의 호가 정보 조회 성공: 기준시간={}, 최우선매도호가={}, 최우선매수호가={}",
-                    stockCode,
-                    responseDTO.getBidReqBaseTm(),
-                    responseDTO.getSelFprBid(),
-                    responseDTO.getBuyFprBid());
 
             return responseDTO;
 
