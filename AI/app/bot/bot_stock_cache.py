@@ -301,6 +301,47 @@ class BotStockCache:
         
         return success_count
     
+    def calculate_drl_utrans_indicators(self):
+        """DRL-UTrans 모델용 학습된 특성 계산 (차트 데이터 기반)"""
+        # 성공 카운트 초기화
+        success_count = 0
+        
+        # 필터링된 종목 목록 가져오기
+        filtered_stocks = self.get_filtered_stocks()
+        
+        logger.info(f"DRL-UTrans 특성 계산 시작: {len(filtered_stocks)}개 종목")
+        
+        # 각 종목별 처리
+        for symbol in filtered_stocks:
+            try:
+                # 차트 데이터 가져오기
+                chart_data = self.get_chart_data(symbol)
+                
+                # 차트 데이터가 충분한지 확인
+                if not chart_data or len(chart_data) < 60:  # 최소 60일치 데이터 필요
+                    logger.warning(f"종목 {symbol} 차트 데이터 부족: {len(chart_data) if chart_data else 0}일")
+                    continue
+                
+                # DRL-UTrans는 특성 미리 계산하지 않고 필요할 때 계산
+                # 여기서는 차트 데이터가 충분한지만 확인
+                success_count += 1
+                
+            except Exception as e:
+                logger.error(f"종목 {symbol} DRL-UTrans 특성 계산 오류: {str(e)}")
+        
+        logger.info(f"DRL-UTrans 특성 계산 완료: {success_count}/{len(filtered_stocks)}개 성공")
+        return success_count
+    
+    def get_drl_utrans_features(self, symbol):
+        """DRL-UTrans 모델을 위한 입력 특성 가져오기"""
+        # 차트 데이터 가져오기
+        chart_data = self.get_chart_data(symbol)
+        if not chart_data or len(chart_data) < 60:
+            return None
+        
+        # 여기서는 데이터만 전달하고 실제 특성 계산은 모델에서 수행
+        return chart_data
+    
     def _check_volume_surge_indicator(self, df):
         """거래량 급증 지표 계산 (DataFrame 사용)"""
         try:

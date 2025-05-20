@@ -11,7 +11,7 @@ from app.models.trade_models import TradingStrategy
 from app.strategies.bollinger import BollingerBandTradingModel
 from app.strategies.envelope import EnvelopeTradingModel
 from app.strategies.short_term import ShortTermTradingModel
-# from app.strategies.drl_utrans import DRLUTransTradingModel
+from app.strategies.drl_utrans import DRLUTransTradingModel
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,11 @@ class BotInstance:
                     self.trading_model = ShortTermTradingModel(self.bot_stock_cache)
                     logger.info(f"봇 {self.email} SHORT_TERM 전략 모델 생성 성공")
                     self.trading_model.set_backend_client(self.backend_client)
+                elif strategy_enum == TradingStrategy.DRL_UTRANS:
+                    logger.info(f"봇 {self.email} DRL_UTRANS 전략 모델 생성 시도")
+                    self.trading_model = DRLUTransTradingModel(self.bot_stock_cache)
+                    logger.info(f"봇 {self.email} DRL_UTRANS 전략 모델 생성 성공")
+                    self.trading_model.set_backend_client(self.backend_client)
                 else:
                     logger.warning(f"봇 {self.email} 알 수 없는 전략: {strategy_enum}")
                     
@@ -179,6 +184,12 @@ class BotInstance:
                     return
             else:
                 strategy_enum = self.strategy
+
+            # DRL-UTrans 전략은 별도 처리
+            if strategy_enum == TradingStrategy.DRL_UTRANS:
+                # DRL-UTrans는 별도의 indicators 없이 직접 처리
+                await self.trading_model.handle_realtime_price(symbol, price)
+                return
             
             indicators = None
             if self.bot_stock_cache:
