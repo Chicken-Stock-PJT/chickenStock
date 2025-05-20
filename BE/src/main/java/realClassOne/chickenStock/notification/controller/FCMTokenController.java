@@ -43,7 +43,7 @@ public class FCMTokenController {
         }
     }
 
-    @PostMapping("/token")
+    @PostMapping("/token/delete")
     public ResponseEntity<?> unregisterToken(
             @RequestHeader("Authorization") String authHeader,
             @RequestBody FCMTokenRequestDTO request) {
