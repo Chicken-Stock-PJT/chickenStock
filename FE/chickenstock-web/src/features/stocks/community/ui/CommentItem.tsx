@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/CommentItem.tsx
 import React, { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -201,7 +200,17 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment }) => {
           )}
         </div>
       )}
-
+      {/* 삭제된 댓글이지만 대댓글이 있는 경우에도 토글 버튼 표시 */}
+      {comment.deleted && replyCount > 0 && (
+        <div className="flex items-center text-sm text-gray-600 mt-2">
+          <button
+            className="flex items-center text-xs text-blue-500 hover:text-blue-700"
+            onClick={toggleReplies}
+          >
+            {showReplies ? "답글 숨기기" : `답글 ${replyCount}개 보기`}
+          </button>
+        </div>
+      )}
       {/* 답글 작성 폼 */}
       {showReplyForm && stockCode && !comment.deleted && (
         <div className="mt-2">

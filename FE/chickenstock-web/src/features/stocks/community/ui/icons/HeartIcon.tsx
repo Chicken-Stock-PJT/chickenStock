@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/icons/HeartIcon.tsx
 import React from "react";
 
 interface HeartIconProps {

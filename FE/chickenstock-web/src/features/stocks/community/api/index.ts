@@ -1,4 +1,3 @@
-// @/features/stocks/community/api/index.ts
 import apiClient from "@/shared/api/axios";
 import { CommentsParams, CommentsResponse, Comment } from "../model/types";
 
