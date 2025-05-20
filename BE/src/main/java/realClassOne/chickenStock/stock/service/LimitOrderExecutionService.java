@@ -395,21 +395,6 @@ public class LimitOrderExecutionService {
                 log.warn("체결 정보 웹소켓 전송 실패: {}", e.getMessage());
             }
 
-            // FCM 알림 전송
-            try {
-                log.info("FCM 체결 알림 전송 시작");
-                notificationService.createTradeFCMNotification(
-                        member.getMemberId(),
-                        stockData.getShortName(),
-                        order.getOrderType() == TradeHistory.TradeType.BUY ? "BUY" : "SELL",
-                        quantity,
-                        executionPrice
-                );
-                log.info("FCM 체결 알림 전송 완료");
-            } catch (Exception e) {
-                log.error("FCM 체결 알림 전송 중 오류 발생", e);
-            }
-
             try {
                 log.info("체결 알림 생성 시작: 회원ID={}, 종목={}, 타입={}, 수량={}, 가격={}",
                         member.getMemberId(), stockData.getShortName(),

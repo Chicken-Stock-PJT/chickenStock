@@ -12,7 +12,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import realClassOne.chickenStock.auth.dto.common.TokenDto;
 import realClassOne.chickenStock.auth.dto.common.WebTokenResponseDTO;
-import realClassOne.chickenStock.auth.dto.request.*;
+import realClassOne.chickenStock.auth.dto.request.ExchangeRequestDTO;
+import realClassOne.chickenStock.auth.dto.request.LoginRequestDTO;
+import realClassOne.chickenStock.auth.dto.request.RefreshTokenRequestDTO;
+import realClassOne.chickenStock.auth.dto.request.SignupRequestDTO;
 import realClassOne.chickenStock.auth.dto.response.NicknameCheckResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.PasswordResetResponseDTO;
 import realClassOne.chickenStock.auth.dto.response.SignupResponseDTO;
@@ -146,7 +149,7 @@ public class AuthService {
     }
 
     @Transactional
-    public WebTokenResponseDTO refreshAccessTokenWeb(String refreshToken, HttpServletResponse response) {
+    public WebTokenResponseDTO refreshAccessTokenWeb(String refreshToken, String accessToken, HttpServletResponse response) {
 
         // 리프레시 토큰 검증
         if (!jwtTokenProvider.validateToken(refreshToken)) {
@@ -154,7 +157,7 @@ public class AuthService {
         }
 
         // 만료된 액세스 토큰에서 memberId 추출
-        Long memberId = jwtTokenProvider.getMemberIdFromToken(refreshToken);
+        Long memberId = jwtTokenProvider.getMemberIdFromToken(accessToken);
         if (memberId == null) {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
@@ -166,6 +169,8 @@ public class AuthService {
         if (member.getRefreshToken() == null || !member.getRefreshToken().equals(refreshToken)) {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
+
+        jwtTokenProvider.addToBlacklist(accessToken);
 
         // 새 액세스 토큰만 발급 (Member 엔티티 변경 없음)
         WebTokenResponseDTO webTokenResponseDTO = jwtTokenProvider.generateAccessToken(member);

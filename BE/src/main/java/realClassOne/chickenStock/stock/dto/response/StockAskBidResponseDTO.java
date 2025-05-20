@@ -1,6 +1,5 @@
 package realClassOne.chickenStock.stock.dto.response;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,7 +10,6 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class StockAskBidResponseDTO {
     // 기본 정보
     @JsonProperty("bid_req_base_tm")
