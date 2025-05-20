@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/CommentForm.tsx
 import React, { useState } from "react";
 import { useCreateCommentMutation } from "../model/mutations";
 import { useAuthStore } from "@/shared/store/auth";

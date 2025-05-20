@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/ConfirmModal.tsx
 interface ConfirmModalProps {
   show: boolean;
   title: string;

@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/AlertModal.tsx
 import React from "react";
 
 interface AlertModalProps {

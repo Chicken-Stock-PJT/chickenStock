@@ -1,4 +1,3 @@
-// @/features/stocks/community/ui/ReplyItem.tsx
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Comment } from "../model/types";
