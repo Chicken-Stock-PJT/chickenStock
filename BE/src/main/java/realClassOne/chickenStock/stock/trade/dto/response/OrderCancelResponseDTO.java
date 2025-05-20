@@ -1,4 +1,4 @@
-package realClassOne.chickenStock.stock.dto.response;
+package realClassOne.chickenStock.stock.trade.dto.response;
 
 import lombok.Getter;
 
@@ -24,5 +24,10 @@ public class OrderCancelResponseDTO {
         return dto;
     }
 
-
+    public static OrderCancelResponseDTO fail(String message) {
+        OrderCancelResponseDTO dto = new OrderCancelResponseDTO();
+        dto.status = "error";
+        dto.message = message;
+        return dto;
+    }
 }
