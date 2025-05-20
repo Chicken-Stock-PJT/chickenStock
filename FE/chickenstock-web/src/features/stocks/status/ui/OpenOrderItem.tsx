@@ -29,7 +29,7 @@ const OpenOrderItem = ({ order, idx }: OpenOrderItemProps) => {
           minute: "2-digit",
         })}
       </div>
-      <Button variant="outline" size="sm" onClick={() => cancelOrder()}>
+      <Button className="ml-2" variant="outline" size="sm" onClick={() => cancelOrder()}>
         취소
       </Button>
     </div>
