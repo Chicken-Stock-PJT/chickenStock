@@ -1,24 +1,28 @@
-"""
-백엔드 서버 인증 처리
-"""
 import logging
 import asyncio
-import aiohttp
-from typing import Dict
+from typing import Optional, Dict
 from datetime import datetime, timedelta
+import aiohttp
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 class AuthClient:
-    """백엔드 서버 인증 처리"""
+    """
+    인증 상태 중앙 관리 매니저
+    - 토큰 유효성 검사 및 자동 갱신 처리
+    - 인증 실패 시 자동 재로그인
+    - 모든 인증 관련 로직 중앙화
+    """
     
     def __init__(self):
-        """인증 클라이언트 초기화"""
+        """인증 매니저 초기화"""
         # 백엔드 URL
         self.backend_url = settings.BACKEND_API_URL
         
         # 인증 정보
+        self.email = None
+        self.password = None
         self.access_token = None
         self.refresh_token = None
         self.access_token_expires_at = None
@@ -28,21 +32,42 @@ class AuthClient:
         
         # 현재 상태
         self.is_authenticated = False
+        
+        # 토큰 갱신 태스크
+        self._refresh_task = None
+        
+        # 마지막 인증 확인 시간
+        self.last_auth_check = None
     
-    async def initialize(self):
+    async def initialize(self) -> bool:
         """초기화 및 세션 생성"""
-        if not self.session or self.session.closed:
-            self.session = aiohttp.ClientSession(
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                }
-            )
-        return True
+        try:
+            if not self.session or self.session.closed:
+                self.session = aiohttp.ClientSession(
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    }
+                )
+            logger.info("인증 매니저 초기화 완료")
+            return True
+        except Exception as e:
+            logger.error(f"인증 매니저 초기화 오류: {str(e)}")
+            return False
     
     async def login(self, email: str, password: str) -> bool:
-        """백엔드 API로 로그인"""
+        """
+        백엔드 API로 로그인
+        
+        :param email: 사용자 이메일
+        :param password: 사용자 비밀번호
+        :return: 로그인 성공 여부
+        """
         try:
+            # 인증 정보 저장
+            self.email = email
+            self.password = password
+            
             if not self.session:
                 await self.initialize()
             
@@ -64,7 +89,7 @@ class AuthClient:
                     self.refresh_token = auth_data.get("refreshToken")
                     
                     # 만료 시간 계산
-                    expires_in = auth_data.get("expiresIn", 3600)  # 기본 1시간
+                    expires_in = 3600 * 9
                     self.access_token_expires_at = datetime.now() + timedelta(seconds=expires_in)
                     
                     # 세션 헤더에 토큰 추가
@@ -73,33 +98,47 @@ class AuthClient:
                     })
                     
                     self.is_authenticated = True
+                    self.last_auth_check = datetime.now()
+                    
                     logger.info(f"백엔드 로그인 성공: {email}")
                     
-                    # 토큰 갱신 태스크 시작
-                    asyncio.create_task(self._token_refresh_loop())
+                    # 이전 토큰 갱신 태스크가 있으면 취소
+                    if self._refresh_task:
+                        self._refresh_task.cancel()
+                    
+                    # 새로운 토큰 갱신 태스크 시작
+                    self._refresh_task = asyncio.create_task(self._token_refresh_loop())
                     
                     return True
                 else:
-                    logger.error(f"백엔드 로그인 실패: HTTP {response.status}")
+                    error_text = await response.text()
+                    logger.error(f"백엔드 로그인 실패: HTTP {response.status}, {error_text}")
+                    self.is_authenticated = False
                     return False
         
         except Exception as e:
             logger.error(f"로그인 중 오류: {str(e)}")
+            self.is_authenticated = False
             return False
     
     async def refresh_access_token(self) -> bool:
-        """리프레시 토큰을 사용하여 액세스 토큰 갱신"""
+        """
+        리프레시 토큰을 사용하여 액세스 토큰 갱신
+        
+        :return: 토큰 갱신 성공 여부
+        """
         try:
             if not self.refresh_token:
                 logger.error("리프레시 토큰이 없습니다.")
                 return False
             
             refresh_data = {
+                "accessToken": self.access_token,
                 "refreshToken": self.refresh_token
             }
             
             async with self.session.post(
-                f"{self.backend_url}/api/auth/refresh",
+                f"{self.backend_url}/api/auth/token/refresh-mobile",
                 json=refresh_data
             ) as response:
                 if response.status == 200:
@@ -107,29 +146,76 @@ class AuthClient:
                     
                     # 새 토큰 저장
                     self.access_token = token_data.get("accessToken")
+                    self.refresh_token = token_data.get("refreshToken")
                     
                     # 만료 시간 갱신
-                    access_expires_in = token_data.get("accessTokenExpiresIn", 3600)
+                    access_expires_in = 3600 * 9
                     self.access_token_expires_at = datetime.now() + timedelta(seconds=access_expires_in)
-                    
-                    # 새 리프레시 토큰이 있다면 갱신
-                    if "refreshToken" in token_data:
-                        self.refresh_token = token_data.get("refreshToken")
                     
                     # 세션 헤더 업데이트
                     self.session.headers.update({
                         "Authorization": f"Bearer {self.access_token}"
                     })
                     
-                    logger.info("액세스 토큰 갱신 성공")
+                    self.is_authenticated = True
+                    self.last_auth_check = datetime.now()
+                    
+                    logger.info(f"액세스 토큰 갱신 성공: {self.email}")
                     return True
                 else:
-                    logger.error(f"액세스 토큰 갱신 실패: HTTP {response.status}")
+                    error_text = await response.text()
+                    logger.error(f"액세스 토큰 갱신 실패: HTTP {response.status}, {error_text}")
                     self.is_authenticated = False
                     return False
         
         except Exception as e:
             logger.error(f"토큰 갱신 중 오류: {str(e)}")
+            self.is_authenticated = False
+            return False
+    
+    async def ensure_authentication(self) -> bool:
+        """
+        인증 상태 확인 및 필요시 토큰 갱신 또는 재로그인
+        - 토큰이 만료되었거나 곧 만료될 예정이면 갱신 시도
+        - 갱신 실패 시 재로그인 시도
+        
+        :return: 인증 성공 여부
+        """
+        try:
+            # 마지막 인증 확인 시간이 10분 이내면 재확인 스킵 (최적화)
+            if self.last_auth_check:
+                time_since_check = (datetime.now() - self.last_auth_check).total_seconds()
+                if time_since_check < 600 and self.is_authenticated:
+                    return True
+            
+            # 세션 초기화 확인
+            if not self.session or self.session.closed:
+                await self.initialize()
+            
+            # 토큰 유효성 확인
+            if not self.is_token_valid():
+                logger.info(f"인증 토큰이 유효하지 않거나 곧 만료됩니다: {self.email}")
+                
+                # 1. 리프레시 토큰으로 갱신 시도
+                if self.refresh_token:
+                    refresh_success = await self.refresh_access_token()
+                    if refresh_success:
+                        return True
+                
+                # 2. 갱신 실패 시 재로그인 시도
+                if self.email and self.password:
+                    return await self.login(self.email, self.password)
+                else:
+                    logger.error("인증 정보(이메일/비밀번호)가 없어 재로그인할 수 없습니다")
+                    self.is_authenticated = False
+                    return False
+            
+            # 토큰이 유효한 경우
+            self.last_auth_check = datetime.now()
+            return True
+        
+        except Exception as e:
+            logger.error(f"인증 확인 중 오류: {str(e)}")
             self.is_authenticated = False
             return False
     
@@ -143,7 +229,7 @@ class AuthClient:
                     time_to_expiry = (self.access_token_expires_at - now).total_seconds()
                     
                     if time_to_expiry <= 600:  # 10분(600초) 이하로 남은 경우
-                        logger.info("액세스 토큰 만료 시간이 10분 이내로 남아 갱신 시작")
+                        logger.info(f"액세스 토큰 만료 시간이 10분 이내로 남아 갱신 시작: {self.email}")
                         await self.refresh_access_token()
                     else:
                         # 다음 갱신 시간까지 대기 (토큰 만료 10분 전)
@@ -155,28 +241,55 @@ class AuthClient:
                     await self.refresh_access_token()
         
         except asyncio.CancelledError:
-            logger.info("토큰 갱신 루프 취소됨")
+            logger.info(f"토큰 갱신 루프 취소됨: {self.email}")
         except Exception as e:
             logger.error(f"토큰 갱신 루프 오류: {str(e)}")
     
+    def is_token_valid(self) -> bool:
+        """
+        현재 액세스 토큰이 유효한지 확인
+        - 만료 시간이 15분 이상 남아있으면 유효한 것으로 간주
+        
+        :return: 토큰 유효 여부
+        """
+        if not self.access_token or not self.access_token_expires_at:
+            return False
+        
+        # 현재 시간이 만료 시간 15분 이전인지 확인 (여유 있게 체크)
+        time_to_expiry = (self.access_token_expires_at - datetime.now()).total_seconds()
+        return time_to_expiry > 900  # 15분(900초) 이상 남아있어야 유효
+    
     def get_authorization_header(self) -> Dict[str, str]:
-        """Authorization 헤더 반환"""
+        """
+        Authorization 헤더 반환
+        
+        :return: 인증 헤더 딕셔너리
+        """
         if self.access_token:
             return {"Authorization": f"Bearer {self.access_token}"}
         return {}
     
-    def is_token_valid(self) -> bool:
-        """현재 액세스 토큰이 유효한지 확인"""
-        if not self.access_token or not self.access_token_expires_at:
-            return False
-        
-        # 현재 시간이 만료 시간보다 이전인지 확인
-        return datetime.now() < self.access_token_expires_at
-    
     async def close(self):
-        """클라이언트 종료"""
-        if self.session and not self.session.closed:
-            await self.session.close()
-        
-        self.is_authenticated = False
-        logger.info("인증 클라이언트 종료")
+        """인증 매니저 종료"""
+        try:
+            # 토큰 갱신 태스크 취소
+            if self._refresh_task:
+                self._refresh_task.cancel()
+                try:
+                    await self._refresh_task
+                except asyncio.CancelledError:
+                    pass
+                self._refresh_task = None
+            
+            # 세션 종료
+            if self.session and not self.session.closed:
+                await self.session.close()
+                self.session = None
+            
+            self.is_authenticated = False
+            logger.info(f"인증 매니저 종료: {self.email}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"인증 매니저 종료 중 오류: {str(e)}")
+            return False
