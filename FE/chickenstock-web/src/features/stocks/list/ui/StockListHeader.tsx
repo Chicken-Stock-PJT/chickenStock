@@ -72,9 +72,10 @@ const StockListHeader = ({
               <button
                 key={`${type.id}-${type.sortType ?? ""}`}
                 className={`
-                    inline-flex flex-1 items-center justify-center gap-2 rounded-full px-4
-                    py-2 text-sm font-medium
-                    transition-all duration-200 ease-in-out sm:flex-none
+                    inline-flex flex-1 items-center justify-center gap-2 rounded-full p-2 text-sm
+                    font-medium transition-all duration-200
+
+                    ease-in-out sm:flex-none sm:px-4
                     ${
                       rankingType === type.id && (!type.sortType || sortType === type.sortType)
                         ? "bg-primary-300 text-gray-800 shadow-md"
@@ -83,8 +84,8 @@ const StockListHeader = ({
                   `}
                 onClick={() => onRankingTypeChange(type.id as RankingType, type.sortType)}
               >
-                {type.icon}
-                {type.name}
+                <span className="hidden text-xs sm:block">{type.icon}</span>
+                <span className="text-xs sm:text-sm">{type.name}</span>
               </button>
             ))}
           </div>

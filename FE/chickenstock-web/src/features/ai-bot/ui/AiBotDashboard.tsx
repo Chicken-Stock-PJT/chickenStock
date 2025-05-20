@@ -26,7 +26,7 @@ const AiBotDashboard = ({
       <PortfolioChart
         holdings={portfolio.holdings}
         stockValuation={portfolio.stockValuation}
-        memberMoney={portfolio.memberMoney}
+        cash={portfolio.cash}
       />
     </div>
   );

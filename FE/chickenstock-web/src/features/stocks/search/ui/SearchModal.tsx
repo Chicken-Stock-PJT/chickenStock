@@ -26,18 +26,23 @@ export default function SearchModal({ open, onOpenChange }: SearchModalProps) {
 
   // NXT 종목 목록 초기화
   useEffect(() => {
+    if (allStocks.length === 0) return;
+
     const initNxtStocks = async () => {
       const codes = new Set<string>();
-      for (const stock of allStocks) {
+      const promises = allStocks.map(async (stock) => {
         const code = stock.shortCode.slice(0, 6);
         if (await isNxtStock(code)) {
           codes.add(code);
         }
-      }
+      });
+
+      await Promise.all(promises);
       setNxtStocks(codes);
     };
+
     void initNxtStocks();
-  }, [allStocks]);
+  }, [allStocks.length]);
 
   // 검색어에 따른 필터링 및 제한된 결과 표시
   const filteredResults = useMemo(() => {

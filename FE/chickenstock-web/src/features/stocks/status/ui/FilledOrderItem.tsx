@@ -31,13 +31,21 @@ const FilledOrderItem = ({ ...props }: FilledOrderItemProps) => {
           })}
         </span> */}
         {/* 체결시간 */}
-        <span>
-          {" "}
-          {new Date(props.order.tradedAt).toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
+        <div className="flex flex-col items-end">
+          <span>
+            {new Date(props.order.tradedAt).toLocaleDateString("ko-KR", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            })}
+          </span>
+          <span>
+            {new Date(props.order.tradedAt).toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+        </div>
       </div>
     </div>
   );

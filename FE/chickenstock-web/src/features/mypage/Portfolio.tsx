@@ -18,6 +18,9 @@ const Portfolio = () => {
           ...oldData,
           totalAsset: data.totalAsset.toString(),
           memberMoney: data.memberMoney.toString(),
+          pendingOrderAmount: data.pendingOrderAmount.toString(),
+          stockValuation: data.stockValuation.toString(),
+          returnRate: data.totalReturnRate.toString(),
         };
       });
     }
@@ -31,18 +34,20 @@ const Portfolio = () => {
     <div className="space-y-6 text-left">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <PortfolioChart
-          memberMoney={data.memberMoney}
+          cash={data.memberMoney}
           holdings={data.holdings}
           stockValuation={data.stockValuation}
         />
         <PortfolioOverview
           totalAsset={data.totalAsset + data.pendingOrderAmount}
-          memberMoney={data.memberMoney}
           totalProfitLoss={data.totalProfitLoss}
           totalReturnRate={data.totalReturnRate}
+          memberMoney={data.memberMoney}
+          pendingOrderAmount={data.pendingOrderAmount}
+          stockValuation={data.stockValuation}
+          todayTradeAmount={data.todayTradeAmount}
           todayProfitLoss={data.todayProfitLoss}
           todayReturnRate={data.todayReturnRate}
-          sectors={data.holdingStockCount}
         />
       </div>
       <div>
