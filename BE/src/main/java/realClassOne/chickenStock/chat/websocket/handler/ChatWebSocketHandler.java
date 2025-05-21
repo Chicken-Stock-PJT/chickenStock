@@ -144,18 +144,30 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         String sessionId = session.getId();
         Long memberId = sessionMemberMap.get(sessionId);
 
-        if (memberId != null) {
-            memberSessions.remove(memberId);
-            sendUserLeftMessage(memberId);
+        log.info("웹소켓 연결 종료: sessionId={}, status={}, memberId={}", sessionId, status, memberId);
+
+        try {
+            if (memberId != null) {
+                memberSessions.remove(memberId);
+                try {
+                    sendUserLeftMessage(memberId);
+                } catch (Exception e) {
+                    log.error("사용자 퇴장 메시지 전송 중 오류: {}", e.getMessage());
+                }
+            }
+        } finally {
+            // 세션 정보 정리는 항상 실행되도록 finally 블록에 배치
+            sessions.remove(sessionId);
+            sessionMemberMap.remove(sessionId);
+            lastPingTimeMap.remove(sessionId);
+
+            // 사용자 수 브로드캐스팅은 모든 정리 작업 후에 실행
+            try {
+                broadcastActiveUserCount();
+            } catch (Exception e) {
+                log.error("사용자 수 브로드캐스팅 중 오류: {}", e.getMessage());
+            }
         }
-
-        sessions.remove(sessionId);
-        sessionMemberMap.remove(sessionId);
-
-        log.info("웹소켓 연결 종료: sessionId={}, status={}", sessionId, status);
-
-        // 사용자 연결 종료 후 현재 연결된 사용자 수를 브로드캐스트
-        broadcastActiveUserCount();
     }
 
     // ChatWebSocketHandler.java의 sendMessageToUser 메서드 개선
@@ -410,13 +422,26 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    // 현재 연결된 인증된 사용자 수를 모든 클라이언트에게 브로드캐스트
     private void broadcastActiveUserCount() {
         try {
-            // 인증된 사용자 수 (memberSessions의 크기)
-            int authenticatedUserCount = memberSessions.size();
-            // 전체 연결 세션 수 (sessions의 크기)
-            int totalConnections = sessions.size();
+            // 실제로 연결된 인증된 사용자 수 확인 (세션이 살아있는지 추가 검증)
+            int authenticatedUserCount = 0;
+            for (Map.Entry<Long, WebSocketSession> entry : memberSessions.entrySet()) {
+                if (entry.getValue() != null && entry.getValue().isOpen()) {
+                    authenticatedUserCount++;
+                } else {
+                    // 죽은 세션 발견 시 맵에서 제거
+                    memberSessions.remove(entry.getKey());
+                }
+            }
+
+            // 전체 연결 세션 수 검증
+            int totalConnections = 0;
+            for (WebSocketSession session : sessions.values()) {
+                if (session != null && session.isOpen()) {
+                    totalConnections++;
+                }
+            }
 
             Map<String, Object> message = Map.of(
                     "type", "userCount",
