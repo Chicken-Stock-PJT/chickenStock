@@ -26,7 +26,7 @@ const RankingListItem: React.FC<RankingListItemProps> = ({
 
   return (
     <div
-      className={`flex items-center justify-between rounded-xl p-3.5 shadow-sm transition-all hover:shadow-md ${
+      className={`flex cursor-pointer items-center justify-between rounded-xl p-3.5 shadow-sm transition-all hover:shadow-md ${
         isMyRanking
           ? "border-2 border-orange-300 bg-gradient-to-r from-orange-50 to-orange-100"
           : isBot
