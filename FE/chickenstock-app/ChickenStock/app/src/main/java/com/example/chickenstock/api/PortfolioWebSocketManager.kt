@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 class PortfolioWebSocketManager private constructor() {
     companion object {
         private const val TAG = "PortfolioWebSocketManager"
-        private const val WS_URL = "wss://k12a106.p.ssafy.io/ws/portfolio"
+        private const val WS_URL = "wss://chickenstock.shop/ws/portfolio"
         
         @Volatile
         private var instance: PortfolioWebSocketManager? = null
@@ -232,11 +232,22 @@ class PortfolioWebSocketManager private constructor() {
                                     totalValuation = updatedPositions.sumOf { it.valuationAmount },
                                     totalProfitLoss = totalProfitLoss,
                                     totalReturnRate = totalReturnRate,
-                                    positions = updatedPositions
+                                    positions = updatedPositions,
+                                    updatedAt = java.time.LocalDateTime.now().toString()  // 업데이트 시간 갱신
                                 )
                                 
                                 _portfolioUpdateFlow.value = updatedPortfolioData
-                                Log.d(TAG, "포트폴리오 데이터 업데이트 완료")
+                                Log.d(TAG, """
+                                    포트폴리오 데이터 업데이트 완료:
+                                    - 종목: $stockCode
+                                    - 현재가: $currentPrice
+                                    - 평가금액: $valuationAmount
+                                    - 수익: $profitLoss
+                                    - 수익률: $returnRate
+                                    - 총자산: $totalAsset
+                                    - 총수익: $totalProfitLoss
+                                    - 총수익률: $totalReturnRate
+                                """.trimIndent())
                             }
                         }
                         

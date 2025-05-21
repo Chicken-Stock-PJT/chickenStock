@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.navigation.NavController
+import androidx.navigation.NavHostController
+import androidx.navigation.NavBackStackEntry
 import com.example.chickenstock.R
 import com.example.chickenstock.ui.theme.*
 import androidx.compose.animation.core.*
@@ -64,6 +67,12 @@ import androidx.compose.ui.draw.alpha
 import com.example.chickenstock.api.PortfolioWebSocketManager
 import android.content.Context
 import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.material.icons.filled.Delete
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 
 // PortfolioData API 서비스 인터페이스 정의
 interface PortfolioService {
@@ -83,17 +92,21 @@ interface TradeHistoryService {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyPageScreen(
-    navController: NavController,
+    navController: NavHostController,
+    navBackStackEntry: NavBackStackEntry,
     authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory(LocalContext.current)),
-    mainViewModel: MainViewModel = viewModel(),
-    initialTab: String? = null  // 초기 탭 파라미터 추가
+    mainViewModel: MainViewModel = viewModel()
 ) {
+    // 쿼리 파라미터 읽기
+    val initialTab = navBackStackEntry.arguments?.getString("tab")
+    val initialPending = navBackStackEntry.arguments?.getString("pending") == "true"
+
     // 초기 탭 인덱스 설정
     var selectedTabIndex by remember(initialTab) { 
         mutableStateOf(
             when (initialTab) {
                 "portfolio" -> 0
-                "history" -> 1
+                "history", "trade" -> 1
                 "favorite" -> 2
                 null -> 0
                 else -> 0
@@ -105,100 +118,110 @@ fun MyPageScreen(
     
     val context = LocalContext.current
     val tokenManager = remember { com.example.chickenstock.data.TokenManager.getInstance(context) }
-    var assetData by remember { mutableStateOf<PortfolioData?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
 
-    // 포트폴리오 웹소켓 매니저 가져오기
-    val portfolioWebSocketManager = remember { PortfolioWebSocketManager.getInstance() }
-    
-    // 웹소켓에서 업데이트된 포트폴리오 데이터 수집
-    val portfolioUpdateData by portfolioWebSocketManager.portfolioUpdateFlow.collectAsState()
+    val dashboardData by mainViewModel.dashboardData.collectAsState()
+    val isLoading by mainViewModel.isLoading.collectAsState()
+    val error by mainViewModel.error.collectAsState()
 
-    // 최종적으로 화면에 표시할 포트폴리오 데이터 (REST API 데이터 또는 웹소켓 업데이트)
-    val displayPortfolioData = remember(portfolioUpdateData, assetData) {
-        portfolioUpdateData ?: assetData
-    }
-    
-    // 실시간 업데이트 여부 추적
-    val isRealtimeUpdated = remember(portfolioUpdateData) {
-        portfolioUpdateData != null
-    }
-    
-    // 웹소켓 업데이트 효과 추적
-    LaunchedEffect(portfolioUpdateData) {
-        if (portfolioUpdateData != null) {
-            Log.d("MyPageScreen", "웹소켓에서 업데이트된 포트폴리오 데이터 받음: ${portfolioUpdateData?.positions?.size}개 종목")
-        }
-    }
+    var isRefreshing by remember { mutableStateOf(false) }
+    var selectedTradeTab by remember { mutableStateOf("체결 내역") }
 
-    // 서비스 초기화
-    LaunchedEffect(authViewModel.isLoggedIn.value) {
-        if (authViewModel.isLoggedIn.value) {
-            // MainViewModel 서비스 초기화
-            mainViewModel.initializeServices(context)
-            
-            // 사용자 프로필 정보 로드
-            val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
-            mainViewModel.loadUserProfile(memberService, context)
-        }
-    }
+    val rotation = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
 
-    // API 호출 (로그인 상태일 때만)
-    LaunchedEffect(authViewModel.isLoggedIn.value) {
-        if (authViewModel.isLoggedIn.value) {
-            isLoading = true
-            error = null
-            try {
-                val retrofit = RetrofitClient.getInstance(context)
-                val service = retrofit.create(PortfolioService::class.java)
-                val token = tokenManager.getAccessToken()
-                if (!token.isNullOrBlank()) {
-                    assetData = withContext(Dispatchers.IO) {
-                        service.getPortfolio("Bearer $token")
-                    }
-                    
-                    // 초기 포트폴리오 데이터를 웹소켓 매니저에 설정
-                    assetData?.let { portfolioData ->
-                        portfolioWebSocketManager.setInitialPortfolioData(portfolioData)
-                        
-                        // 웹소켓 연결 시작
-                        portfolioWebSocketManager.connect(context)
-                        Log.d("MyPageScreen", "포트폴리오 웹소켓 연결 시작")
-                    }
+    // 포트폴리오 탭 진입 시마다 새로고침
+    LaunchedEffect(selectedTabIndex) {
+        if (selectedTabIndex == 0) {
+            val memberService = try {
+                val field = mainViewModel.javaClass.getDeclaredField("memberService")
+                field.isAccessible = true
+                field.get(mainViewModel) as? com.example.chickenstock.api.MemberService
+            } catch (e: Exception) { null }
+            if (memberService != null) {
+                mainViewModel.loadDashboard(memberService, context)
+            } else {
+                mainViewModel.initializeServices(context)
+                val ms = try {
+                    val field = mainViewModel.javaClass.getDeclaredField("memberService")
+                    field.isAccessible = true
+                    field.get(mainViewModel) as? com.example.chickenstock.api.MemberService
+                } catch (e: Exception) { null }
+                if (ms != null) {
+                    mainViewModel.loadDashboard(ms, context)
                 }
-            } catch (e: Exception) {
-                error = e.message
-                Log.e("MyPageScreen", "포트폴리오 데이터 로드 오류", e)
-            } finally {
-                isLoading = false
             }
         }
     }
 
-    // 컴포넌트가 사라질 때 웹소켓 연결 종료
-    DisposableEffect(Unit) {
-        onDispose {
-            Log.d("MyPageScreen", "포트폴리오 웹소켓 연결 종료")
-            portfolioWebSocketManager.disconnect()
-        }
-    }
-
     Scaffold(
-        containerColor = Color.White
+        containerColor = Color(0xFFF5F5F5)
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
         ) {
             // 프로필 섹션 (고정)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFFFFBEB))
-                    .padding(16.dp)
+                    .background(
+                        color = Color(0xFFFFFBEB),
+                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
+                // 새로고침 아이콘 (왼쪽 상단)
+                IconButton(
+                    onClick = {
+                        if (!isRefreshing) {
+                            isRefreshing = true
+                            scope.launch {
+                                rotation.snapTo(0f)
+                                rotation.animateTo(
+                                    targetValue = 360f,
+                                    animationSpec = tween(durationMillis = 700)
+                                )
+                                // 새로고침 로직 실행 + 로그
+                                when (selectedTabIndex) {
+                                    0 -> {
+                                        Log.d("MyPageScreen", "[새로고침] 포트폴리오 탭: 자산/보유주식 새로고침")
+                                        val memberService = try {
+                                            val field = mainViewModel.javaClass.getDeclaredField("memberService")
+                                            field.isAccessible = true
+                                            field.get(mainViewModel) as? com.example.chickenstock.api.MemberService
+                                        } catch (e: Exception) { null }
+                                        if (memberService != null) mainViewModel.loadDashboard(memberService, context)
+                                    }
+                                    1 -> {
+                                        if (selectedTradeTab == "체결 내역") {
+                                            Log.d("MyPageScreen", "[새로고침] 거래기록 탭: 체결 내역 새로고침")
+                                            mainViewModel.loadTradeHistories(context, 10)
+                                        } else {
+                                            Log.d("MyPageScreen", "[새로고침] 거래기록 탭: 미체결 내역 새로고침")
+                                            val token = tokenManager.getAccessToken()
+                                            if (!token.isNullOrBlank()) mainViewModel.loadPendingOrders("Bearer $token")
+                                        }
+                                    }
+                                    2 -> {
+                                        Log.d("MyPageScreen", "[새로고침] 관심 종목 탭: 관심종목 새로고침")
+                                        mainViewModel.loadWatchlist(context)
+                                    }
+                                }
+                                isRefreshing = false
+                            }
+                        }
+                    },
+                    enabled = !isRefreshing,
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "새로고침",
+                        tint = if (isRefreshing) Color.Gray else Color.Black,
+                        modifier = Modifier.graphicsLayer { rotationZ = rotation.value }
+                    )
+                }
+                
                 // 설정 아이콘 (로그인된 경우에만 표시)
                 if (authViewModel.isLoggedIn.value) {
                     IconButton(
@@ -229,16 +252,15 @@ fun MyPageScreen(
                         // 프로필 이미지
                         Box(
                             modifier = Modifier
-                                .size(80.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black)
-                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "프로필",
-                                tint = Color.White,
-                                modifier = Modifier.size(48.dp)
+                            AsyncImage(
+                                model = R.drawable.logo, // res/drawable/logo.png 등 앱 로고 리소스 사용
+                                contentDescription = "앱 로고",
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
                             )
                         }
                         
@@ -310,8 +332,42 @@ fun MyPageScreen(
                 
                 // 선택된 탭에 따라 내용 표시
                 when (selectedTabIndex) {
-                    0 -> PortfolioTabContent(assetData = displayPortfolioData, isRealtimeUpdated = isRealtimeUpdated)
-                    1 -> TradeHistoryTabContent(mainViewModel = mainViewModel)
+                    0 -> {
+                        SwipeRefresh(
+                            state = rememberSwipeRefreshState(isRefreshing),
+                            onRefresh = {
+                                isRefreshing = true
+                                android.util.Log.d("MyPageScreen", "포트폴리오 새로고침 시도")
+                                // memberService를 안전하게 꺼내서 넘김
+                                val memberService = try {
+                                    val field = mainViewModel.javaClass.getDeclaredField("memberService")
+                                    field.isAccessible = true
+                                    field.get(mainViewModel) as? com.example.chickenstock.api.MemberService
+                                } catch (e: Exception) {
+                                    null
+                                }
+                                if (memberService != null) {
+                                    mainViewModel.loadDashboard(memberService, context)
+                                } else {
+                                    mainViewModel.initializeServices(context)
+                                    val ms = try {
+                                        val field = mainViewModel.javaClass.getDeclaredField("memberService")
+                                        field.isAccessible = true
+                                        field.get(mainViewModel) as? com.example.chickenstock.api.MemberService
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                    if (ms != null) {
+                                        mainViewModel.loadDashboard(ms, context)
+                                    }
+                                }
+                                isRefreshing = false
+                            }
+                        ) {
+                            DashboardPortfolioTabContent(dashboardData = dashboardData, navController = navController)
+                        }
+                    }
+                    1 -> TradeHistoryTabContent(mainViewModel = mainViewModel, initialPending = initialPending)
                     2 -> FavoriteStocksTabContent(
                         navController = navController,
                         mainViewModel = mainViewModel,
@@ -340,7 +396,8 @@ fun TabButton(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .background(if (isSelected) Secondary50 else Color.Transparent),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -549,14 +606,23 @@ fun AnimatedDonutChart(
 
 // 포트폴리오 아이템 UI
 @Composable
-fun PortfolioItem(position: Position, totalValuation: Int) {
+fun PortfolioItem(holding: com.example.chickenstock.model.DashboardHolding, totalValuation: Int, navController: NavHostController) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 32.dp, vertical = 12.dp),
+            .padding(horizontal = 32.dp, vertical = 12.dp)
+            .clickable {
+                navController.navigate(
+                    com.example.chickenstock.navigation.Screen.StockDetail.createRoute(
+                        stockCode = holding.stockCode,
+                        currentPrice = holding.currentPrice.toString(),
+                        fluctuationRate = holding.returnRate.toString()
+                    )
+                )
+            },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFF5F5F5)
+            containerColor = Color.White
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = 0.dp
@@ -579,19 +645,20 @@ fun PortfolioItem(position: Position, totalValuation: Int) {
                 ) {
                     // 로고 - AsyncImage로 변경
                     AsyncImage(
-                        model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${position.stockCode}.png",
+                        model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${holding.stockCode}.png",
                         contentDescription = "주식 로고",
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(Color.White)
+                            .background(Color.White),
+                        error = painterResource(id = R.drawable.logo)
                     )
 
                     Spacer(modifier = Modifier.width(12.dp))
 
                     // 주식 이름
                     Text(
-                        text = position.stockName,
+                        text = holding.stockName,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = SCDreamFontFamily
@@ -600,7 +667,7 @@ fun PortfolioItem(position: Position, totalValuation: Int) {
 
                 // 보유 수량
                 Text(
-                    text = "${position.quantity}주",
+                    text = "${holding.quantity}주",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SCDreamFontFamily
@@ -614,7 +681,7 @@ fun PortfolioItem(position: Position, totalValuation: Int) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "평균 매수 금액: ${position.averagePrice.toFormattedString()} 원",
+                    text = "평균 매수 금액: ${holding.averagePrice.toFormattedString()} 원",
                     fontSize = 14.sp,
                     color = Color.Gray,
                     fontFamily = SCDreamFontFamily
@@ -623,7 +690,7 @@ fun PortfolioItem(position: Position, totalValuation: Int) {
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "현재 주식 가치: ${position.currentPrice.toFormattedString()} 원",
+                    text = "현재 주식 가치: ${holding.currentPrice.toFormattedString()} 원",
                     fontSize = 14.sp,
                     color = Color.Gray,
                     fontFamily = SCDreamFontFamily
@@ -640,14 +707,14 @@ fun PortfolioItem(position: Position, totalValuation: Int) {
             ) {
                 // 평가금액
                 Text(
-                    text = "${position.valuationAmount.toFormattedString()} 원",
-                    fontSize = 18.sp,
+                    text = "${holding.valuationAmount.toFormattedString()} 원",
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SCDreamFontFamily
                 )
                 // 손익 및 수익률
-                val profitLoss = position.profitLoss
-                val returnRate = position.returnRate
+                val profitLoss = holding.profitLoss
+                val returnRate = holding.returnRate
                 val isPositive = profitLoss > 0
                 val isNegative = profitLoss < 0
                 val profitLossColor = when {
@@ -660,7 +727,7 @@ fun PortfolioItem(position: Position, totalValuation: Int) {
 
                 Text(
                     text = "$profitLossText$returnRateText",
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     color = profitLossColor,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SCDreamFontFamily
@@ -682,167 +749,216 @@ fun String.removeSign(): String {
 
 // 포트폴리오 탭 내용
 @Composable
-fun PortfolioTabContent(
-    assetData: PortfolioData?, 
-    isRealtimeUpdated: Boolean = false  // 실시간 업데이트 여부
+fun DashboardPortfolioTabContent(
+    dashboardData: com.example.chickenstock.model.DashboardResponse?,
+    navController: NavHostController
 ) {
-    if (assetData == null) {
+    if (dashboardData == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(text = "데이터가 없습니다.", color = Color.Gray)
         }
         return
     }
+    val totalAsset = dashboardData.totalAsset
+    val memberMoney = dashboardData.memberMoney
+    val stockValuation = dashboardData.stockValuation
+    val profit = dashboardData.totalProfitLoss
+    val returnRate = dashboardData.totalReturnRate
+    val holdings = dashboardData.holdings
 
-    // 초기 데이터 저장 (웹소켓 업데이트와 무관하게 유지)
-    val initialData = remember { assetData }
-    
-    // 도넛 그래프는 초기 데이터를 사용하고, 나머지 정보는 업데이트된 데이터 사용
-    val chartData = initialData
-    val displayData = assetData
-    
-    // 포트폴리오 데이터가 변경될 때마다 UI 업데이트를 위해 key 설정
-    val updateKey = remember(assetData) { System.currentTimeMillis() }
-    
-    val totalAsset = displayData.totalAsset
-    val cashAmount = displayData.memberMoney
-    val stockValuation = displayData.totalValuation
-    val updatedAt = displayData.updatedAt
-    val totalValuation = displayData.totalValuation
-    val positions = displayData.positions
-    val profit = displayData.totalProfitLoss
-    val returnRate = displayData.totalReturnRate
-    val returnRateColor = when {
-        returnRate > 0.0 -> Color.Red
-        returnRate < 0.0 -> Color.Blue
-        else -> Color.Gray
-    }
-
-    // 로그 출력: 전체 데이터
-    Log.d("PortfolioData", "[업데이트] 총 자산: $totalAsset, 현금: $cashAmount, 주식 가치: $stockValuation")
-    Log.d("PortfolioData", "[업데이트] 포지션 개수: ${positions.size}")
-    
-    // 도넛 그래프 데이터 준비 (초기 데이터 사용)
-    // 평가금액을 기준으로 비율 계산 (allocationRatio 대신)
-    val stockRatios = if (chartData.positions.isNotEmpty() && chartData.totalAsset > 0) {
-        chartData.positions.map { 
-            val calculatedRatio = it.valuationAmount.toDouble() / chartData.totalAsset.toDouble()
+    // 그래프 데이터 준비
+    val totalStockValuation = holdings.sumOf { it.valuationAmount }
+    val stockRatios = if (holdings.isNotEmpty() && totalStockValuation > 0) {
+        holdings.map {
+            val calculatedRatio = it.valuationAmount.toDouble() / totalStockValuation.toDouble()
             if (calculatedRatio.isNaN() || calculatedRatio < 0.0) 0.0 else calculatedRatio
         }
     } else emptyList()
-    
-    // 현금 비율도 직접 계산 (초기 데이터 사용)
-    val calculatedCashRatio = if (chartData.totalAsset > 0) chartData.memberMoney.toDouble() / chartData.totalAsset.toDouble() else 0.0
-    val cashRatio = if (calculatedCashRatio.isNaN() || calculatedCashRatio < 0.0) 0.0 else calculatedCashRatio
-    
-    // 비율이 모두 0이면 기본값 설정 (1:1 비율)
-    val ratios = if (stockRatios.isEmpty() && cashRatio <= 0.0) {
-        listOf(1.0) // 기본값으로 하나의 항목만 표시
-    } else {
-        stockRatios + cashRatio
-    }
-    
-    val donutColors = listOf(Color(0xFF1428A0), Color(0xFFFF8A00), Color(0xFF4DABF7), Color(0xFFFF6B6B), Color(0xFF8BC34A), Color(0xFFBDBDBD)) // 마지막이 현금
-    val legends = if (chartData.positions.isNotEmpty()) {
-        chartData.positions.map { it.stockName } + listOf("현금")
-    } else {
-        listOf("현금")
-    }
-    
-    // 비율 기준으로 정렬할 인덱스 생성 (비율이 높은 순)
+    val ratios = if (stockRatios.isEmpty()) listOf(1.0) else stockRatios
+    val donutColors = listOf(Color(0xFF1428A0), Color(0xFFFF8A00), Color(0xFF4DABF7), Color(0xFFFF6B6B), Color(0xFF8BC34A), Color(0xFFBDBDBD))
+    val legends = if (holdings.isNotEmpty()) holdings.map { it.stockName } else listOf("-")
     val safeLegendsSize = minOf(legends.size, ratios.size)
-    
-    // 인덱스 목록을 비율 기준으로 정렬
     val sortedIndices = (0 until safeLegendsSize).sortedByDescending { ratios[it] }
 
-    // 도넛 차트 키를 고정하여 실시간 업데이트되지 않도록 함
-    val chartKey = remember { "chart_fixed_key" }
-
-    LazyColumn(modifier = Modifier.fillMaxWidth()) {
-        // key를 이용해 항목이 변경될 때 UI를 강제로 업데이트
-        item(key = "header_${updateKey}") {
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        item(key = "header") {
             Spacer(modifier = Modifier.height(16.dp))
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
+                        .padding(horizontal = 24.dp, vertical = 20.dp)
                 ) {
-                    AssetInfoRow("총 자산", "${totalAsset.toFormattedString()} 원")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    AssetInfoRow("가용 자산", "${cashAmount.toFormattedString()} 원")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    AssetInfoRow("투자 자산", "${stockValuation.toFormattedString()} 원")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    AssetInfoRow(
-                        "수익률",
-                        String.format("%.2f%% (%s원)", returnRate, if (profit > 0) "+${profit.toFormattedString()}" else profit.toFormattedString()),
-                        color = returnRateColor
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "총 자산",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    text = totalAsset.toFormattedString(),
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                                Text(
+                                    text = "원",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.W500,
+                                    color = Color.Black,
+                                    modifier = Modifier.padding(start = 2.dp, bottom = 2.dp)
+                                )
+                            }
+                        }
+                        val returnRateText = when {
+                            returnRate > 0.0 -> "+${String.format("%.2f", returnRate)}%"
+                            returnRate < 0.0 -> "${String.format("%.2f", returnRate)}%"
+                            else -> "0.00%"
+                        }
+                        val returnRateColor = when {
+                            returnRate > 0.0 -> Color(0xFFE74C3C)
+                            returnRate < 0.0 -> Color(0xFF1976D2)
+                            else -> Color.Gray
+                        }
+                        Text(
+                            text = returnRateText,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = returnRateColor,
+                            modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "보유 현금: ${memberMoney.toFormattedString()}원",
+                        fontSize = 15.sp,
+                        color = Color.Black,
+                        fontWeight = FontWeight.W600
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "평가 금액: ${stockValuation.toFormattedString()}원",
+                        fontSize = 15.sp,
+                        color = Color.Black,
+                        fontWeight = FontWeight.W600
                     )
                 }
             }
         }
-        
-        item(key = "updated_${updateKey}") {
+        item(key = "today-profit-cards") {
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.End
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // updatedAt에서 소수점 이하(마이크로초 등) 제거
-                val formattedDate = updatedAt
-                    .replace("T", " ")
-                    .replace("-", ".")
-                    .replace(Regex(":\\d{2}\\.\\d+") , "") // ":ss.마이크로초" -> ":ss"로 치환
-                
-                if (isRealtimeUpdated) {
-                    // 실시간 업데이트 중일 때 애니메이션 표시
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
+                // 금일 실현 손익 카드
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(70.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        val infiniteTransition = rememberInfiniteTransition(label = "update_animation")
-                        val alpha by infiniteTransition.animateFloat(
-                            initialValue = 0.5f,
-                            targetValue = 1.0f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(1000),
-                                repeatMode = RepeatMode.Reverse
-                            ),
-                            label = "alpha_animation"
-                        )
-                        
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(Color(0xFF4CAF50), CircleShape)
-                                .alpha(alpha)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "실시간 업데이트 중 • ",
-                            fontSize = 12.sp,
-                            color = Color(0xFF4CAF50),
-                            fontFamily = SCDreamFontFamily,
-                            fontWeight = FontWeight.Bold
+                            text = "금일 손익",
+                            fontSize = 13.sp,
+                            color = Color.Gray,
+                            fontWeight = FontWeight.W600,
+                            fontFamily = SCDreamFontFamily
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${if (dashboardData.todayProfitLoss < 0) "-" else ""}${kotlin.math.abs(dashboardData.todayProfitLoss).toFormattedString()}원",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                dashboardData.todayProfitLoss > 0 -> Color.Red
+                                dashboardData.todayProfitLoss < 0 -> Color.Blue
+                                else -> Color.Gray
+                            },
+                            fontFamily = SCDreamFontFamily
                         )
                     }
                 }
-                
-                Text(
-                    text = "마지막 업데이트: $formattedDate",
-                    fontSize = 12.sp,
-                    color = Color.Gray,
-                    fontFamily = SCDreamFontFamily
-                )
+                // 금일 수익률 카드
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(70.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "금일 수익률",
+                            fontSize = 13.sp,
+                            color = Color.Gray,
+                            fontWeight = FontWeight.W600,
+                            fontFamily = SCDreamFontFamily
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${if (dashboardData.todayReturnRate < 0) "-" else ""}${String.format("%.2f", kotlin.math.abs(dashboardData.todayReturnRate))}%",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                dashboardData.todayReturnRate > 0 -> Color.Red
+                                dashboardData.todayReturnRate < 0 -> Color.Blue
+                                else -> Color.Gray
+                            },
+                            fontFamily = SCDreamFontFamily
+                        )
+                    }
+                }
+            }
+            // 업데이트 시간 표시
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 24.dp, top = 2.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (!dashboardData.updatedAt.isNullOrBlank()) {
+                    Text(
+                        text = "업데이트: ${dashboardData.updatedAt}",
+                        fontSize = 11.sp,
+                        color = Color.Gray,
+                        fontFamily = SCDreamFontFamily
+                    )
+                }
             }
         }
-        
-        item(key = chartKey) {
+        item{Spacer(modifier = Modifier.height(8.dp))}
+        item(key = "chart") {
             if (ratios.isNotEmpty()) {
                 Column(
                     modifier = Modifier
@@ -850,7 +966,6 @@ fun PortfolioTabContent(
                         .padding(top = 8.dp, bottom = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // 도넛 차트 애니메이션
                     AnimatedDonutChart(
                         ratios = ratios,
                         colors = donutColors,
@@ -858,24 +973,20 @@ fun PortfolioTabContent(
                         size = 160.dp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // 범례 - 스크롤 가능한 가로 레이아웃으로 변경
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp)
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            // 스크롤 가능한 범례 목록
                             androidx.compose.foundation.lazy.LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentPadding = PaddingValues(horizontal = 8.dp),
-                                horizontalArrangement = if (safeLegendsSize <= 2) 
+                                horizontalArrangement = if (safeLegendsSize <= 2)
                                     Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
-                                else 
+                                else
                                     Arrangement.spacedBy(16.dp)
                             ) {
-                                // 정렬된 인덱스를 사용하여 아이템 표시
                                 items(sortedIndices.size) { i ->
                                     val index = sortedIndices[i]
                                     LegendItem(
@@ -885,8 +996,6 @@ fun PortfolioTabContent(
                                     )
                                 }
                             }
-                            
-                            // 스크롤 힌트 (범례가 3개 이상일 때만 표시)
                             if (safeLegendsSize > 3) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Row(
@@ -907,13 +1016,11 @@ fun PortfolioTabContent(
                 }
             }
         }
-        
-        // 각 포지션 항목에 고유 키 추가
         items(
-            items = positions,
-            key = { position -> "${position.stockCode}_${updateKey}" }
-        ) { position ->
-            PortfolioItem(position = position, totalValuation = totalValuation)
+            items = holdings,
+            key = { holding -> holding.stockCode }
+        ) { holding ->
+            PortfolioItem(holding = holding, totalValuation = totalStockValuation, navController = navController)
         }
     }
 }
@@ -926,7 +1033,7 @@ fun LegendItem(color: Color, name: String, ratio: Double) {
             .padding(vertical = 4.dp),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFF8F8F8)
+            containerColor = Color.White
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = 1.dp
@@ -964,7 +1071,8 @@ fun LegendItem(color: Color, name: String, ratio: Double) {
 // 거래 기록 탭 내용
 @Composable
 fun TradeHistoryTabContent(
-    mainViewModel: MainViewModel = viewModel()
+    mainViewModel: MainViewModel,
+    initialPending: Boolean = false
 ) {
     val context = LocalContext.current
     val tradeHistories by mainViewModel.tradeHistoryList.collectAsState()
@@ -972,7 +1080,10 @@ fun TradeHistoryTabContent(
     val error by mainViewModel.error.collectAsState()
     val hasNext by mainViewModel.hasNext.collectAsState()
     val nextCursor by mainViewModel.nextCursor.collectAsState()
-    
+
+    // 어떤 내역 탭이 선택됐는지 상태
+    var selectedTab by remember { mutableStateOf(if (initialPending) "미체결 내역" else "체결 내역") }
+
     // 컴포넌트가 처음 로드될 때 거래 내역 데이터를 불러옴
     LaunchedEffect(Unit) {
         // 서비스 초기화 먼저 실행
@@ -981,79 +1092,247 @@ fun TradeHistoryTabContent(
         // 그 다음 거래 내역 로드
         mainViewModel.loadTradeHistories(context, 10)
     }
-    
-    // 로딩 상태 표시
-    if (isLoading && tradeHistories.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Primary500)
-        }
-        return
-    }
-    
-    // 에러 상태 표시
-    if (error != null && tradeHistories.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(text = "데이터를 불러오는데 실패했습니다.", color = Color.Gray)
-        }
-        return
-    }
-    
-    // 데이터가 없는 경우 표시
-    if (tradeHistories.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(text = "거래 내역이 없습니다.", color = Color.Gray, fontFamily = SCDreamFontFamily)
-        }
-        return
-    }
-    
-    // 거래 내역 목록
-    LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp)
+
+    // 상단 버튼 Row
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(tradeHistories.size) { index ->
-            TradeHistoryItem(history = tradeHistories[index])
-            
-            // 마지막 아이템에 도달하면 더 불러오기
-            if (index == tradeHistories.size - 1) {
-                if (hasNext) {
-                    // 다음 페이지가 있으면 로딩 표시 및 추가 데이터 로드
-                    LaunchedEffect(nextCursor) {
-                        mainViewModel.loadTradeHistories(context, 10, nextCursor)
-                    }
-                    
-                    // 로딩 인디케이터
-                    Box(
+        Button(
+            onClick = { selectedTab = "체결 내역" },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (selectedTab == "체결 내역") Primary500 else Color.White,
+                contentColor = if (selectedTab == "체결 내역") Color.Black else Color.Gray
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("체결 내역", fontWeight = FontWeight.Bold, fontFamily = SCDreamFontFamily)
+        }
+        Button(
+            onClick = { selectedTab = "미체결 내역" },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (selectedTab == "미체결 내역") Primary500 else Color.White,
+                contentColor = if (selectedTab == "미체결 내역") Color.Black else Color.Gray
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("미체결 내역", fontWeight = FontWeight.Bold, fontFamily = SCDreamFontFamily)
+        }
+    }
+
+    // 아래 영역: 선택된 탭에 따라 내용 분기
+    if (selectedTab == "체결 내역") {
+        // 기존 체결 내역 UI
+        if (isLoading && tradeHistories.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Primary500)
+            }
+            return
+        }
+        if (error != null && tradeHistories.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text = "데이터를 불러오는데 실패했습니다.", color = Color.Gray)
+            }
+            return
+        }
+        if (tradeHistories.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text = "거래 내역이 없습니다.", color = Color.Gray, fontFamily = SCDreamFontFamily)
+            }
+            return
+        }
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(16.dp)
+        ) {
+            items(tradeHistories.size) { index ->
+                TradeHistoryItem(history = tradeHistories[index])
+                if (index == tradeHistories.size - 1 && hasNext) {
+                        LaunchedEffect(nextCursor) {
+                            mainViewModel.loadTradeHistories(context, 10, nextCursor)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Primary500,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                } else if (index != tradeHistories.size - 1) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+        }
+    } else {
+        // 미체결 내역 영역
+        val pendingOrders by mainViewModel.pendingOrders.collectAsState()
+        val context = LocalContext.current
+        val token = remember { com.example.chickenstock.data.TokenManager.getInstance(context).getAccessToken() }
+        // 최초 진입 시 데이터 로드
+        LaunchedEffect(Unit) {
+            if (!token.isNullOrBlank()) {
+                mainViewModel.loadPendingOrders("Bearer $token")
+            }
+        }
+        if (pendingOrders.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("미체결 내역이 없습니다.", color = Color.Gray, fontFamily = SCDreamFontFamily)
+            }
+        } else {
+            var showCancelDialog by remember { mutableStateOf(false) }
+            var cancelOrderId by remember { mutableStateOf<Int?>(null) }
+            var isCancelLoading by remember { mutableStateOf(false) }
+            var cancelErrorMessage by remember { mutableStateOf<String?>(null) }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(16.dp)
+            ) {
+                items(pendingOrders) { order ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(vertical = 6.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Primary500,
-                            strokeWidth = 2.dp
-                        )
-                    }
-                } else {
-                    // 마지막 페이지인 경우 메시지 표시
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "더 이상 거래 내역이 없습니다.",
-                            fontSize = 14.sp,
-                            color = Color.Gray,
-                            fontFamily = SCDreamFontFamily
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AsyncImage(
+                                    model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${order.stockCode}.png",
+                                    contentDescription = "주식 로고",
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White),
+                                    error = painterResource(id = R.drawable.logo)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = order.stockName,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = if (order.orderType == "BUY") "매수" else "매도",
+                                            fontSize = 13.sp,
+                                            color = if (order.orderType == "BUY") Color(0xFF1976D2) else Color(0xFFE74C3C),
+                                            fontWeight = FontWeight.W600,
+                                            fontFamily = SCDreamFontFamily
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "수량: ${order.quantity}",
+                                            fontSize = 13.sp,
+                                            color = Color.Gray,
+                                            fontFamily = SCDreamFontFamily
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "목표가: ${order.targetPrice.toString()}원",
+                                            fontSize = 13.sp,
+                                            color = Color.Gray,
+                                            fontFamily = SCDreamFontFamily
+                                        )
+                                    }
+                                    Text(
+                                        text = "주문 시간: ${order.createdAt.replace("T", " ")}",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
+                            }
+                            IconButton(onClick = {
+                                cancelOrderId = order.orderId
+                                cancelErrorMessage = null
+                                showCancelDialog = true
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "주문 삭제",
+                                    tint = Color.Gray
+                                )
+                            }
+                        }
                     }
                 }
-            } else {
-                // 아이템 사이 간격
-                Spacer(modifier = Modifier.height(12.dp))
+            }
+            if (showCancelDialog) {
+                AlertDialog(
+                    onDismissRequest = { if (!isCancelLoading) showCancelDialog = false },
+                    title = { Text("주문 취소", fontFamily = SCDreamFontFamily, color = Color.Black, fontWeight = FontWeight.Bold) },
+                    text = {
+                        if (isCancelLoading) {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Red, strokeWidth = 2.dp)
+                            }
+                        } else if (cancelErrorMessage != null) {
+                            Text(cancelErrorMessage!!, color = Color.Red, fontFamily = SCDreamFontFamily, textAlign = TextAlign.Center)
+                        } else {
+                            Text("정말 주문을 취소하시겠습니까?", fontFamily = SCDreamFontFamily, color = Color.Black, textAlign = TextAlign.Center)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (cancelOrderId != null) {
+                                    isCancelLoading = true
+                                    cancelErrorMessage = null
+                                    mainViewModel.cancelPendingOrder(
+                                        context = context,
+                                        orderId = cancelOrderId!!,
+                                        onSuccess = {
+                                            isCancelLoading = false
+                                            showCancelDialog = false
+                                        },
+                                        onError = { msg ->
+                                            isCancelLoading = false
+                                            cancelErrorMessage = msg
+                                        }
+                                    )
+                                }
+                            },
+                            enabled = !isCancelLoading
+                        ) {
+                            if (isCancelLoading) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Red, strokeWidth = 2.dp)
+                            } else {
+                                Text("확인", color = Color.Red, fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { if (!isCancelLoading) showCancelDialog = false },
+                            enabled = !isCancelLoading
+                        ) {
+                            Text("취소", color = Color(0xFF0066CC), fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    containerColor = Color.White
+                )
             }
         }
     }
@@ -1091,7 +1370,7 @@ fun TradeHistoryItem(history: TradeHistory) {
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .background(Color(0xFFF5F5F5))
+                            .background(Color.White)
                             .height(50.dp)
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1100,13 +1379,14 @@ fun TradeHistoryItem(history: TradeHistory) {
                             text = history.stockName,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.W700,
-                            fontFamily = SCDreamFontFamily
+                            fontFamily = SCDreamFontFamily,
+                            color = Color.Black
                         )
                     }
                     // 빨간색 부분 (매도가 스타일)
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFFFF6B6B))
+                            .background(Color(0xFF4DABF7))
                             .padding(horizontal = 16.dp)
                             .clip(RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)),
                         contentAlignment = Alignment.Center
@@ -1187,7 +1467,7 @@ fun TradeHistoryItem(history: TradeHistory) {
                     // 파란색 부분 (매수가 스타일)
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFF4DABF7))
+                            .background(Color(0xFFFF6B6B))
                             .height(50.dp)
                             .padding(horizontal = 16.dp)
                             .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
@@ -1216,7 +1496,7 @@ fun TradeHistoryItem(history: TradeHistory) {
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .background(Color(0xFFF5F5F5))
+                            .background(Color.White)
                             .height(50.dp)
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1226,7 +1506,8 @@ fun TradeHistoryItem(history: TradeHistory) {
                             text = history.stockName,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.W700,
-                            fontFamily = SCDreamFontFamily
+                            fontFamily = SCDreamFontFamily,
+                            color = Color.Black
                         )
                     }
                 }
@@ -1284,7 +1565,7 @@ fun FavoriteStocksTabContent(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 36.dp),
-        contentPadding = PaddingValues(vertical = 16.dp)
+        contentPadding = PaddingValues(vertical = 4.dp)
     ) {
         items(watchlistItems.size) { index ->
             // HomeScreen의 FavoriteStockItem과 유사한 방식으로 구현
@@ -1294,13 +1575,10 @@ fun FavoriteStocksTabContent(
                     .padding(vertical = 8.dp)
                     .clickable {
                         navController.navigate(Screen.StockDetail.createRoute(
-                            stockCode = watchlistItems[index].stockCode,
+                            stockCode = getPureStockCode(watchlistItems[index].stockCode),
                             currentPrice = watchlistItems[index].currentPrice.toString(),
                             fluctuationRate = watchlistItems[index].changeRate
-                        )) {
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        ))
                     },
                 shape = RoundedCornerShape(16.dp),
                 color = Color(0xFFF8F8F8),
@@ -1319,12 +1597,13 @@ fun FavoriteStocksTabContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         AsyncImage(
-                            model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${watchlistItems[index].stockCode}.png",
+                            model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${getPureStockCode(watchlistItems[index].stockCode)}.png",
                             contentDescription = "주식 로고",
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(CircleShape)
-                                .background(Color.White)
+                                .background(Color.White),
+                            error = painterResource(id = R.drawable.logo)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
@@ -1363,7 +1642,7 @@ fun FavoriteStocksTabContent(
                         onClick = {
                             if (authViewModel.isLoggedIn.value) {
                                 mainViewModel.removeFromWatchlist(
-                                    stockCode = watchlistItems[index].stockCode,
+                                    stockCode = getPureStockCode(watchlistItems[index].stockCode),
                                     context = context,
                                     onSuccess = { mainViewModel.loadWatchlist(context) }
                                 )
@@ -1388,5 +1667,6 @@ fun FavoriteStocksTabContent(
     }
 }
 
-// 거래 타입 (매수/매도)
-enum class TradeType { BUY, SELL } 
+fun getPureStockCode(stockCode: String): String {
+    return stockCode.replace("_AL", "")
+}

@@ -38,7 +38,6 @@ import com.example.chickenstock.api.RetrofitClient
 import com.example.chickenstock.api.MemberService
 import com.example.chickenstock.api.SimpleProfileResponse
 import com.example.chickenstock.api.WatchlistItem
-import com.example.chickenstock.api.PortfolioWebSocket
 import com.example.chickenstock.model.PortfolioData
 import com.example.chickenstock.model.Position
 import com.example.chickenstock.model.StockUpdate
@@ -57,6 +56,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.collectAsState
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import com.example.chickenstock.data.TokenManager
+import android.content.Context
+import androidx.activity.compose.BackHandler
+import android.app.Activity
 
 // 임시 데이터 클래스
 data class UserAssetInfo(
@@ -137,7 +140,7 @@ fun FavoriteStockItem(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
+            .padding(vertical = 4.dp)
             .clickable {
                 navController.navigate(Screen.StockDetail.createRoute(
                     stockCode = stock.stockCode,
@@ -148,9 +151,8 @@ fun FavoriteStockItem(
                     restoreState = true
                 }
             },
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0xFFF8F8F8),
-        shadowElevation = 2.dp
+        color = Color.White,
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
@@ -170,7 +172,8 @@ fun FavoriteStockItem(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(Color.White)
+                        .background(Color.White),
+                    error = painterResource(id = R.drawable.logo)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
@@ -235,11 +238,42 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val dashboardData by viewModel.dashboardData.collectAsState()
     val userProfile by viewModel.userProfile.collectAsState()
     val error by viewModel.error.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var isLoadingLocal by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
+    val portfolioData by viewModel.portfolioData.collectAsState()
+    val pendingOrders by viewModel.pendingOrders.collectAsState()
+
+    // 홈에서 뒤로가기 시 앱 종료 다이얼로그
+    var showExitDialog by remember { mutableStateOf(false) }
+    BackHandler {
+        showExitDialog = true
+    }
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { Text("앱 종료", fontFamily = SCDreamFontFamily, color = Color.Black, fontWeight = FontWeight.Bold) },
+            text = { Text("앱을 종료하시겠습니까?", fontFamily = SCDreamFontFamily, color = Color.Black) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExitDialog = false
+                    // 앱 종료
+                    (context as? Activity)?.finishAffinity()
+                }) {
+                    Text("종료", color = Color.Red, fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitDialog = false }) {
+                    Text("취소", color = Color(0xFF0066CC), fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFFF5F5F5)
+        )
+    }
 
     // 화면이 처음 표시될 때만 초기화 작업 수행 (빈 리스트로 설정)
     DisposableEffect(key1 = Unit) {
@@ -251,17 +285,17 @@ fun HomeScreen(
         }
     }
 
-    // 인증 상태가 변경될 때 서비스 초기화 및 데이터 로드
+    // 진입 시 대시보드/닉네임 동시 로드
     LaunchedEffect(authViewModel.isLoggedIn.value) {
-        val isLoggedIn = authViewModel.isLoggedIn.value // 현재 상태를 캡처
+        val isLoggedIn = authViewModel.isLoggedIn.value
         if (isLoggedIn) {
             try {
-                // 서비스 초기화 및 데이터 로드를 ViewModel에 위임
-                val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
                 val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
-                viewModel.loadData(stockService, memberService, context)
+                viewModel.loadDashboard(memberService, context)
+                viewModel.loadUserProfile(memberService, context) // 닉네임만 사용
+                viewModel.loadWatchlist(context) // 홈 진입 시 관심종목도 함께 로드
             } catch (e: Exception) {
-                Log.e("HomeScreen", "데이터 로드 중 오류 발생: ${e.message}", e)
+                Log.e("HomeScreen", "대시보드/프로필/관심종목 로드 오류: ${e.message}", e)
             }
         }
     }
@@ -370,43 +404,6 @@ fun HomeScreen(
         }
     }
 
-    // 포트폴리오 데이터는 ViewModel에서 관리
-    val portfolioData = viewModel.portfolioData.value
-    
-    // 웹소켓 연결
-    val webSocket = remember { 
-        authViewModel.getToken()?.let { token ->
-            PortfolioWebSocket(token)
-        }
-    }
-    
-    // 웹소켓 업데이트 수신
-    LaunchedEffect(webSocket) {
-        webSocket?.stockUpdateFlow?.collect { update ->
-            update?.let { stockUpdate ->
-                // 포트폴리오 데이터 업데이트를 ViewModel에서 처리
-                viewModel.updatePortfolioData(stockUpdate)
-            }
-        }
-    }
-
-    // 웹소켓 연결 관리
-    LaunchedEffect(authViewModel.isLoggedIn.value) {
-        val isLoggedIn = authViewModel.isLoggedIn.value
-        if (isLoggedIn) {
-            webSocket?.connect()
-        } else {
-            webSocket?.disconnect()
-        }
-    }
-
-    // 화면이 사라질 때 웹소켓 연결 해제
-    DisposableEffect(Unit) {
-        onDispose {
-            webSocket?.disconnect()
-        }
-    }
-
     // 관심 종목 목록
     val watchlistItems = viewModel.watchlistItems.collectAsState().value
     var localWatchlist by remember { mutableStateOf(watchlistItems.take(3)) }
@@ -429,8 +426,8 @@ fun HomeScreen(
                     coroutineScope {
                         if (authViewModel.isLoggedIn.value) {
                             memberService?.let { service ->
+                                viewModel.loadDashboard(service, context)
                                 viewModel.loadUserProfile(service, context)
-                                viewModel.loadPortfolio(service, context)
                             }
                             viewModel.loadWatchlist(context)
                         }
@@ -468,7 +465,7 @@ fun HomeScreen(
         }
     ) {
         Scaffold(
-            containerColor = Gray0,
+            containerColor = Color(0xFFF5F5F5), // 회색 배경으로 변경
             topBar = {
                 // TopAppBar 제거
             }
@@ -478,315 +475,381 @@ fun HomeScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     // 로그인 상태에 따른 배너/자산 정보 영역
                     items(1) {
                         if (authViewModel.isLoggedIn.value) {
-                            // 로그인 상태: 자산 정보 표시
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.White)
-                                    .padding(horizontal = 34.dp)
-                                    .padding(top = 64.dp, bottom = 16.dp)  // 상단 여백 추가
+                            // 상단 여백 추가
+                            Spacer(modifier = Modifier.height(12.dp))
+                            // 프로필 정보 카드
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                             ) {
-                                // 프로필 정보 표시
-                                userProfile?.let { profile ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp, vertical = 20.dp)
+                                ) {
+                                    // 오른쪽 상단 닉네임
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                        horizontalArrangement = Arrangement.End
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            // 프로필 이미지
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFFE0E0E0)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = profile.nickname.first().toString(),
-                                                    fontSize = 20.sp,
-                                                    fontWeight = FontWeight.W700,
-                                                    color = Color.Black
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Column {
-                                                Text(
-                                                    text = profile.nickname,
-                                                    fontSize = 18.sp,
-                                                    fontWeight = FontWeight.W700,
-                                                    fontFamily = SCDreamFontFamily
-                                                )
-                                                // 보유 금액 및 수익률 표시
-                                                val returnRate = profile.returnRate.toFloatOrNull() ?: 0f
-                                                val returnRateText = when {
-                                                    returnRate > 0f -> "+${String.format("%.2f", returnRate)}%"
-                                                    returnRate < 0f -> "${String.format("%.2f", returnRate)}%"
-                                                    else -> "0.00%"
-                                                }
-                                                val returnRateColor = when {
-                                                    returnRate > 0f -> Color.Red
-                                                    returnRate < 0f -> Color.Blue
-                                                    else -> Color.Gray
-                                                }
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        text = "${String.format("%,d", profile.memberMoney.replace(",", "").toIntOrNull() ?: 0)}원",
-                                                        fontSize = 14.sp,
-                                                        color = Color.Black,
-                                                        fontFamily = SCDreamFontFamily
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text(
-                                                        text = "(${returnRateText})",
-                                                        fontSize = 14.sp,
-                                                        color = returnRateColor,
-                                                        fontFamily = SCDreamFontFamily
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                } ?: run {
-                                    if (isLoading) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(16.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(24.dp),
-                                                color = Color(0xFFFFEB3B)
-                                            )
-                                        }
-                                    } else if (error != null) {
                                         Text(
-                                            text = error!!,
-                                            color = Color.Red,
-                                            modifier = Modifier.padding(16.dp)
+                                            text = "${userProfile?.nickname ?: "-"}님의 지갑",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.W500,
+                                            color = Color(0xFF888888)
                                         )
                                     }
-                                }
-                                
-                                Spacer(modifier = Modifier.height(32.dp))
-                                
-                                // 보유 주식
-                                Text(
-                                    text = "보유 주식",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.W700,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                                
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
-                                // 보유 주식 목록
-                                if (portfolioData?.positions.isNullOrEmpty()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // 총 자산 + 수익률
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.Bottom
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "총 자산",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Black
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Row(verticalAlignment = Alignment.Bottom) {
+                                                Text(
+                                                    text = dashboardData?.totalAsset?.toFormattedString() ?: "-",
+                                                    fontSize = 28.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.Black
+                                                )
+                                                Text(
+                                                    text = "원",
+                                                    fontSize = 18.sp,
+                                                    fontWeight = FontWeight.W500,
+                                                    color = Color.Black,
+                                                    modifier = Modifier.padding(start = 2.dp, bottom = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        // 수익률
+                                        val returnRate = dashboardData?.totalReturnRate ?: 0.0
+                                        val returnRateText = when {
+                                            returnRate > 0.0 -> "+${String.format("%.2f", returnRate)}%"
+                                            returnRate < 0.0 -> "${String.format("%.2f", returnRate)}%"
+                                            else -> "0.00%"
+                                        }
+                                        val returnRateColor = when {
+                                            returnRate > 0.0 -> Color(0xFFE74C3C)
+                                            returnRate < 0.0 -> Color(0xFF1976D2)
+                                            else -> Color.Gray
+                                        }
+                                        Text(
+                                            text = returnRateText,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = returnRateColor,
+                                            modifier = Modifier.padding(start = 8.dp, bottom = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    // 보유 현금
                                     Text(
-                                        text = "보유 주식이 없습니다.",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.W500,
-                                        fontFamily = SCDreamFontFamily,
-                                        color = Color.Gray,
-                                        modifier = Modifier.padding(vertical = 16.dp)
+                                        text = "보유 현금: ${dashboardData?.memberMoney?.toFormattedString() ?: "-"}원",
+                                        fontSize = 15.sp,
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.W600
                                     )
-                                } else {
-                                    portfolioData?.positions?.take(3)?.forEach { position ->
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 8.dp)
-                                                .clickable {
-                                                    navController.navigate(Screen.StockDetail.createRoute(
-                                                        stockCode = position.stockCode,
-                                                        currentPrice = position.currentPrice.toString(),
-                                                        fluctuationRate = position.returnRate.toString()
-                                                    )) {
-                                                        launchSingleTop = true
-                                                        restoreState = true
-                                                    }
-                                                },
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = Color(0xFFF8F8F8),
-                                            shadowElevation = 2.dp
-                                        ) {
-                                            Row(
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    // 평가 금액
+                                    Text(
+                                        text = "평가 금액: ${dashboardData?.stockValuation?.toFormattedString() ?: "-"}원",
+                                        fontSize = 15.sp,
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.W600
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 보유 주식 카드
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp)
+                                        .padding(top = 24.dp, bottom = 16.dp)
+                                ) {
+                                    Text(
+                                        text = "보유 주식",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.W700,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    if (dashboardData?.holdings.isNullOrEmpty()) {
+                                        Text(
+                                            text = "보유 주식이 없습니다.",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.W500,
+                                            fontFamily = SCDreamFontFamily,
+                                            color = Color.Gray,
+                                            modifier = Modifier.padding(vertical = 16.dp)
+                                        )
+                                    } else {
+                                        dashboardData?.holdings?.take(3)?.forEach { holding ->
+                                            Surface(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .padding(16.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
+                                                    .padding(vertical = 8.dp)
+                                                    .clickable {
+                                                        navController.navigate(
+                                                            Screen.StockDetail.createRoute(
+                                                                stockCode = holding.stockCode,
+                                                                currentPrice = holding.currentPrice?.toString() ?: holding.valuationAmount.toString(),
+                                                                fluctuationRate = holding.returnRate.toString()
+                                                            )
+                                                        ) {
+                                                            launchSingleTop = true
+                                                            restoreState = true
+                                                        }
+                                                    },
+                                                color = Color.White,
+                                                shadowElevation = 0.dp
                                             ) {
-                                                // 왼쪽: 로고와 종목명, 수량
                                                 Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier.weight(1f)
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(4.dp),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    AsyncImage(
-                                                        model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${position.stockCode}.png",
-                                                        contentDescription = "주식 로고",
-                                                        modifier = Modifier
-                                                            .size(40.dp)
-                                                            .clip(CircleShape)
-                                                            .background(Color.White)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(12.dp))
-                                                    Column {
+                                                    // 왼쪽: 로고와 종목명, 수량
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${holding.stockCode}.png",
+                                                            contentDescription = "주식 로고",
+                                                            modifier = Modifier
+                                                                .size(40.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color.White),
+                                                            error = painterResource(id = R.drawable.logo)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(12.dp))
+                                                        Column {
+                                                            Text(
+                                                                text = holding.stockName,
+                                                                fontSize = 14.sp,
+                                                                fontWeight = FontWeight.W700,
+                                                                fontFamily = SCDreamFontFamily
+                                                            )
+                                                            Text(
+                                                                text = "${holding.quantity}주",
+                                                                fontSize = 12.sp,
+                                                                fontWeight = FontWeight.W500,
+                                                                color = Color.Gray,
+                                                                fontFamily = SCDreamFontFamily
+                                                            )
+                                                        }
+                                                    }
+                                                    // 오른쪽: 평가금액과 수익률
+                                                    Column(
+                                                        horizontalAlignment = Alignment.End
+                                                    ) {
                                                         Text(
-                                                            text = position.stockName,
+                                                            text = "${holding.valuationAmount.toFormattedString()} 원",
                                                             fontSize = 14.sp,
                                                             fontWeight = FontWeight.W700,
                                                             fontFamily = SCDreamFontFamily
                                                         )
+                                                        val profitLossAbs = kotlin.math.abs(holding.profitLoss)
+                                                        val profitLossSign = if (holding.profitLoss >= 0) "+" else "-"
                                                         Text(
-                                                            text = "${position.quantity}주",
+                                                            text = buildString {
+                                                                append(profitLossSign)
+                                                                append("${profitLossAbs.toFormattedString()}원")
+                                                                append("(")
+                                                                if (holding.returnRate >= 0) append("+")
+                                                                append(String.format("%.2f", holding.returnRate))
+                                                                append("%")
+                                                                append(")")
+                                                            },
+                                                            color = when {
+                                                                holding.returnRate > 0 -> Color.Red
+                                                                holding.returnRate < 0 -> Color.Blue
+                                                                else -> Color.Gray
+                                                            },
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.W500,
-                                                            color = Color.Gray,
                                                             fontFamily = SCDreamFontFamily
                                                         )
                                                     }
                                                 }
-                                                
-                                                // 오른쪽: 평가금액과 수익률
-                                                Column(
-                                                    horizontalAlignment = Alignment.End
-                                                ) {
-                                                    // 평가금액
-                                                    Text(
-                                                        text = "${position.valuationAmount.toFormattedString()} 원",
-                                                        fontSize = 14.sp,
-                                                        fontWeight = FontWeight.W700,
-                                                        fontFamily = SCDreamFontFamily
-                                                    )
-                                                    // 손익과 수익률
-                                                    val profitLossAbs = kotlin.math.abs(position.profitLoss)
-                                                    val profitLossSign = if (position.profitLoss >= 0) "+" else "-"
-                                                    Text(
-                                                        text = buildString {
-                                                            append(profitLossSign)
-                                                            append("${profitLossAbs.toFormattedString()}원")
-                                                            append("(")
-                                                            if (position.returnRate >= 0) append("+")
-                                                            append(String.format("%.2f", position.returnRate))
-                                                            append("%)")
-                                                        },
-                                                        color = when {
-                                                            position.returnRate > 0 -> Color.Red
-                                                            position.returnRate < 0 -> Color.Blue
-                                                            else -> Color.Gray
-                                                        },
-                                                        fontSize = 12.sp,
-                                                        fontWeight = FontWeight.W500,
-                                                        fontFamily = SCDreamFontFamily
-                                                    )
-                                                }
                                             }
+                                        }
+                                        if (dashboardData?.holdings?.size ?: 0 >= 4) {
+                                            MoreButton(
+                                                onClick = {
+                                                    navController.navigate("${Screen.MyPage.route}?tab=portfolio") {
+                                                        launchSingleTop = true
+                                                        popUpTo(Screen.Home.route)
+                                                    }
+                                                },
+                                                text = "보유 주식 더보기",
+                                                modifier = Modifier.padding(horizontal = 16.dp)
+                                            )
                                         }
                                     }
                                 }
-                                
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
-                                // 보유 주식이 3개 초과일 때만 더보기 버튼 표시
-                                if ((portfolioData?.positions?.size ?: 0) > 3) {
-                                    MoreButton(
-                                        onClick = {
-                                            navController.navigate(Screen.MyPage.route) {
-                                                launchSingleTop = true
-                                                popUpTo(Screen.Home.route)
-                                            }
-                                        },
-                                        text = "보유 주식 더보기",
-                                        modifier = Modifier.padding(horizontal = 16.dp)
-                                    )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 미체결 주문 카드 (pendingOrders + dashboardData.pendingOrderAmount)
+                            if ((pendingOrders.isNotEmpty()) || ((dashboardData?.pendingOrderAmount ?: 0) > 0)) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    shape = RoundedCornerShape(16.dp),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 24.dp)
+                                            .padding(top = 24.dp, bottom = 16.dp)
+                                    ) {
+                                        Text("미체결 주문", fontSize = 18.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        if ((dashboardData?.pendingOrderAmount ?: 0) > 0) {
+                                            Text(
+                                                text = "매수 주문 대기 금액: ${dashboardData?.pendingOrderAmount?.toFormattedString() ?: "-"}원",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.W500,
+                                                fontFamily = SCDreamFontFamily,
+                                                color = Color(0xFFFFA000),
+                                                modifier = Modifier.padding(bottom = 8.dp)
+                                            )
+                                        }
+                                        PendingOrdersSection(viewModel, authViewModel, context, navController)
+                                    }
                                 }
                                 
-                                Spacer(modifier = Modifier.height(32.dp))
-                                
-                                // 관심 종목
-                                Text(
-                                    text = "관심 종목",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.W700,
-                                    fontFamily = SCDreamFontFamily
-                                )
-                                
                                 Spacer(modifier = Modifier.height(16.dp))
-                                
-                                // 관심 종목 목록
-                                if (localWatchlist.isEmpty()) {
+                            }
+                            
+                            // 관심 종목 카드
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 18.dp)
+                                        .padding(top = 16.dp, bottom = 16.dp)
+                                ) {
+                                    // 관심 종목
                                     Text(
-                                        text = "관심 종목이 없습니다.",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.W500,
-                                        fontFamily = SCDreamFontFamily,
-                                        color = Color.Gray,
-                                        modifier = Modifier.padding(vertical = 16.dp)
+                                        text = "관심 종목",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.W700,
+                                        fontFamily = SCDreamFontFamily
                                     )
-                                } else {
-                                    localWatchlist.forEach { item ->
-                                        FavoriteStockItem(
-                                            stock = FavoriteStock(
-                                                stockCode = item.stockCode,
-                                                stockName = item.stockName,
-                                                currentPrice = item.currentPrice.toString(),
-                                                fluctuationRate = item.changeRate
-                                            ),
-                                            navController = navController,
-                                            authViewModel = authViewModel,
-                                            viewModel = viewModel,
-                                            onRemove = {
-                                                // 1. 즉시 화면에서 제거
-                                                localWatchlist = localWatchlist.filter { it.stockCode != item.stockCode }
-                                                // 2. 서버 동기화
-                                                viewModel.removeFromWatchlist(
-                                                    stockCode = item.stockCode,
-                                                    context = context,
-                                                    onSuccess = { viewModel.loadWatchlist(context) }
-                                                )
-                                            }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    // 관심 종목 목록
+                                    if (localWatchlist.isEmpty()) {
+                                        Text(
+                                            text = "관심 종목이 없습니다.",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.W500,
+                                            fontFamily = SCDreamFontFamily,
+                                            color = Color.Gray,
+                                            modifier = Modifier.padding(vertical = 16.dp)
                                         )
-                                    }
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    if (watchlistItems.size >= 4) {
-                                        MoreButton(
-                                            onClick = {
-                                                navController.navigate("${Screen.MyPage.route}?tab=favorite") {
-                                                    launchSingleTop = true
-                                                    popUpTo(Screen.Home.route)
+                                    } else {
+                                        localWatchlist.forEach { item ->
+                                            FavoriteStockItem(
+                                                stock = FavoriteStock(
+                                                    stockCode = getPureStockCode(item.stockCode).trim().uppercase(),
+                                                    stockName = item.stockName,
+                                                    currentPrice = item.currentPrice.toString(),
+                                                    fluctuationRate = item.changeRate
+                                                ),
+                                                navController = navController,
+                                                authViewModel = authViewModel,
+                                                viewModel = viewModel,
+                                                onRemove = {
+                                                    // 1. 즉시 화면에서 제거
+                                                    localWatchlist = localWatchlist.filter { it.stockCode != item.stockCode }
+                                                    // 2. 서버 동기화
+                                                    viewModel.removeFromWatchlist(
+                                                        stockCode = item.stockCode,
+                                                        context = context,
+                                                        onSuccess = { viewModel.loadWatchlist(context) }
+                                                    )
                                                 }
-                                            },
-                                            text = "관심 종목 더보기",
-                                            modifier = Modifier.padding(horizontal = 16.dp)
-                                        )
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        if (watchlistItems.size >= 4) {
+                                            MoreButton(
+                                                onClick = {
+                                                    navController.navigate("${Screen.MyPage.route}?tab=favorite") {
+                                                        launchSingleTop = true
+                                                        popUpTo(Screen.Home.route)
+                                                    }
+                                                },
+                                                text = "관심 종목 더보기",
+                                                modifier = Modifier.padding(horizontal = 16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         } else {
                             // 비로그인 상태: 기존 배너 표시
-                            Column(
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFFFFFBEB))
-                                    .padding(vertical = 42.dp, horizontal = 24.dp)
+                                    .padding(top = 10.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                             ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFFFFFBEB))
+                                        .padding(top = 24.dp, bottom = 24.dp, start = 24.dp, end = 24.dp)
+                                ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("투자의 시작", fontSize = 32.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily)
+                                        Text("투자의 시작", fontSize = 28.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily)
                                         Spacer(modifier = Modifier.height(12.dp))
-                                        Text("치킨스톡과 함께", fontSize = 32.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily)
+                                        Text("치킨스톡과", fontSize = 28.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily, lineHeight = 38.sp)
+                                        Text("함께", fontSize = 28.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily, lineHeight = 38.sp)
                                     }
                                     Icon(
                                         painter = painterResource(id = R.drawable.logo),
@@ -822,17 +885,23 @@ fun HomeScreen(
                                     }
                                 }
                             }
+                            }
                         }
                     }
 
                     // 실시간 종목 랭킹 영역 (로그인 상태와 무관하게 표시)
                     items(1) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.White)
-                                .padding(vertical = 24.dp, horizontal = 32.dp)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                         ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp, horizontal = 12.dp)
+                            ) {
                             Text("실시간 종목 랭킹", fontSize = 18.sp, fontWeight = FontWeight.W700, fontFamily = SCDreamFontFamily)
                             Spacer(modifier = Modifier.height(16.dp))
 
@@ -896,9 +965,129 @@ fun HomeScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+// 종목 코드에서 _AL 등 접미사를 제거하는 함수
+fun getPureStockCode(stockCode: String): String {
+    return stockCode.substringBefore("_")
+}
+
+@Composable
+fun PendingOrdersSection(viewModel: MainViewModel, authViewModel: AuthViewModel, context: Context, navController: NavHostController) {
+    val pendingOrders by viewModel.pendingOrders.collectAsState()
+    LaunchedEffect(authViewModel.isLoggedIn.value) {
+        if (authViewModel.isLoggedIn.value) {
+            val token = TokenManager.getInstance(context).getAccessToken()
+            if (!token.isNullOrBlank()) {
+                viewModel.loadPendingOrders("Bearer "+token)
+            }
+        }
+    }
+    if (pendingOrders.isNotEmpty()) {
+        val maxShow = 3
+        val showList = pendingOrders.take(maxShow)
+        val extraCount = pendingOrders.size - maxShow
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            showList.forEach { order ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    color = Color.White,
+                    shadowElevation = 0.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 왼쪽: 로고와 종목명, 수량
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            AsyncImage(
+                                model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${getPureStockCode(order.stockCode)}.png",
+                                contentDescription = "주식 로고",
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White),
+                                error = painterResource(id = R.drawable.logo)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = order.stockName,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.W700,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                Text(
+                                    text = "${order.quantity}주",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.W500,
+                                    color = Color.Gray,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                            }
+                        }
+                        // 오른쪽: 목표가격
+                        Column(
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            Text(
+                                text = "${order.targetPrice.toFormattedString()} 원",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.W700,
+                                fontFamily = SCDreamFontFamily
+                            )
+                            Text(
+                                text = if (order.orderType == "BUY") "매수 주문" else "매도 주문",
+                                color = if (order.orderType == "BUY") Color.Red else Color.Blue,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.W500,
+                                fontFamily = SCDreamFontFamily
+                            )
+                        }
+                    }
+                }
+            }
+            if (extraCount > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "외 ${extraCount}개",
+                        fontSize = 13.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            MoreButton(
+                onClick = {
+                    navController.navigate("${Screen.MyPage.route}?tab=trade&pending=true") {
+                        launchSingleTop = true
+                        popUpTo(Screen.Home.route)
+                    }
+                },
+                text = "더 자세히 보기",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+            )
         }
     }
 }

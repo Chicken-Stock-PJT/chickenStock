@@ -15,6 +15,7 @@ import com.example.chickenstock.api.RetrofitClient
 import com.example.chickenstock.api.TokenRefreshRequest
 import android.util.Log
 import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicBoolean
 
 class AuthViewModel(private val context: Context) : ViewModel() {
     private val _isLoggedIn = mutableStateOf(false)
@@ -25,6 +26,12 @@ class AuthViewModel(private val context: Context) : ViewModel() {
     
     private val TAG = "AuthViewModel"
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
+    private val _isRefreshingToken = AtomicBoolean(false)
+    val isRefreshingToken: Boolean get() = _isRefreshingToken.get()
+
     fun getToken(): String? = _token.value
 
     init {
@@ -32,8 +39,10 @@ class AuthViewModel(private val context: Context) : ViewModel() {
         loadLoginState()
         // 토큰 상태 로깅
         tokenManager.logTokenStatus()
-        // 토큰 상태 확인 및 필요시 재발급
-        checkAndRefreshTokens()
+        // 토큰 상태 확인 및 필요시 재발급 (비동기로 실행)
+        // viewModelScope.launch {
+        // checkAndRefreshTokens()
+        // }
     }
 
     private fun loadLoginState() {
@@ -60,91 +69,59 @@ class AuthViewModel(private val context: Context) : ViewModel() {
     }
 
     private fun checkAndRefreshTokens() {
-        if (_isLoggedIn.value) {
-            val accessToken = tokenManager.getAccessToken()
-            val refreshToken = tokenManager.getRefreshToken()
-            val isExpired = tokenManager.isTokenExpired()
-            val shouldRefresh = tokenManager.shouldRefreshToken()
-            
-            Log.d(TAG, "토큰 체크: 액세스 토큰=${accessToken != null}, 리프레시 토큰=${refreshToken != null}, 만료됨=$isExpired, 갱신필요=$shouldRefresh")
-
-            if (accessToken != null && refreshToken != null && (isExpired || shouldRefresh)) {
-                Log.d(TAG, "토큰 재발급 시도")
-                refreshTokens(accessToken, refreshToken)
-            } else if (accessToken == null || refreshToken == null) {
-                Log.e(TAG, "토큰이 없어서 로그아웃 처리합니다.")
-                logout()
-            }
-        }
-    }
-    
-    private fun refreshTokens(accessToken: String, refreshToken: String) {
-        viewModelScope.launch {
-            try {
-                Log.d(TAG, "토큰 재발급 API 호출")
-                val authService = RetrofitClient.getInstance(context).create(AuthService::class.java)
-                val response = authService.refreshAllTokens(
-                    TokenRefreshRequest(accessToken, refreshToken)
-                )
-
-                if (response.isSuccessful && response.body() != null) {
-                    val newTokens = response.body()!!
-                    Log.d(TAG, "토큰 재발급 성공")
-                    tokenManager.saveTokens(
-                        newTokens.accessToken,
-                        newTokens.refreshToken,
-                        newTokens.accessTokenExpiresIn - System.currentTimeMillis(), // 서버에서 받은 만료 시간 사용
-                        30 * 24 * 60 * 60 * 1000L // 리프레시 토큰 30일
-                    )
-                } else {
-                    Log.e(TAG, "토큰 재발급 실패: ${response.code()}")
-                    // 재발급 실패 시 로그아웃
-                    logout()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "토큰 재발급 중 오류 발생: ${e.message}", e)
-                // 에러 발생 시 최대 3번까지 재시도
-                retryRefreshToken(accessToken, refreshToken, 1)
-            }
-        }
-    }
-    
-    private fun retryRefreshToken(accessToken: String, refreshToken: String, attempt: Int) {
-        if (attempt > 3) {
-            Log.e(TAG, "최대 재시도 횟수 초과, 로그아웃 처리합니다.")
-            logout()
+        if (_isRefreshingToken.get()) {
+            Log.d("AuthViewModel", "이미 토큰 갱신 중이므로 스킵")
             return
         }
-        
-        viewModelScope.launch {
-            try {
-                // 점점 더 긴 시간 대기
-                val delayTime = attempt * 1000L
-                Log.d(TAG, "토큰 재발급 재시도 ($attempt/3) - ${delayTime}ms 후")
-                delay(delayTime)
-                
-                val authService = RetrofitClient.getInstance(context).create(AuthService::class.java)
-                val response = authService.refreshAllTokens(
-                    TokenRefreshRequest(accessToken, refreshToken)
-                )
-                
-                if (response.isSuccessful && response.body() != null) {
-                    val newTokens = response.body()!!
-                    Log.d(TAG, "토큰 재발급 성공 (재시도: $attempt)")
-                    tokenManager.saveTokens(
-                        newTokens.accessToken,
-                        newTokens.refreshToken,
-                        newTokens.accessTokenExpiresIn - System.currentTimeMillis(), // 서버에서 받은 만료 시간 사용
-                        30 * 24 * 60 * 60 * 1000L // 리프레시 토큰 30일
-                    )
-                } else {
-                    Log.e(TAG, "토큰 재발급 실패 (재시도: $attempt): ${response.code()}")
-                    retryRefreshToken(accessToken, refreshToken, attempt + 1)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "토큰 재발급 중 오류 발생 (재시도: $attempt): ${e.message}", e)
-                retryRefreshToken(accessToken, refreshToken, attempt + 1)
+        val tokenManager = TokenManager.getInstance(context)
+        val isTokenExpired = tokenManager.isAccessTokenExpired()
+        val needsRefresh = tokenManager.needsTokenRefresh()
+        if (isTokenExpired || needsRefresh) {
+            Log.d("AuthViewModel", "토큰 재발급 필요")
+            refreshTokens()
+        }
+    }
+    
+    private fun refreshTokens() {
+        if (!_isRefreshingToken.compareAndSet(false, true)) {
+            Log.d("AuthViewModel", "[차단:코루틴] 이미 토큰 갱신 중이므로 네트워크 요청도 하지 않음")
+            return
+        }
+        Log.d("AuthViewModel", "토큰 재발급 API 호출")
+        try {
+            val tokenManager = TokenManager.getInstance(context)
+            val refreshToken = tokenManager.getRefreshToken()
+            if (refreshToken == null) {
+                Log.e("AuthViewModel", "리프레시 토큰이 없음")
+                _isRefreshingToken.set(false)
+                return
             }
+            val authService = RetrofitClient.getInstance(context, ignoreAuthCheck = true).create(AuthService::class.java)
+            val requestBody = TokenRefreshRequest(refreshToken)
+            viewModelScope.launch {
+                try {
+                    val response = authService.refreshAccessToken(requestBody)
+                    if (response.isSuccessful) {
+                        response.body()?.let { tokenResponse ->
+                            tokenManager.saveAccessToken(tokenResponse.accessToken)
+                            tokenManager.saveRefreshToken(tokenResponse.refreshToken)
+                            tokenManager.setAccessTokenExpiry(tokenResponse.accessTokenExpiresIn)
+                            tokenManager.setRefreshTokenExpiry(tokenResponse.accessTokenExpiresIn + 2592000000)
+                            Log.d("AuthViewModel", "토큰 재발급 성공")
+                        }
+                    } else {
+                        Log.e("AuthViewModel", "토큰 재발급 실패: ${response.code()}")
+                        if (response.code() == 401 || response.code() == 403) {
+                            // logout() // ← 주석 처리: 토큰 삭제 및 로그아웃 방지
+                        }
+                    }
+                } finally {
+                    _isRefreshingToken.set(false)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("AuthViewModel", "토큰 재발급 초기화 중 오류", e)
+            _isRefreshingToken.set(false)
         }
     }
 
@@ -162,6 +139,41 @@ class AuthViewModel(private val context: Context) : ViewModel() {
         tokenManager.clearTokens()
         // 로그인 상태 저장
         saveLoginState(false)
+    }
+
+    // 스플래시 화면에서 사용할 블로킹 방식의 토큰 재발급 함수
+    suspend fun refreshTokensBlocking(): Boolean {
+        if (_isRefreshingToken.get()) {
+            Log.d("AuthViewModel", "[차단:블로킹] 이미 토큰 갱신 중이므로 네트워크 요청도 하지 않음")
+            return false
+        }
+        Log.d("AuthViewModel", "블로킹 방식으로 토큰 재발급 시도")
+        _isRefreshingToken.set(true)
+        return try {
+            val refreshToken = TokenManager.getInstance(context).getRefreshToken() ?: return false
+            val authService = RetrofitClient.getInstance(context, ignoreAuthCheck = true).create(AuthService::class.java)
+            val requestBody = TokenRefreshRequest(refreshToken)
+            val response = authService.refreshAccessToken(requestBody)
+            if (response.isSuccessful) {
+                response.body()?.let { tokenResponse ->
+                    val tokenManager = TokenManager.getInstance(context)
+                    tokenManager.saveAccessToken(tokenResponse.accessToken)
+                    tokenManager.saveRefreshToken(tokenResponse.refreshToken)
+                    tokenManager.setAccessTokenExpiry(tokenResponse.accessTokenExpiresIn)
+                    tokenManager.setRefreshTokenExpiry(tokenResponse.accessTokenExpiresIn + 2592000000)
+                    Log.d("AuthViewModel", "토큰 재발급 성공")
+                    _isRefreshingToken.set(false)
+                    return true
+                }
+            }
+            Log.e("AuthViewModel", "토큰 재발급 실패: ${response.code()}")
+            _isRefreshingToken.set(false)
+            false
+        } catch (e: Exception) {
+            Log.e("AuthViewModel", "토큰 재발급 중 오류 발생", e)
+            _isRefreshingToken.set(false)
+            false
+        }
     }
 
     /**

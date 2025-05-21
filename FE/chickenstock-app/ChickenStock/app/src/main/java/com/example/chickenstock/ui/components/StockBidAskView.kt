@@ -19,6 +19,12 @@ fun StockBidAskView(
     stockBidAsk: StockBidAsk,
     modifier: Modifier = Modifier
 ) {
+    // 매도/매수 잔량 리스트 추출 (8~1, 1~8)
+    val askVolumes = (8 downTo 1).map { stockBidAsk.askVolumes["$it"]?.replace(",", "")?.toIntOrNull() ?: 0 }
+    val bidVolumes = (1..8).map { stockBidAsk.bidVolumes["$it"]?.replace(",", "")?.toIntOrNull() ?: 0 }
+    val maxAskVolume = askVolumes.maxOrNull()?.takeIf { it > 0 } ?: 1
+    val maxBidVolume = bidVolumes.maxOrNull()?.takeIf { it > 0 } ?: 1
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -30,94 +36,123 @@ fun StockBidAskView(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "매도잔량",
+                text = "매수호가잔량",
                 modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.End,
                 fontSize = 12.sp,
-                color = Color(0xFFFF4444)
+                color = Color(0xFFD32F2F)
             )
             Text(
                 text = "호가",
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
-                fontSize = 12.sp
+                fontSize = 12.sp,
+                color = Color.Black
             )
             Text(
-                text = "매수잔량",
+                text = "매도호가잔량",
                 modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.Start,
                 fontSize = 12.sp,
-                color = Color(0xFF4444FF)
+                color = Color(0xFF1976D2)
             )
         }
+        // 헤더와 데이터 사이 구분선
+        androidx.compose.material3.Divider(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            color = Color(0xFFEEEEEE),
+            thickness = 1.dp
+        )
 
         // 매도 호가 (8~1)
         for (i in 8 downTo 1) {
-            val price = stockBidAsk.askPrices["$i"]?.replace("""[+\-]""".toRegex(), "") ?: "0"
-            val volume = stockBidAsk.askVolumes["$i"] ?: "0"
-            
+            val price = stockBidAsk.askPrices["$i"]?.replace("[+\\-]".toRegex(), "") ?: "0"
+            val volume = stockBidAsk.askVolumes["$i"]?.replace(",", "")?.toIntOrNull() ?: 0
+            val ratio = volume.toFloat() / maxAskVolume
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFFFEEEE)),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .height(28.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = NumberFormat.getNumberInstance(Locale.KOREA).format(volume.toLongOrNull() ?: 0),
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.End,
-                    fontSize = 12.sp,
-                    color = Color(0xFFFF4444)
-                )
+                Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = NumberFormat.getNumberInstance(Locale.KOREA).format(price.toLongOrNull() ?: 0),
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
-                    fontSize = 12.sp,
-                    color = Color(0xFFFF4444)
+                    fontSize = 13.sp,
+                    color = Color(0xFF1976D2)
                 )
-                Text(
-                    text = "",
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Start,
-                    fontSize = 12.sp
-                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(start = 4.dp)
+                        .background(Color.Transparent)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(ratio)
+                            .align(Alignment.CenterStart)
+                            .background(Color(0xFFBBDEFB), shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                    )
+                    Text(
+                        text = NumberFormat.getNumberInstance(Locale.KOREA).format(volume),
+                        color = Color.Black,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                    )
+                }
             }
         }
 
         // 매수 호가 (1~8)
         for (i in 1..8) {
-            val price = stockBidAsk.bidPrices["$i"]?.replace("""[+\-]""".toRegex(), "") ?: "0"
-            val volume = stockBidAsk.bidVolumes["$i"] ?: "0"
-            
+            val price = stockBidAsk.bidPrices["$i"]?.replace("[+\\-]".toRegex(), "") ?: "0"
+            val volume = stockBidAsk.bidVolumes["$i"]?.replace(",", "")?.toIntOrNull() ?: 0
+            val ratio = volume.toFloat() / maxBidVolume
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFEEEEFF)),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .height(28.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "",
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.End,
-                    fontSize = 12.sp
-                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(end = 4.dp)
+                        .background(Color.Transparent)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(ratio)
+                            .align(Alignment.CenterEnd)
+                            .background(Color(0xFFFFCDD2), shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                    )
+                    Text(
+                        text = NumberFormat.getNumberInstance(Locale.KOREA).format(volume),
+                        color = Color.Black,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 8.dp)
+                    )
+                }
                 Text(
                     text = NumberFormat.getNumberInstance(Locale.KOREA).format(price.toLongOrNull() ?: 0),
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
-                    fontSize = 12.sp,
-                    color = Color(0xFF4444FF)
+                    fontSize = 13.sp,
+                    color = Color(0xFFD32F2F)
                 )
-                Text(
-                    text = NumberFormat.getNumberInstance(Locale.KOREA).format(volume.toLongOrNull() ?: 0),
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Start,
-                    fontSize = 12.sp,
-                    color = Color(0xFF4444FF)
-                )
+                Spacer(modifier = Modifier.weight(1f))
             }
         }
     }

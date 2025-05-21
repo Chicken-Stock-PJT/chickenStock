@@ -131,6 +131,13 @@ import java.util.Date
 import java.util.Locale
 import java.util.Calendar
 import com.example.chickenstock.api.TradeExecution
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.filled.ArrowDropDown
 
 class CustomMarkerView(
     context: Context,
@@ -193,6 +200,9 @@ fun StockDetailScreen(
     val context = LocalContext.current
     val token = com.example.chickenstock.data.TokenManager.getInstance(context).getAccessToken()
     var selectedPeriod by remember { mutableStateOf("일") }
+    var selectedMinuteInterval by remember { mutableStateOf("1분") }
+    var showMinuteDropdown by remember { mutableStateOf(false) }
+    val minuteOptions = listOf("1분", "5분", "10분", "15분", "30분", "60분")
     val coroutineScope = rememberCoroutineScope()
     
     // 거래 가능 시간 체크
@@ -200,9 +210,9 @@ fun StockDetailScreen(
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     val currentTimeStr = timeFormat.format(currentTime.time)
     val currentHour = currentTime.get(Calendar.HOUR_OF_DAY)
-    
-    // 평일 08:00~18:00 사이에만 거래 가능
-    val isTradingHours = currentHour in 8..17
+    val currentMinute = currentTime.get(Calendar.MINUTE)
+    // 08:00~20:00 사이에만 거래 가능
+    val isTradingHours = (currentHour > 8 || (currentHour == 8 && currentMinute >= 0)) && (currentHour < 20 || (currentHour == 20 && currentMinute == 0))
     
     // 거래 불가능 안내 다이얼로그 상태
     var showTradingHoursDialog by remember { mutableStateOf(false) }
@@ -222,6 +232,7 @@ fun StockDetailScreen(
     var buyQuantity by remember { mutableStateOf("") }
     var buyStep by remember { mutableStateOf(1) }
     var showBuySuccessMessage by remember { mutableStateOf(false) }
+    var buyFailedMessage by remember { mutableStateOf<String?>(null) }
     
     // 매도 관련 상태들
     var sellOrderType by remember { mutableStateOf("시장가") }
@@ -272,18 +283,7 @@ fun StockDetailScreen(
     val webSocketManager = remember { WebSocketManager.getInstance() }
     val stockPrice = webSocketManager.stockPrice.collectAsState().value
     val stockBidAsk = webSocketManager.stockBidAsk.collectAsState().value
-
-    // 실시간 체결 정보 리스트 상태 (최신 10개만 유지)
-    val tradeExecutions = remember { mutableStateListOf<TradeExecution>() }
-    val tradeExecutionFlow = webSocketManager.tradeExecution.collectAsState().value
-    LaunchedEffect(tradeExecutionFlow) {
-        tradeExecutionFlow?.let {
-            if (it.stockCode == stock.stockCode) {
-                tradeExecutions.add(0, it)
-                if (tradeExecutions.size > 10) tradeExecutions.removeAt(tradeExecutions.lastIndex)
-            }
-        }
-    }
+    val tradeExecutions = webSocketManager.tradeExecutions.collectAsState().value
 
     // API 데이터 상태
     var apiStockPrice by remember { mutableStateOf<StockDetailResponse?>(null) }
@@ -327,9 +327,9 @@ fun StockDetailScreen(
                 Log.d("StockDetailScreen", "API 현재가 로드 성공: ${apiStockPrice?.currentPrice}")
                 
                 // 초기 현재가 설정
-                currentPrice = apiStockPrice?.currentPrice?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() ?: 0
-                priceChange = apiStockPrice?.priceChange?.replace("""[+\-,]""".toRegex(), "")?.toIntOrNull() ?: 0
-                changeRate = apiStockPrice?.changeRate?.replace("""[+\-,%]""".toRegex(), "")?.toDoubleOrNull() ?: 0.0
+                currentPrice = apiStockPrice?.currentPrice?.replace("[+,-]".toRegex(), "")?.toIntOrNull() ?: 0
+                priceChange = apiStockPrice?.priceChange?.replace(",", "")?.toIntOrNull() ?: 0 // 부호 살림
+                changeRate = apiStockPrice?.changeRate?.replace("%", "")?.toDoubleOrNull() ?: 0.0 // 부호 살림
             } else {
                 Log.e("StockDetailScreen", "API 현재가 로드 실패: ${priceResponse.code()}")
             }
@@ -357,7 +357,7 @@ fun StockDetailScreen(
                     response.sel_fpr_bid to response.sel_fpr_req
                 ).forEachIndexed { index, (price, volume) ->
                     val key = (10 - index).toString()
-                    askPricesMap[key] = price.replace("""[+\-]""".toRegex(), "")
+                    askPricesMap[key] = price.replace("""[+\-,\s]""".toRegex(), "")
                     askVolumesMap[key] = volume
                 }
 
@@ -379,7 +379,7 @@ fun StockDetailScreen(
                     response.buy_10th_pre_bid to response.buy_10th_pre_req
                 ).forEachIndexed { index, (price, volume) ->
                     val key = (index + 1).toString()
-                    bidPricesMap[key] = price.replace("""[+\-]""".toRegex(), "")
+                    bidPricesMap[key] = price.replace("""[+\-,\s]""".toRegex(), "")
                     bidVolumesMap[key] = volume
                 }
 
@@ -461,7 +461,7 @@ fun StockDetailScreen(
     }
 
     // 차트 데이터 로드
-    LaunchedEffect(selectedPeriod) {
+    LaunchedEffect(selectedPeriod, selectedMinuteInterval) {
         isChartLoading = true
         try {
             val chartType = when (selectedPeriod) {
@@ -472,9 +472,16 @@ fun StockDetailScreen(
                 "년" -> "YEARLY"
                 else -> "DAILY"
             }
-            
             val timeInterval = if (selectedPeriod == "분") {
-                "1"
+                when (selectedMinuteInterval) {
+                    "1분" -> "1"
+                    "5분" -> "5"
+                    "10분" -> "10"
+                    "15분" -> "15"
+                    "30분" -> "30"
+                    "60분" -> "60"
+                    else -> "1"
+                }
             } else null
 
             Log.d("StockDetailScreen", "차트 데이터 요청: chartType=$chartType, timeInterval=$timeInterval, stockCode=${stock.stockCode}")
@@ -540,7 +547,7 @@ fun StockDetailScreen(
             }
         } catch (e: Exception) {
             Log.e("StockDetailScreen", "차트 데이터 로드 실패", e)
-            Toast.makeText(context, "차트 데이터를 불러오는데 실패했습니다.", Toast.LENGTH_SHORT).show()
+            // Toast.makeText(context, "차트 데이터를 불러오는데 실패했습니다.", Toast.LENGTH_SHORT).show() // 제거
         } finally {
             isChartLoading = false
         }
@@ -600,7 +607,7 @@ fun StockDetailScreen(
     var loginDialogType by remember { mutableStateOf("") } // "buy", "sell", "favorite"
 
     // 관심종목 여부 확인
-    val isInWatchlist = viewModel.watchlist.value.contains(stock.stockCode)
+    val isInWatchlist = isInWatchlist(viewModel.watchlist.value, getPureStockCode(stock.stockCode))
 
     // 프로필 정보 로드
     LaunchedEffect(authViewModel.isLoggedIn.value) {
@@ -745,9 +752,10 @@ fun StockDetailScreen(
             },
             text = {
                 Text(
-                    "주식 거래는 평일 08:00~18:00에만 가능합니다. (현재 시간: $currentTimeStr)",
+                    "주식 거래는 매일 08:00~20:00에만 가능합니다. (현재 시간: $currentTimeStr)",
                     fontFamily = SCDreamFontFamily,
-                    color = Color.Black
+                    color = Color.Black,
+                    textAlign = TextAlign.Center
                 )
             },
             confirmButton = {
@@ -800,14 +808,62 @@ fun StockDetailScreen(
                                 .fillMaxWidth()
                                 .verticalScroll(scrollState)
                         ) {
-                            Text(
-                                text = "매도 주문",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = SCDreamFontFamily,
-                                color = Gray700
-                            )
-                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "매도 주문",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = SCDreamFontFamily,
+                                    color = Gray700
+                                )
+                                Text(
+                                    text = "수수료 0.015% + 제세금 0.18%",
+                                    fontSize = 12.sp,
+                                    color = Gray500,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // 시장가/지정가 선택 버튼
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Button(
+                                    onClick = { sellOrderType = "시장가" },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (sellOrderType == "시장가") ChartBlue else Gray200 // 파란색
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "시장가",
+                                        color = if (sellOrderType == "시장가") Color.White else Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = { sellOrderType = "지정가" },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (sellOrderType == "지정가") ChartBlue else Gray200 // 파란색
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "지정가",
+                                        color = if (sellOrderType == "지정가") Color.White else Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
+                            }
                             Spacer(modifier = Modifier.height(16.dp))
 
                             // 보유 주식 정보
@@ -824,11 +880,9 @@ fun StockDetailScreen(
                                 color = Gray700,
                                 fontFamily = SCDreamFontFamily
                             )
-                            
-                            // 보유 주식이 있을 때만 추가 정보 표시
+
                             if (currentPosition != null) {
                                 Spacer(modifier = Modifier.height(12.dp))
-                                
                                 Text(
                                     text = "평균 매수가",
                                     fontSize = 14.sp,
@@ -842,9 +896,7 @@ fun StockDetailScreen(
                                     color = Gray700,
                                     fontFamily = SCDreamFontFamily
                                 )
-                                
                                 Spacer(modifier = Modifier.height(12.dp))
-                                
                                 Text(
                                     text = "수익률",
                                     fontSize = 14.sp,
@@ -862,9 +914,7 @@ fun StockDetailScreen(
                                     },
                                     fontFamily = SCDreamFontFamily
                                 )
-                                
                                 Spacer(modifier = Modifier.height(12.dp))
-                                
                                 Text(
                                     text = "평가 손익",
                                     fontSize = 14.sp,
@@ -883,93 +933,196 @@ fun StockDetailScreen(
                                     fontFamily = SCDreamFontFamily
                                 )
                             }
-                            
                             Spacer(modifier = Modifier.height(24.dp))
-                            
-                            // 가격 입력 (현재가로 자동 설정, 수정 불가)
-                            OutlinedTextField(
-                                value = sellPrice,
-                                onValueChange = { },
-                                label = { Text("주문 가격", fontFamily = SCDreamFontFamily) },
-                                enabled = false,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Next
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onNext = {
-                                        quantityFocusRequester.requestFocus()
-                                    }
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .focusRequester(priceFocusRequester),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = ChartBlue,
-                                    unfocusedBorderColor = Gray300,
-                                    focusedTextColor = Color.Black,
-                                    unfocusedTextColor = Color.Black,
-                                    disabledTextColor = Color.Black,
-                                    disabledBorderColor = Gray300,
-                                    disabledLabelColor = Gray700
-                                )
-                            )
-                            
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            // 수량 입력 (매도)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+
+                            // 지정가일 때만 가격 입력, 최대 버튼, 총 매도 금액 표시
+                            if (sellOrderType == "지정가") {
                                 OutlinedTextField(
-                                    value = sellQuantity,
-                                    onValueChange = { sellQuantity = it },
-                                    label = { Text("주문 수량", fontFamily = SCDreamFontFamily) },
+                                    value = sellPrice,
+                                    onValueChange = { sellPrice = it },
+                                    label = { Text("주문 가격", fontFamily = SCDreamFontFamily) },
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Done
+                                        imeAction = ImeAction.Next
                                     ),
                                     keyboardActions = KeyboardActions(
-                                        onDone = {
-                                            val quantity = sellQuantity.toIntOrNull() ?: 0
-                                            val currentHolding = currentPosition?.quantity ?: 0
-                                            if (sellPrice.isNotEmpty() && sellQuantity.isNotEmpty() && quantity <= currentHolding) {
-                                                hideKeyboard()
-                                                sellStep = 2
-                                            }
+                                        onNext = {
+                                            quantityFocusRequester.requestFocus()
                                         }
                                     ),
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .focusRequester(quantityFocusRequester),
+                                        .fillMaxWidth()
+                                        .focusRequester(priceFocusRequester),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedBorderColor = ChartBlue,
                                         unfocusedBorderColor = Gray300,
                                         focusedTextColor = Color.Black,
-                                        unfocusedTextColor = Color.Black
+                                        unfocusedTextColor = Color.Black,
+                                        disabledTextColor = Color.Black,
+                                        disabledBorderColor = Gray300,
+                                        disabledLabelColor = Gray700
                                     )
                                 )
-                                
-                                Button(
-                                    onClick = { 
-                                        sellQuantity = (currentPosition?.quantity ?: 0).toString()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = ChartBlue
-                                    ),
-                                    modifier = Modifier.height(56.dp).offset(y = 6.dp)
-                                ) {
-                                    Text(
-                                        text = "최대",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = SCDreamFontFamily,
-                                        color = Color.White
-                                    )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+
+                            // 수량 입력 (시장가/지정가 공통)
+                            OutlinedTextField(
+                                value = sellQuantity,
+                                onValueChange = { sellQuantity = it },
+                                label = { Text("주문 수량", fontFamily = SCDreamFontFamily) },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        val quantity = sellQuantity.toIntOrNull() ?: 0
+                                        val price = sellPrice.toLongOrNull()
+                                        val isValid = if (sellOrderType == "시장가") {
+                                            quantity > 0 && quantity <= (currentPosition?.quantity ?: 0)
+                                        } else {
+                                            quantity > 0 && quantity <= (currentPosition?.quantity ?: 0) && sellPrice.isNotEmpty() && price != null && price > 0
+                                        }
+                                        if (isValid) {
+                                            hideKeyboard()
+                                            sellStep = 2
+                                            isLoading = true
+                                            errorMessage = null
+                                            showSellSuccessMessage = false
+                                            coroutineScope.launch {
+                                                try {
+                                                    val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                                                    val sellOrder = SellOrderRequest(
+                                                        stockCode = stock.stockCode,
+                                                        quantity = quantity,
+                                                        price = if (sellOrderType == "지정가") price else null,
+                                                        marketOrder = sellOrderType == "시장가"
+                                                    )
+                                                    Log.d("매도버튼", "sellOrder=$sellOrder, 주문유형=$sellOrderType")
+                                                    val response = stockService.sellStock("Bearer $token", sellOrder)
+                                                    Log.d("매도버튼", "API 응답: isSuccessful=${response.isSuccessful}, code=${response.code()}")
+                                                    if (response.isSuccessful) {
+                                                        delay(1000)
+                                                        isLoading = false
+                                                        showSellSuccessMessage = true
+                                                        errorMessage = null
+                                                        // 프로필 정보 새로고침 (잔고 업데이트를 위해)
+                                                        val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                                                        val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                                                        if (profileResponse.isSuccessful) {
+                                                            userProfile = profileResponse.body()
+                                                        }
+                                                        // 포트폴리오 정보 새로고침
+                                                        val portfolioResponse = memberService.getPortfolio("Bearer $token")
+                                                        if (portfolioResponse.isSuccessful) {
+                                                            portfolioData = portfolioResponse.body()
+                                                        }
+                                                    } else {
+                                                        val errorBody = response.errorBody()?.string()
+                                                        Log.d("매도버튼", "API 실패 응답: $errorBody")
+                                                        val errorMsg = try {
+                                                            org.json.JSONObject(errorBody).optString("message")
+                                                        } catch (e: Exception) { "매도에 실패했습니다." }
+                                                        isLoading = false
+                                                        showSellSuccessMessage = false
+                                                        errorMessage = errorMsg.ifBlank { "매도에 실패했습니다." }
+                                                    }
+                                                } catch (e: Exception) {
+                                                    Log.e("매도버튼", "코루틴 예외", e)
+                                                    isLoading = false
+                                                    showSellSuccessMessage = false
+                                                    errorMessage = "매도에 실패했습니다."
+                                                }
+                                            }
+                                        }
+                                    }
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(quantityFocusRequester),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = ChartBlue,
+                                    unfocusedBorderColor = Gray300,
+                                    focusedTextColor = Color.Black,
+                                    unfocusedTextColor = Color.Black
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (sellOrderType == "시장가") {
+                                    val increments = listOf(1, 5, 10, 100)
+                                    increments.forEach { inc ->
+                                        Button(
+                                            onClick = {
+                                                val current = sellQuantity.toIntOrNull() ?: 0
+                                                val maxQty = currentPosition?.quantity ?: 0
+                                                val newQty = (current + inc).coerceAtMost(maxQty)
+                                                sellQuantity = newQty.toString()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ChartBlue),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = "+$inc",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = SCDreamFontFamily,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    val percentButtons = listOf(10, 25, 50)
+                                    percentButtons.forEach { percent ->
+                                        Button(
+                                            onClick = {
+                                                val holding = currentPosition?.quantity ?: 0
+                                                if (holding > 0) {
+                                                    val qty = (holding * percent / 100.0).toInt().coerceAtLeast(1)
+                                                    sellQuantity = qty.toString()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ChartBlue),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = "$percent%",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = SCDreamFontFamily,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                    // 최대 버튼
+                                    Button(
+                                        onClick = {
+                                            val holding = currentPosition?.quantity ?: 0
+                                            if (holding > 0) {
+                                                sellQuantity = holding.toString()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = ChartBlue),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "최대",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = SCDreamFontFamily,
+                                            fontSize = 13.sp
+                                        )
+                                    }
                                 }
                             }
+                            Spacer(modifier = Modifier.height(16.dp))
 
                             // 수량 초과 시 경고 메시지
                             val quantity = sellQuantity.toIntOrNull() ?: 0
@@ -983,47 +1136,94 @@ fun StockDetailScreen(
                                     modifier = Modifier.padding(top = 4.dp)
                                 )
                             }
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            
-                            // 총 매도 금액
-                            val totalAmount = try {
-                                val price = sellPrice.toIntOrNull() ?: 0
-                                val sellQty = sellQuantity.toIntOrNull() ?: 0
-                                price * sellQty
-                            } catch (e: Exception) { 0 }
-                            
-                            Text(
-                                text = "총 매도 금액",
-                                fontSize = 14.sp,
-                                color = Gray500,
-                                fontFamily = SCDreamFontFamily
-                            )
-                            Text(
-                                text = "${String.format("%,d", totalAmount)}원",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Gray700,
-                                fontFamily = SCDreamFontFamily
-                            )
-                            
-                            Spacer(modifier = Modifier.height(24.dp))
-                            
+
+                            if (sellOrderType == "지정가") {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                // 총 매도 금액
+                                val totalAmount = try {
+                                    val price = sellPrice.toLongOrNull() ?: 0L
+                                    val sellQty = sellQuantity.toLongOrNull() ?: 0L
+                                    price * sellQty
+                                } catch (e: Exception) { 0L }
+                                Text(
+                                    text = "총 매도 금액",
+                                    fontSize = 14.sp,
+                                    color = Gray500,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                Text(
+                                    text = "${String.format("%,d", totalAmount)}원",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Gray700,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                                Spacer(modifier = Modifier.height(24.dp))
+                            } else {
+                                Spacer(modifier = Modifier.height(24.dp))
+                            }
+
                             // 매도 버튼
                             Button(
-                                onClick = { 
+                                onClick = {
                                     hideKeyboard()
-                                    sellStep = 2 
+                                    sellStep = 2
+                                    isLoading = true
+                                    errorMessage = null
+                                    showSellSuccessMessage = false
+                                    coroutineScope.launch {
+                                        try {
+                                            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                                            val sellOrder = SellOrderRequest(
+                                                stockCode = stock.stockCode,
+                                                quantity = sellQuantity.toInt(),
+                                                price = if (sellOrderType == "지정가") sellPrice.toLongOrNull() else null,
+                                                marketOrder = sellOrderType == "시장가"
+                                            )
+                                            Log.d("매도버튼", "sellOrder=$sellOrder, 주문유형=$sellOrderType")
+                                            val response = stockService.sellStock("Bearer $token", sellOrder)
+                                            Log.d("매도버튼", "API 응답: isSuccessful=${response.isSuccessful}, code=${response.code()}")
+                                            if (response.isSuccessful) {
+                                                delay(1000)
+                                                isLoading = false
+                                                showSellSuccessMessage = true
+                                                errorMessage = null
+                                                // 프로필 정보 새로고침 (잔고 업데이트를 위해)
+                                                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                                                val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                                                if (profileResponse.isSuccessful) {
+                                                    userProfile = profileResponse.body()
+                                                }
+                                                // 포트폴리오 정보 새로고침
+                                                val portfolioResponse = memberService.getPortfolio("Bearer $token")
+                                                if (portfolioResponse.isSuccessful) {
+                                                    portfolioData = portfolioResponse.body()
+                                                }
+                                            } else {
+                                                val errorBody = response.errorBody()?.string()
+                                                Log.d("매도버튼", "API 실패 응답: $errorBody")
+                                                val errorMsg = try {
+                                                    org.json.JSONObject(errorBody).optString("message")
+                                                } catch (e: Exception) { "매도에 실패했습니다." }
+                                                isLoading = false
+                                                showSellSuccessMessage = false
+                                                errorMessage = errorMsg.ifBlank { "매도에 실패했습니다." }
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("매도버튼", "코루틴 예외", e)
+                                            isLoading = false
+                                            showSellSuccessMessage = false
+                                            errorMessage = "매도에 실패했습니다."
+                                        }
+                                    }
                                 },
-                                enabled = sellPrice.isNotEmpty() && 
-                                         sellQuantity.isNotEmpty() && 
-                                         (sellQuantity.toIntOrNull() ?: 0) <= (currentPosition?.quantity ?: 0) &&
-                                         (sellQuantity.toIntOrNull() ?: 0) > 0,
+                                enabled = (sellOrderType == "시장가" && sellQuantity.isNotEmpty() && (sellQuantity.toIntOrNull() ?: 0) > 0 && (sellQuantity.toIntOrNull() ?: 0) <= (currentPosition?.quantity ?: 0)) ||
+                                          (sellOrderType == "지정가" && sellPrice.isNotEmpty() && sellQuantity.isNotEmpty() && (sellQuantity.toIntOrNull() ?: 0) > 0 && (sellQuantity.toIntOrNull() ?: 0) <= (currentPosition?.quantity ?: 0)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = ChartBlue,
+                                    containerColor = ChartBlue, // 빨간색
                                     disabledContainerColor = Gray200
                                 )
                             ) {
@@ -1038,159 +1238,117 @@ fun StockDetailScreen(
                         }
                     }
                     2 -> {
-                        // 매도 시트 2번째 화면
-                        Text(
-                            text = "매도 주문 확인",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = SCDreamFontFamily,
-                            color = Gray700
-                        )
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // 주문 정보 표시
-                        if (isLoading) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(48.dp),
-                                    color = ChartBlue,
-                                    strokeWidth = 3.dp
-                                )
-                            }
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Gray50, RoundedCornerShape(8.dp))
-                                    .padding(16.dp)
-                            ) {
-                                OrderInfoRow("종목명", stockDetail?.shortName ?: stock.stockName)
-                                OrderInfoRow("주문 유형", sellOrderType)
-                                OrderInfoRow("주문 가격", "${String.format("%,d", sellPrice.toIntOrNull() ?: 0)}원")
-                                OrderInfoRow("주문 수량", "${sellQuantity}주")
-                                OrderInfoRow("총 매도 금액", "${String.format("%,d", (sellPrice.toIntOrNull() ?: 0) * (sellQuantity.toIntOrNull() ?: 0))}원")
-                                Divider(modifier = Modifier.padding(vertical = 8.dp), color = Gray200)
-                                OrderInfoRow("현재 보유 수량", "${currentPosition?.quantity ?: 0}주")
-                                OrderInfoRow(
-                                    "매도 후 보유 수량", 
-                                    "${(currentPosition?.quantity ?: 0) - (sellQuantity.toIntOrNull() ?: 0)}주"
-                                )
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // 취소/확인 버튼
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // 취소 버튼 - 로딩 중일 때는 숨김
-                            if (!isLoading) {
-                                Button(
-                                    onClick = { 
-                                        hideKeyboard()
-                                        showSellBottomSheet = false
-                                        sellStep = 1
-                                        sellOrderType = "시장가"
-                                        sellPrice = ""
-                                        sellQuantity = ""
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Gray200,
-                                        contentColor = Gray700
-                                    ),
-                                    modifier = Modifier.weight(1f)
+                        when {
+                            isLoading -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(48.dp),
+                                        color = ChartBlue,
+                                        strokeWidth = 3.dp
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     Text(
-                                        text = "취소",
+                                        text = "주문 처리 중...",
                                         fontSize = 16.sp,
-                                        fontFamily = SCDreamFontFamily
+                                        fontFamily = SCDreamFontFamily,
+                                        color = Gray700,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }
-                            
-                            // 확인 버튼 - 항상 표시되지만 로딩 중일 때는 인디케이터로 변경
-                            Button(
-                                onClick = { 
-                                    hideKeyboard()
-                                    isLoading = true
-                                    // API 호출
-                                    coroutineScope.launch {
-                                        try {
-                                            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
-                                            val sellOrder = SellOrderRequest(
-                                                stockCode = stock.stockCode,
-                                                quantity = sellQuantity.toInt(),
-                                                price = null,
-                                                marketOrder = true
-                                            )
-                                            // 바디 로그 출력
-                                            Log.d("매도요청", Gson().toJson(sellOrder))
-                                            val response = stockService.sellStock(sellOrder)
-                                            
-                                            // 응답 처리
-                                            if (response.isSuccessful) {
-                                                Log.d("매도응답", "성공: ${response.body()}")
-                                                // 성공 처리
-                                                showSellSuccessMessage = true
-                                                delay(500) // 성공 시 잠시 대기
-                                                isLoading = false
-                                                sellStep = 3 // 매도 완료 화면으로 이동
-                                                
-                                                // 프로필 정보 새로고침 (잔고 업데이트를 위해)
-                                                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
-                                                val profileResponse = memberService.getSimpleProfile("Bearer $token")
-                                                if (profileResponse.isSuccessful) {
-                                                    userProfile = profileResponse.body()
-                                                }
-                                                
-                                                // 포트폴리오 정보 새로고침
-                                                val portfolioResponse = memberService.getPortfolio("Bearer $token")
-                                                if (portfolioResponse.isSuccessful) {
-                                                    portfolioData = portfolioResponse.body()
-                                                }
-                                            } else {
-                                                Log.e("매도응답", "실패: ${response.code()} - ${response.errorBody()?.string()}")
-                                                errorMessage = "매도 요청이 실패했습니다 (${response.code()})"
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e("매도요청", "오류 발생: ${e.message}", e)
-                                            errorMessage = when {
-                                                e.message?.contains("timeout") == true -> "서버 응답 시간이 초과되었습니다."
-                                                e.message?.contains("Unable to resolve host") == true -> "인터넷 연결을 확인해주세요."
-                                                else -> "매도 요청 중 오류가 발생했습니다: ${e.message}"
-                                            }
-                                        } finally {
-                                            isLoading = false
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = ChartBlue
-                                ),
-                                modifier = Modifier.weight(1f),
-                                enabled = !isLoading
-                            ) {
-                                if (isLoading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.dp
+                            showSellSuccessMessage -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "성공",
+                                        tint = ChartBlue,
+                                        modifier = Modifier.size(48.dp)
                                     )
-                                } else {
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     Text(
-                                        text = "확인",
-                                        fontSize = 16.sp,
+                                        text = "주문이 완료되었습니다",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
                                         fontFamily = SCDreamFontFamily,
-                                        color = Color.White
+                                        color = Gray700,
+                                        textAlign = TextAlign.Center
                                     )
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    Button(
+                                        onClick = {
+                                            hideKeyboard()
+                                            showSellBottomSheet = false
+                                            sellStep = 1
+                                            sellOrderType = "시장가"
+                                            sellPrice = ""
+                                            sellQuantity = ""
+                                            showSellSuccessMessage = false
+                                            errorMessage = null
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = ChartBlue
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "확인",
+                                            fontSize = 16.sp,
+                                            fontFamily = SCDreamFontFamily,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                            errorMessage != null -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close, // X자 아이콘
+                                        contentDescription = "실패",
+                                        tint = ChartBlue,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = errorMessage ?: "매도에 실패했습니다.",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily,
+                                        color = ChartBlue,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    Button(
+                                        onClick = {
+                                            hideKeyboard()
+                                            showSellBottomSheet = false
+                                            sellStep = 1
+                                            sellOrderType = "시장가"
+                                            sellPrice = ""
+                                            sellQuantity = ""
+                                            showSellSuccessMessage = false
+                                            errorMessage = null
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = ChartBlue
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "확인",
+                                            fontSize = 16.sp,
+                                            fontFamily = SCDreamFontFamily,
+                                            color = Color.White
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1283,17 +1441,65 @@ fun StockDetailScreen(
                                 .fillMaxWidth()
                                 .verticalScroll(scrollState)
                         ) {
-                            Text(
-                                text = "매수 주문",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = SCDreamFontFamily,
-                                color = Gray700
-                            )
-                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "매수 주문",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = SCDreamFontFamily,
+                                    color = Gray700
+                                )
+                                Text(
+                                    text = "수수료 0.015%",
+                                    fontSize = 12.sp,
+                                    color = Gray500,
+                                    fontFamily = SCDreamFontFamily
+                                )
+                            }
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // 현재 잔고 표시 부분 수정
+                            // 시장가/지정가 선택 버튼
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Button(
+                                    onClick = { buyOrderType = "시장가" },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (buyOrderType == "시장가") ChartRed else Gray200
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "시장가",
+                                        color = if (buyOrderType == "시장가") Color.White else Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = { buyOrderType = "지정가" },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (buyOrderType == "지정가") ChartRed else Gray200
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = "지정가",
+                                        color = if (buyOrderType == "지정가") Color.White else Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // 현재 잔고 표시
                             Text(
                                 text = "현재 잔고",
                                 fontSize = 14.sp,
@@ -1307,22 +1513,22 @@ fun StockDetailScreen(
                                 )
                             } else {
                                 Text(
-                                    text = "${String.format("%,d", userProfile?.memberMoney?.replace(",", "")?.toIntOrNull() ?: 0)}원",
+                                    text = if (userProfile?.memberMoney == null || userProfile?.memberMoney == "조회 중") "조회 중" else "${String.format("%,d", userProfile?.memberMoney?.replace(",", "")?.toIntOrNull() ?: 0)}원",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Gray700,
                                     fontFamily = SCDreamFontFamily
                                 )
                             }
-                            
                             Spacer(modifier = Modifier.height(24.dp))
                             
-                            // 가격 입력 (현재가로 자동 설정, 수정 불가)
+                            // 시장가일 때 가격 입력, 총 주문 금액, 최대 버튼 숨김
+                            if (buyOrderType == "지정가") {
+                                // 가격 입력
                             OutlinedTextField(
                                 value = buyPrice,
-                                onValueChange = { },
+                                    onValueChange = { buyPrice = it },
                                 label = { Text("주문 가격", fontFamily = SCDreamFontFamily) },
-                                enabled = false,
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Number,
                                     imeAction = ImeAction.Next
@@ -1336,7 +1542,7 @@ fun StockDetailScreen(
                                     .fillMaxWidth()
                                     .focusRequester(priceFocusRequester),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Secondary500,
+                                    focusedBorderColor = ChartBlue,
                                     unfocusedBorderColor = Gray300,
                                     focusedTextColor = Color.Black,
                                     unfocusedTextColor = Color.Black,
@@ -1345,10 +1551,10 @@ fun StockDetailScreen(
                                     disabledLabelColor = Gray700
                                 )
                             )
-                            
                             Spacer(modifier = Modifier.height(8.dp))
+                            }
                             
-                            // 수량 입력 (매수)
+                            // 수량 입력 (시장가/지정가 공통)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1356,7 +1562,12 @@ fun StockDetailScreen(
                             ) {
                                 OutlinedTextField(
                                     value = buyQuantity,
-                                    onValueChange = { buyQuantity = it },
+                                    onValueChange = { newValue ->
+                                        // 숫자만 허용
+                                        if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                                            buyQuantity = newValue
+                                        }
+                                    },
                                     label = { Text("주문 수량", fontFamily = SCDreamFontFamily) },
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Number,
@@ -1364,15 +1575,57 @@ fun StockDetailScreen(
                                     ),
                                     keyboardActions = KeyboardActions(
                                         onDone = {
-                                            val totalAmount = try {
-                                                val price = buyPrice.toIntOrNull() ?: 0
-                                                val quantity = buyQuantity.toIntOrNull() ?: 0
-                                                price * quantity
-                                            } catch (e: Exception) { 0 }
-
-                                            if (buyPrice.isNotEmpty() && buyQuantity.isNotEmpty() && totalAmount <= currentBalance) {
+                                            val quantity = buyQuantity.toIntOrNull() ?: 0
+                                            val price = buyPrice.toLongOrNull()
+                                            val isValid = if (buyOrderType == "시장가") {
+                                                quantity > 0
+                                            } else {
+                                                quantity > 0 && buyPrice.isNotEmpty() && price != null && price > 0 && (price * quantity) <= currentBalance
+                                            }
+                                            if (isValid) {
                                                 hideKeyboard()
-                                                buyStep = 2
+                                                buyStep = 3
+                                                isLoading = true
+                                                coroutineScope.launch {
+                                                    try {
+                                                        val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                                                        val buyOrder = BuyOrderRequest(
+                                                            stockCode = stock.stockCode,
+                                                            quantity = quantity,
+                                                            price = if (buyOrderType == "지정가") price else null,
+                                                            marketOrder = buyOrderType == "시장가"
+                                                        )
+                                                        Log.d("매수버튼", "buyOrder=$buyOrder, 주문유형=$buyOrderType")
+                                                        val response = stockService.buyStock("Bearer $token", buyOrder)
+                                                        Log.d("매수버튼", "API 응답: isSuccessful=${response.isSuccessful}, code=${response.code()}")
+                                                        if (response.isSuccessful) {
+                                                            delay(1000)
+                                                            isLoading = false
+                                                            showBuySuccessMessage = true
+                                                            buyFailedMessage = null
+                                                            // 프로필 정보 새로고침 (잔고 업데이트를 위해)
+                                                            val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                                                            val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                                                            if (profileResponse.isSuccessful) {
+                                                                userProfile = profileResponse.body()
+                                                            }
+                                                        } else {
+                                                            val errorBody = response.errorBody()?.string()
+                                                            Log.d("매수버튼", "API 실패 응답: $errorBody")
+                                                            val errorMsg = try {
+                                                                org.json.JSONObject(errorBody).optString("message")
+                                                            } catch (e: Exception) { "결제에 실패했습니다." }
+                                                            isLoading = false
+                                                            showBuySuccessMessage = false
+                                                            buyFailedMessage = errorMsg.ifBlank { "결제에 실패했습니다." }
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        Log.e("매수버튼", "코루틴 예외", e)
+                                                        isLoading = false
+                                                        showBuySuccessMessage = false
+                                                        buyFailedMessage = "결제에 실패했습니다."
+                                                    }
+                                                }
                                             }
                                         }
                                     ),
@@ -1380,46 +1633,98 @@ fun StockDetailScreen(
                                         .weight(1f)
                                         .focusRequester(quantityFocusRequester),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Secondary500,
+                                        focusedBorderColor = ChartBlue,
                                         unfocusedBorderColor = Gray300,
                                         focusedTextColor = Color.Black,
                                         unfocusedTextColor = Color.Black
                                     )
                                 )
                                 
-                                Button(
-                                    onClick = { 
-                                        val price = buyPrice.toIntOrNull() ?: 0
-                                        if (price > 0) {
-                                            val balance = userProfile?.memberMoney?.replace(",", "")?.toIntOrNull() ?: 0
-                                            val maxQuantity = balance / price
-                                            buyQuantity = maxQuantity.toString()
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (buyOrderType == "시장가") {
+                                    val increments = listOf(1, 5, 10, 100)
+                                    increments.forEach { inc ->
+                                        Button(
+                                            onClick = {
+                                                val current = buyQuantity.toIntOrNull() ?: 0
+                                                buyQuantity = (current + inc).toString()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ChartRed),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = "+$inc",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = SCDreamFontFamily,
+                                                fontSize = 13.sp
+                                            )
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Secondary500
-                                    ),
-                                    modifier = Modifier.height(56.dp).offset(y = 6.dp)
-                                ) {
-                                    Text(
-                                        text = "최대",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = SCDreamFontFamily,
-                                        color = Color.White
-                                    )
+                                    }
+                                } else {
+                                    val percentButtons = listOf(10, 25, 50)
+                                    percentButtons.forEach { percent ->
+                                        Button(
+                                            onClick = {
+                                                val price = buyPrice.toLongOrNull() ?: 0L
+                                                val balance = userProfile?.memberMoney?.replace(",", "")?.toLongOrNull() ?: 0L
+                                                if (price > 0L && balance > 0L) {
+                                                    val amount = (balance * percent) / 100L
+                                                    val qty = amount / price
+                                                    buyQuantity = qty.toString()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ChartRed),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = "${percent}%",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = SCDreamFontFamily,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                    // 최대 버튼도 Long으로 변경
+                                    Button(
+                                        onClick = {
+                                            val price = buyPrice.toLongOrNull() ?: 0L
+                                            val balance = userProfile?.memberMoney?.replace(",", "")?.toLongOrNull() ?: 0L
+                                            if (price > 0L && balance > 0L) {
+                                                val qty = balance / price
+                                                buyQuantity = qty.toString()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = ChartRed),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "최대",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = SCDreamFontFamily,
+                                            fontSize = 13.sp
+                                        )
+                                    }
                                 }
                             }
-                            
+                            if (buyOrderType == "지정가") {
                             Spacer(modifier = Modifier.height(16.dp))
-                            
                             // 총 주문 금액
                             val totalAmount = try {
-                                val price = buyPrice.toIntOrNull() ?: 0
-                                val quantity = buyQuantity.toIntOrNull() ?: 0
+                                val price = buyPrice.toLongOrNull() ?: 0L
+                                val quantity = buyQuantity.toLongOrNull() ?: 0L
                                 price * quantity
-                            } catch (e: Exception) { 0 }
-                            
+                            } catch (e: Exception) { 0L }
                             Text(
                                 text = "총 주문 금액",
                                 fontSize = 14.sp,
@@ -1441,201 +1746,112 @@ fun StockDetailScreen(
                                     fontFamily = SCDreamFontFamily
                                 )
                             }
-                            
                             Spacer(modifier = Modifier.height(24.dp))
+                        } else {
+                        Spacer(modifier = Modifier.height(24.dp))
+                            }
                             
+                            // 수량 입력 필드 아래 에러 메시지
+                            if (buyQuantity.isNotEmpty() && (buyQuantity.toIntOrNull() ?: 0) <= 0) {
+                                Text(
+                                    text = "1주 이상의 수량을 입력해주세요",
+                                    color = ChartRed,
+                                    fontSize = 12.sp,
+                                    fontFamily = SCDreamFontFamily,
+                                    modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                                )
+                            }
+                            // 버튼 Row 추가: 입력란 아래
+                            Spacer(modifier = Modifier.height(8.dp))
                             // 매수 버튼
                             Button(
                                 onClick = { 
                                     hideKeyboard()
-                                    buyStep = 2 
+                                    val quantity = buyQuantity.toIntOrNull() ?: 0
+                                    if (quantity > 0) {
+                                        buyStep = 3
+                                        isLoading = true
+                                        coroutineScope.launch {
+                                            try {
+                                                val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                                                val buyOrder = BuyOrderRequest(
+                                                    stockCode = stock.stockCode,
+                                                    quantity = quantity,
+                                                    price = if (buyOrderType == "지정가") buyPrice.toLongOrNull() else null,
+                                                    marketOrder = buyOrderType == "시장가"
+                                                )
+                                                Log.d("매수버튼", "buyOrder=$buyOrder, 주문유형=$buyOrderType")
+                                                val response = stockService.buyStock("Bearer $token", buyOrder)
+                                                Log.d("매수버튼", "API 응답: isSuccessful=${response.isSuccessful}, code=${response.code()}")
+                                                if (response.isSuccessful) {
+                                                    delay(1000)
+                                                    isLoading = false
+                                                    showBuySuccessMessage = true
+                                                    buyFailedMessage = null
+                                                    
+                                                    // 프로필 정보 새로고침 (잔고 업데이트를 위해)
+                                                    val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                                                    val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                                                    if (profileResponse.isSuccessful) {
+                                                        userProfile = profileResponse.body()
+                                                    }
+                                                } else {
+                                                    val errorBody = response.errorBody()?.string()
+                                                    Log.d("매수버튼", "API 실패 응답: $errorBody")
+                                                    val errorMsg = try {
+                                                        org.json.JSONObject(errorBody).optString("message")
+                                                    } catch (e: Exception) { "결제에 실패했습니다." }
+                                                    isLoading = false
+                                                    showBuySuccessMessage = false
+                                                    buyFailedMessage = errorMsg.ifBlank { "결제에 실패했습니다." }
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.e("매수버튼", "코루틴 예외", e)
+                                                isLoading = false
+                                                showBuySuccessMessage = false
+                                                buyFailedMessage = "결제에 실패했습니다."
+                                            }
+                                        }
+                                    }
                                 },
-                                enabled = buyPrice.isNotEmpty() && buyQuantity.isNotEmpty() && totalAmount <= currentBalance,
+                                enabled = buyQuantity.isNotEmpty() && 
+                                          (buyQuantity.toIntOrNull() ?: 0) > 0 && 
+                                          (buyOrderType != "지정가" || (
+                                              buyPrice.isNotEmpty() &&
+                                              try { buyPrice.toInt() > 0 } catch (_: Exception) { false } &&
+                                              try {
+                                                  val totalAmount = (buyPrice.toLongOrNull() ?: 0L) * (buyQuantity.toLongOrNull() ?: 0L)
+                                                  totalAmount <= currentBalance
+                                              } catch (_: Exception) { false }
+                                          )),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Secondary500,
+                                    containerColor = ChartRed,
                                     disabledContainerColor = Gray200
                                 )
                             ) {
-                                Text(
+                                    Text(
                                     text = "매수",
-                                    fontSize = 16.sp,
+                                        fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontFamily = SCDreamFontFamily,
-                                    color = Color.White
-                                )
-                            }
-                        }
-                    }
-                    2 -> {
-                        // 매수 시트 2번째 화면
-                        Text(
-                            text = "매수 주문 확인",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = SCDreamFontFamily,
-                            color = Gray700
-                        )
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // 주문 정보 표시
-                        if (isLoading) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(48.dp),
-                                    color = Secondary500,
-                                    strokeWidth = 3.dp
-                                )
-                            }
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Gray50, RoundedCornerShape(8.dp))
-                                    .padding(16.dp)
-                            ) {
-                                OrderInfoRow("종목명", stockDetail?.shortName ?: stock.stockName)
-                                OrderInfoRow("주문 유형", buyOrderType)
-                                OrderInfoRow("주문 가격", "${String.format("%,d", buyPrice.toIntOrNull() ?: 0)}원")
-                                OrderInfoRow("주문 수량", "${buyQuantity}주")
-                                OrderInfoRow("총 주문 금액", "${String.format("%,d", (buyPrice.toIntOrNull() ?: 0) * (buyQuantity.toIntOrNull() ?: 0))}원")
-                                Divider(modifier = Modifier.padding(vertical = 8.dp), color = Gray200)
-                                OrderInfoRow("현재 잔고", "${String.format("%,d", currentBalance)}원")
-                                OrderInfoRow("주문 후 잔고", "${String.format("%,d", currentBalance - ((buyPrice.toIntOrNull() ?: 0) * (buyQuantity.toIntOrNull() ?: 0)))}원")
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // 취소/확인 버튼
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // 취소 버튼 - 로딩 중일 때는 숨김
-                            if (!isLoading) {
-                                Button(
-                                    onClick = { 
-                                        hideKeyboard()
-                                        showBuyBottomSheet = false
-                                        buyStep = 1
-                                        buyOrderType = "시장가"
-                                        buyPrice = ""
-                                        buyQuantity = ""
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Gray200,
-                                        contentColor = Gray700
-                                    ),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = "취소",
-                                        fontSize = 16.sp,
-                                        fontFamily = SCDreamFontFamily
-                                    )
-                                }
-                            }
-                            
-                            // 확인 버튼 - 항상 표시되지만 로딩 중일 때는 인디케이터로 변경
-                            Button(
-                                onClick = { 
-                                    hideKeyboard()
-                                    isLoading = true
-                                    // API 호출
-                                    coroutineScope.launch {
-                                        try {
-                                            val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
-                                            val buyOrder = BuyOrderRequest(
-                                                stockCode = stock.stockCode,
-                                                quantity = buyQuantity.toInt(),
-                                                price = null,
-                                                marketOrder = true
-                                            )
-                                            // 바디 로그 출력
-                                            Log.d("매수요청", Gson().toJson(buyOrder))
-                                            val response = stockService.buyStock(buyOrder)
-                                            
-                                            if (response.isSuccessful) {
-                                                delay(500) // 성공 시 잠시 대기
-                                                isLoading = false
-                                                buyStep = 3
-                                                showBuySuccessMessage = true
-                                                
-                                                // 프로필 정보 새로고침 (잔고 업데이트를 위해)
-                                                val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
-                                                val profileResponse = memberService.getSimpleProfile("Bearer $token")
-                                                if (profileResponse.isSuccessful) {
-                                                    userProfile = profileResponse.body()
-                                                }
-                                            } else {
-                                                // 실패 시 에러 메시지 표시
-                                                Toast.makeText(
-                                                    context,
-                                                    "주문 실패: ${response.message()}",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                                isLoading = false
-                                            }
-                                        } catch (e: Exception) {
-                                            // 에러 발생 시
-                                            Toast.makeText(
-                                                context,
-                                                "주문 실패: ${e.message}",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                            isLoading = false
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = ChartBlue
-                                ),
-                                modifier = Modifier.weight(1f),
-                                enabled = !isLoading
-                            ) {
-                                if (isLoading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Text(
-                                        text = "확인",
-                                        fontSize = 16.sp,
                                         fontFamily = SCDreamFontFamily,
                                         color = Color.White
                                     )
                                 }
                             }
+                            
                         }
-                    }
-                    3 -> {
-                        // 주문 완료 화면
+                    2 -> {
+                        // 지정가 주문 확인 화면
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(scrollState)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "성공",
-                                tint = Secondary500,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            
                             Text(
-                                text = "주문이 완료되었습니다",
+                                text = "매수 주문 확인",
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = SCDreamFontFamily,
@@ -1644,27 +1860,260 @@ fun StockDetailScreen(
                             
                             Spacer(modifier = Modifier.height(24.dp))
                             
-                            Button(
-                                onClick = { 
-                                    hideKeyboard()
-                                    showBuyBottomSheet = false
-                                    buyStep = 1
-                                    buyOrderType = "시장가"
-                                    buyPrice = ""
-                                    buyQuantity = ""
-                                    showBuySuccessMessage = false
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Secondary500
-                                ),
-                                modifier = Modifier.fillMaxWidth()
+                            // 주문 정보 표시
+                            if (isLoading) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(48.dp),
+                                        color = ChartRed,
+                                        strokeWidth = 3.dp
+                                    )
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Gray50, RoundedCornerShape(8.dp))
+                                        .padding(16.dp)
+                                ) {
+                                    OrderInfoRow("종목명", stockDetail?.shortName ?: stock.stockName)
+                                    OrderInfoRow("주문 유형", buyOrderType)
+                                    OrderInfoRow("주문 가격", "${String.format("%,d", buyPrice.toIntOrNull() ?: 0)}원")
+                                    OrderInfoRow("주문 수량", "${buyQuantity}주")
+                                    OrderInfoRow("총 매수 금액", "${String.format("%,d", (buyPrice.toLongOrNull() ?: 0L) * (buyQuantity.toLongOrNull() ?: 0L))}원")
+                                    Divider(modifier = Modifier.padding(vertical = 8.dp), color = Gray200)
+                                    OrderInfoRow("현재 잔고", "${String.format("%,d", currentBalance)}원")
+                                    OrderInfoRow(
+                                        "매수 후 잔고", 
+                                        "${String.format("%,d", currentBalance - ((buyPrice.toLongOrNull() ?: 0L) * (buyQuantity.toLongOrNull() ?: 0L)))}원"
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(24.dp))
+                            
+                            // 취소/확인 버튼
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = "확인",
-                                    fontSize = 16.sp,
-                                    fontFamily = SCDreamFontFamily,
-                                    color = Color.White
-                                )
+                                // 취소 버튼 - 로딩 중일 때는 숨김
+                                if (!isLoading) {
+                                    Button(
+                                        onClick = { 
+                                            hideKeyboard()
+                                            showBuyBottomSheet = false
+                                            buyStep = 1
+                                            buyOrderType = "시장가"
+                                            buyPrice = ""
+                                            buyQuantity = ""
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Gray200,
+                                            contentColor = Gray700
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "취소",
+                                            fontSize = 16.sp,
+                                            fontFamily = SCDreamFontFamily
+                                        )
+                                    }
+                                }
+                                
+                                // 확인 버튼 - 항상 표시되지만 로딩 중일 때는 인디케이터로 변경
+                                Button(
+                                    onClick = { 
+                                        hideKeyboard()
+                                        isLoading = true
+                                        // API 호출
+                                        coroutineScope.launch {
+                                            try {
+                                                val stockService = RetrofitClient.getInstance(context).create(StockService::class.java)
+                                                val buyOrder = BuyOrderRequest(
+                                                    stockCode = stock.stockCode,
+                                                    quantity = buyQuantity.toInt(),
+                                                    price = buyPrice.toLongOrNull(),
+                                                    marketOrder = false
+                                                )
+                                                Log.d("매수버튼", "지정가 buyOrder=$buyOrder")
+                                                val response = stockService.buyStock("Bearer $token", buyOrder)
+                                                
+                                                if (response.isSuccessful) {
+                                                    Log.d("매수버튼", "지정가 주문 성공")
+                                                    showBuySuccessMessage = true
+                                                    delay(500)
+                                                    isLoading = false
+                                                    buyStep = 3
+                                                    
+                                                    // 프로필 정보 새로고침 (잔고 업데이트를 위해)
+                                                    val memberService = RetrofitClient.getInstance(context).create(MemberService::class.java)
+                                                    val profileResponse = memberService.getSimpleProfile("Bearer $token")
+                                                    if (profileResponse.isSuccessful) {
+                                                        userProfile = profileResponse.body()
+                                                    }
+                                                } else {
+                                                    val errorBody = response.errorBody()?.string()
+                                                    Log.e("매수버튼", "지정가 주문 실패: $errorBody")
+                                                    val errorMsg = try {
+                                                        org.json.JSONObject(errorBody).optString("message")
+                                                    } catch (e: Exception) { "주문에 실패했습니다." }
+                                                    isLoading = false
+                                                    showBuySuccessMessage = false
+                                                    buyFailedMessage = errorMsg.ifBlank { "주문에 실패했습니다." }
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.e("매수버튼", "지정가 주문 중 오류 발생", e)
+                                                isLoading = false
+                                                showBuySuccessMessage = false
+                                                buyFailedMessage = "주문 중 오류가 발생했습니다."
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = ChartRed
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    enabled = !isLoading
+                                ) {
+                                    if (isLoading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "확인",
+                                            fontSize = 16.sp,
+                                            fontFamily = SCDreamFontFamily,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    3 -> {
+                        // 주문 완료/실패 화면
+                        when {
+                            isLoading -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(48.dp),
+                                        color = ChartRed,
+                                        strokeWidth = 3.dp
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "주문 처리 중...",
+                                        fontSize = 16.sp,
+                                        fontFamily = SCDreamFontFamily,
+                                        color = Gray700,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                            showBuySuccessMessage == true -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "성공",
+                                        tint = ChartRed,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "주문이 완료되었습니다",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily,
+                                        color = Gray700,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    Button(
+                                        onClick = { 
+                                            hideKeyboard()
+                                            showBuyBottomSheet = false
+                                            buyStep = 1
+                                            buyOrderType = "시장가"
+                                            buyPrice = ""
+                                            buyQuantity = ""
+                                            showBuySuccessMessage = false
+                                            buyFailedMessage = null
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = ChartRed
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "확인",
+                                            fontSize = 16.sp,
+                                            fontFamily = SCDreamFontFamily,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                            buyFailedMessage != null -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close, // X자 아이콘
+                                        contentDescription = "실패",
+                                        tint = ChartRed,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = buyFailedMessage ?: "결제에 실패했습니다.",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = SCDreamFontFamily,
+                                        color = ChartRed,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    Button(
+                                        onClick = { 
+                                            hideKeyboard()
+                                            showBuyBottomSheet = false
+                                            buyStep = 1
+                                            buyOrderType = "시장가"
+                                            buyPrice = ""
+                                            buyQuantity = ""
+                                            showBuySuccessMessage = false
+                                            buyFailedMessage = null
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = ChartRed
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "확인",
+                                            fontSize = 16.sp,
+                                            fontFamily = SCDreamFontFamily,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1674,7 +2123,7 @@ fun StockDetailScreen(
     }
 
     Scaffold(
-        containerColor = Gray0,
+        containerColor = Color(0xFFF5F5F5), // 홈과 동일한 연한 회색 배경 적용
         topBar = {
             TopAppBar(
                 title = { },
@@ -1694,6 +2143,23 @@ fun StockDetailScreen(
                     }
                 },
                 actions = {
+                    // 커뮤니티 버튼 (Outlined Chat 아이콘)
+                    IconButton(
+                        onClick = {
+                            navController.navigate("chat/${stock.stockCode}")
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .padding(end = 0.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Chat,
+                            contentDescription = "커뮤니티",
+                            tint = Gray700,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    // 하트 아이콘
                     IconButton(
                         onClick = {
                             if (authViewModel.isLoggedIn.value) {
@@ -1701,7 +2167,7 @@ fun StockDetailScreen(
                                 if (isInWatchlist) {
                                     // 관심 종목에서 제거
                                     viewModel.removeFromWatchlist(
-                                        stockCode = stock.stockCode,
+                                        stockCode = getPureStockCode(stock.stockCode),
                                         context = context,
                                         onSuccess = { 
                                             // 관심 종목 목록 새로고침하여 즉시 UI에 반영
@@ -1715,7 +2181,7 @@ fun StockDetailScreen(
                                 } else {
                                     // 관심 종목에 추가
                                     viewModel.addToWatchlist(
-                                        stockCode = stock.stockCode,
+                                        stockCode = getPureStockCode(stock.stockCode),
                                         context = context,
                                         onSuccess = {
                                             // 관심 종목 목록 새로고침하여 즉시 UI에 반영
@@ -1745,7 +2211,7 @@ fun StockDetailScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Gray0
+                    containerColor = Color(0xFFF5F5F5) // 홈과 동일한 연한 회색 배경 적용
                 ),
                 modifier = Modifier.height(64.dp)
             )
@@ -1758,15 +2224,45 @@ fun StockDetailScreen(
                     .height(40.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // 매도 버튼 (왼쪽)
+                // 매수 버튼 (왼쪽)
                 Button(
-                    onClick = { 
+                    onClick = {
                         if (!isTradingHours) {
                             showTradingHoursDialog = true
-                            return@Button
+                        } else if (authViewModel.isLoggedIn.value) {
+                            showBuyBottomSheet = true
+                        } else {
+                            loginDialogType = "buy"
+                            showLoginDialog = true
                         }
-                        
-                        if (authViewModel.isLoggedIn.value) {
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isTradingHours) ChartRed else Gray300,
+                        disabledContainerColor = Gray300
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = true
+                ) {
+                    Text(
+                        text = "매수",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = SCDreamFontFamily,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // 매도 버튼 (오른쪽)
+                Button(
+                    onClick = {
+                        if (!isTradingHours) {
+                            showTradingHoursDialog = true
+                        } else if (authViewModel.isLoggedIn.value) {
                             showSellBottomSheet = true
                         } else {
                             loginDialogType = "sell"
@@ -1781,48 +2277,12 @@ fun StockDetailScreen(
                         disabledContainerColor = Gray300
                     ),
                     shape = RoundedCornerShape(8.dp),
-                    enabled = isTradingHours
+                    enabled = true
                 ) {
                     Text(
                         text = "매도",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.W700,
-                        fontFamily = SCDreamFontFamily,
-                        color = Color.White
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // 매수 버튼 (오른쪽)
-                Button(
-                    onClick = { 
-                        if (!isTradingHours) {
-                            showTradingHoursDialog = true
-                            return@Button
-                        }
-                        
-                        if (authViewModel.isLoggedIn.value) {
-                            showBuyBottomSheet = true
-                        } else {
-                            loginDialogType = "buy"
-                            showLoginDialog = true
-                        }
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTradingHours) Secondary500 else Gray300,
-                        disabledContainerColor = Gray300
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    enabled = isTradingHours
-                ) {
-                    Text(
-                        text = "매수",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
                         fontFamily = SCDreamFontFamily,
                         color = Color.White
                     )
@@ -1833,20 +2293,24 @@ fun StockDetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color(0xFFF5F5F5)) // 컨텐츠 전체에 배경색 확실히 적용
                 .padding(paddingValues)
         ) {
             // 상단 고정 부분 (종목 이름, 가격 등)
             Row(
                 verticalAlignment = Alignment.Top,
-                modifier = Modifier.padding(start = 32.dp, top = 20.dp, end = 32.dp, bottom = 10.dp)
+                modifier = Modifier
+                    .background(Color(0xFFF5F5F5)) // 상단 Row에도 배경색 적용
+                    .padding(start = 32.dp, top = 20.dp, end = 32.dp, bottom = 10.dp)
             ) {
                 AsyncImage(
-                    model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${stock.stockCode}.png",
+                    model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${getPureStockCode(stock.stockCode).trim().uppercase()}.png",
                     contentDescription = "주식 로고",
                     modifier = Modifier
                         .size(46.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White)
+                        .background(Color.White),
+                    error = painterResource(id = com.example.chickenstock.R.drawable.logo)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
@@ -1903,19 +2367,20 @@ fun StockDetailScreen(
                     .fillMaxSize()
                     .padding(horizontal = 32.dp)
             ) {
+                // 차트 아이템
                 item {
-                    // 차트 부분
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(400.dp)
                             .padding(vertical = 16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Gray50)
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, Gray300)
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(top = 16.dp)
+                                .padding(top = 16.dp, bottom = 24.dp) // 하단 패딩 추가
                         ) {
                             // 기간 선택 버튼들
                             Row(
@@ -1924,20 +2389,67 @@ fun StockDetailScreen(
                                     .padding(bottom = 8.dp),
                                 horizontalArrangement = Arrangement.End
                             ) {
-                                // 1분/일/년 버튼
-                                listOf("분", "일", "년").forEach { period ->
-                                    Text(
-                                        text = period,
-                                        fontSize = 12.sp,
-                                        color = Gray700,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(if (selectedPeriod == period) Gray200 else Color.Transparent)
-                                            .clickable { selectedPeriod = period }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        fontFamily = SCDreamFontFamily
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                // 기간 버튼들: 분/일/주/월/년
+                                val periods = listOf("분", "일", "주", "월", "년")
+                                periods.forEach { period ->
+                                    if (period == "분") {
+                                        Box {
+                                            Row(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (selectedPeriod == period) Gray200 else Color.Transparent)
+                                                    .clickable { showMinuteDropdown = true },
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = if (selectedPeriod == "분") selectedMinuteInterval else period,
+                                                    fontSize = 12.sp,
+                                                    color = Color.Black,
+                                                    fontFamily = SCDreamFontFamily,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Filled.ArrowDropDown,
+                                                    contentDescription = "분 단위 선택",
+                                                    tint = Color.Black,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                            DropdownMenu(
+                                                expanded = showMinuteDropdown,
+                                                onDismissRequest = { showMinuteDropdown = false },
+                                                containerColor = Color.White,
+                                            ) {
+                                                minuteOptions.forEach { option ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(option, fontFamily = SCDreamFontFamily, color = Color.Black) },
+                                                        onClick = {
+                                                            selectedMinuteInterval = option
+                                                            showMinuteDropdown = false
+                                                            selectedPeriod = "분"
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    } else {
+                                        Text(
+                                            text = period,
+                                            fontSize = 12.sp,
+                                            color = Color.Black,
+                                            fontFamily = SCDreamFontFamily,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (selectedPeriod == period) Gray200 else Color.Transparent)
+                                                .clickable {
+                                                    selectedPeriod = period
+                                                    selectedMinuteInterval = "1분"
+                                                }
+                                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
                                 }
                             }
 
@@ -2038,9 +2550,9 @@ fun StockDetailScreen(
                                                     val dataSet = CandleDataSet(entries, "주가").apply {
                                                         color = AndroidColor.BLACK
                                                         shadowColorSameAsCandle = true
-                                                        increasingColor = ChartRed.toArgb()
+                                                        increasingColor = ChartBlue.toArgb()  // 상승을 파란색으로
                                                         increasingPaintStyle = Paint.Style.FILL
-                                                        decreasingColor = ChartBlue.toArgb()
+                                                        decreasingColor = ChartRed.toArgb()   // 하락을 빨간색으로
                                                         decreasingPaintStyle = Paint.Style.FILL
                                                         neutralColor = Gray500.toArgb()
                                                         setDrawValues(false)
@@ -2174,13 +2686,16 @@ fun StockDetailScreen(
                             }
                         }
                     }
+                }
 
-                    // 호가창 추가
+                // 호가창 아이템
+                item {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Gray50)
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, Gray300)
                     ) {
                         if (isLoadingBidAsk) {
                             Box(
@@ -2192,8 +2707,6 @@ fun StockDetailScreen(
                                 CircularProgressIndicator(color = Secondary500)
                             }
                         } else {
-                            // REST API 데이터 또는 웹소켓 데이터 사용
-                            // askPrices, askVolumes, bidPrices, bidVolumes 변수에는 이미 최신 데이터가 저장되어 있음
                             if (askPrices.isNotEmpty() && bidPrices.isNotEmpty()) {
                                 StockBidAskView(
                                     stockBidAsk = StockBidAsk(
@@ -2218,30 +2731,59 @@ fun StockDetailScreen(
                                     fontFamily = SCDreamFontFamily
                                 )
                             }
-                        }
                     }
                 }
             }
 
-            // 실시간 체결 내역
-            if (tradeExecutions.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                // 체결 정보 아이템
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, Gray300)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
                 Text(
                     text = "실시간 체결 내역",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SCDreamFontFamily,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-                )
-                Column(
+                                color = Gray700
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            if (tradeExecutions.isEmpty()) {
+                                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White, RoundedCornerShape(12.dp))
-                        .padding(8.dp)
+                                        .height(100.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "체결 정보가 아직 없습니다",
+                                        fontSize = 14.sp,
+                                        color = Gray500,
+                                        fontFamily = SCDreamFontFamily
+                                    )
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth()
                 ) {
                     tradeExecutions.forEach { exec ->
                         RealTimeTradeItem(exec)
-                        Spacer(modifier = Modifier.height(6.dp))
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2281,7 +2823,7 @@ fun RealTimeTradeItem(exec: TradeExecution) {
                         modifier = Modifier
                             .weight(1f)
                             .background(Color(0xFFF5F5F5))
-                            .height(40.dp)
+                            .fillMaxHeight()
                             .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -2301,7 +2843,8 @@ fun RealTimeTradeItem(exec: TradeExecution) {
                     }
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFFFF6B6B))
+                            .background(Color(0xFF4DABF7))  // 매도를 빨간색으로
+                            .fillMaxHeight()
                             .padding(horizontal = 12.dp)
                             .clip(RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)),
                         contentAlignment = Alignment.Center
@@ -2338,14 +2881,14 @@ fun RealTimeTradeItem(exec: TradeExecution) {
                 ) {
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFF4DABF7))
+                            .background(Color(0xFFFF6B6B))  // 매수를 파란색으로
                             .height(40.dp)
                             .padding(horizontal = 12.dp)
                             .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "매수",
+                            text = "매수",  // 매수로 수정
                             fontSize = 10.sp,
                             color = Color.White,
                             fontFamily = SCDreamFontFamily,
@@ -2382,4 +2925,14 @@ fun RealTimeTradeItem(exec: TradeExecution) {
 }
 
 fun Int.toFormattedString(): String = String.format("%,d", this)
+
+// 관심 종목 여부 체크 함수 (공통)
+fun isInWatchlist(watchlist: Set<String>, stockCode: String): Boolean {
+    return watchlist.any { it.trim().equals(stockCode.trim(), ignoreCase = true) }
+}
+
+// 종목 코드에서 _AL 등 접미사를 제거하는 함수
+fun getPureStockCode(stockCode: String): String {
+    return stockCode.substringBefore("_")
+}
 

@@ -177,7 +177,7 @@ fun StockScreen(
     }
 
     Scaffold(
-        containerColor = Gray0,
+        containerColor = Color(0xFFF5F5F5),
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -189,7 +189,7 @@ fun StockScreen(
                 items = listOf("전체", "코스피", "코스닥"),
                 selectedIndex = selectedMarketIndex,
                 onSelectedIndexChange = { selectedMarketIndex = it },
-                modifier = Modifier.padding(horizontal = 32.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
 
             // 두 번째 SegmentedControl (정렬 기준)
@@ -197,7 +197,7 @@ fun StockScreen(
                 items = sortOptions,
                 selectedIndex = selectedSortIndex,
                 onSelectedIndexChange = { selectedSortIndex = it },
-                modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
             
             if (isLoading) {
@@ -211,14 +211,14 @@ fun StockScreen(
                 Text(
                     text = error!!,
                     color = Color.Red,
-                    modifier = Modifier.padding(32.dp)
+                    modifier = Modifier.padding(16.dp)
                 )
             } else {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 32.dp)
+                        .padding(horizontal = 16.dp)
                 ) {
                     items(stockRankings) { rankingItem ->
                         StockListItem(

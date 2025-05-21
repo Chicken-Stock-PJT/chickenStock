@@ -15,7 +15,7 @@ import kotlin.concurrent.thread
 class WebSocketManager private constructor() {
     companion object {
         private const val TAG = "WebSocketManager"
-        private const val WS_URL = "wss://k12a106.p.ssafy.io/ws/stock"
+        private const val WS_URL = "wss://chickenstock.shop/ws/stock"
         
         @Volatile
         private var instance: WebSocketManager? = null
@@ -36,8 +36,8 @@ class WebSocketManager private constructor() {
     val stockBidAsk: StateFlow<StockBidAsk?> = _stockBidAsk.asStateFlow()
     
     // 실시간 체결 정보 상태
-    private val _tradeExecution = MutableStateFlow<TradeExecution?>(null)
-    val tradeExecution: StateFlow<TradeExecution?> = _tradeExecution.asStateFlow()
+    private val _tradeExecutions = MutableStateFlow<List<TradeExecution>>(emptyList())
+    val tradeExecutions: StateFlow<List<TradeExecution>> = _tradeExecutions.asStateFlow()
     
     private var client: OkHttpClient? = null
     private var webSocket: WebSocket? = null
@@ -113,7 +113,7 @@ class WebSocketManager private constructor() {
         // 상태 초기화
         _stockPrice.value = null
         _stockBidAsk.value = null
-        _tradeExecution.value = null
+        _tradeExecutions.value = emptyList()
     }
     
     /**
@@ -240,7 +240,18 @@ class WebSocketManager private constructor() {
                                 totalAmount = json.optInt("totalAmount", 0),
                                 timestamp = json.optString("timestamp", "")
                             )
-                            _tradeExecution.value = tradeExecution
+                            
+                            // 기존 리스트에 새로운 체결 정보 추가
+                            val currentList = _tradeExecutions.value.toMutableList()
+                            currentList.add(0, tradeExecution) // 새로운 체결을 리스트 앞에 추가
+                            
+                            // 최대 20개까지만 유지
+                            if (currentList.size > 20) {
+                                currentList.removeAt(currentList.size - 1)
+                            }
+                            
+                            _tradeExecutions.value = currentList
+                            Log.d(TAG, "체결 정보 추가 완료: ${tradeExecution.tradeType} ${tradeExecution.quantity}주 @ ${tradeExecution.price}원")
                         }
                         
                         // 기타 알 수 없는 메시지

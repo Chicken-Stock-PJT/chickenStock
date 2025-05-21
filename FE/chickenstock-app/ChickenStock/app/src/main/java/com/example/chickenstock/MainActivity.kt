@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -62,13 +63,39 @@ import androidx.compose.ui.focus.FocusState
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.chickenstock.api.TokenRefreshRequest
+import com.example.chickenstock.ui.screens.SplashScreen
+import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import android.os.Build
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import android.app.NotificationManager
+import android.content.Context
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Android 12 이상에서 시스템 스플래시 바로 넘기기
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            installSplashScreen().setKeepOnScreenCondition { false }
+        }
         super.onCreate(savedInstanceState)
+        
+        // AuthViewModel 생성 및 RetrofitClient에 설정
+        val authViewModel = AuthViewModel.Factory(this).create(AuthViewModel::class.java)
+        RetrofitClient.setAuthViewModel(authViewModel)
+        
+        // MainViewModel 생성
+        val mainViewModel = MainViewModel()
+        
+        // 알림 권한 확인
+        mainViewModel.checkAndRequestNotificationPermission(this)
         
         // 딥링크로 들어온 경우 처리
         handleDeepLink(intent?.data)
+        
+        // 소셜 로그인 등에서 바로 홈으로 이동해야 하는 경우 splashDone을 true로 설정
+        val destination = intent?.getStringExtra("destination")
+        if (destination == com.example.chickenstock.navigation.Screen.Home.route) {
+            mainViewModel.setSplashDone()
+        }
         
         // 토큰 값 로그 출력
         val tokenManager = TokenManager.getInstance(this)
@@ -84,52 +111,91 @@ class MainActivity : ComponentActivity() {
         if (accessToken != null && refreshToken != null) {
             // 만료 시간 확인
             val currentTime = System.currentTimeMillis()
-            val timeRemaining = expiresIn - currentTime
+            val expiresAt = expiresIn // expiresIn은 절대 만료 시각(타임스탬프)
+            val timeRemaining = expiresAt - currentTime
             
-            Log.d("TokenInfo", "Token expires in: ${timeRemaining}ms")
+            Log.d("TokenInfo", "Token expires in: "+timeRemaining+"ms")
             
-            // 토큰이 만료되었거나 만료가 임박한 경우(10분 이내) 토큰 갱신 시도
-            if (timeRemaining < 10 * 60 * 1000) {
-                Log.d("TokenInfo", "토큰 만료가 임박하거나 이미 만료되었습니다. 갱신을 시도합니다.")
-                lifecycleScope.launch {
-                    try {
-                        // Retrofit 인스턴스 초기화 (기존 인스턴스 문제 해결)
-                        RetrofitClient.resetInstance()
-                        
-                        val authService = RetrofitClient.getInstance(this@MainActivity)
-                            .create(AuthService::class.java)
-                        val response = authService.refreshAllTokens(
-                            TokenRefreshRequest(accessToken, refreshToken)
-                        )
-                        
-                        if (response.isSuccessful && response.body() != null) {
-                            val newTokens = response.body()!!
-                            tokenManager.saveTokens(
-                                newTokens.accessToken,
-                                newTokens.refreshToken,
-                                3600000L, // 액세스 토큰 1시간
-                                30 * 24 * 60 * 60 * 1000L // 리프레시 토큰 30일
-                            )
-                            Log.d("TokenInfo", "토큰 갱신 성공")
-                        } else {
-                            Log.e("TokenInfo", "토큰 갱신 실패: ${response.code()}")
-                            // 토큰 갱신 실패 시, 기존 토큰 삭제 및 인스턴스 초기화
-                            tokenManager.clearTokens()
-                            RetrofitClient.resetInstance()
-                        }
-                    } catch (e: Exception) {
-                        Log.e("TokenInfo", "토큰 갱신 중 오류: ${e.message}", e)
-                        // 예외 발생 시 Retrofit 인스턴스 재설정
-                        RetrofitClient.resetInstance()
-                    }
-                }
-            }
+            // 토큰 갱신 비활성화
+            // if (timeRemaining < 10 * 60 * 1000) {
+            //     Log.d("TokenInfo", "토큰 만료가 임박하거나 이미 만료되었습니다. 갱신을 시도합니다.")
+            //     lifecycleScope.launch {
+            //         try {
+            //             // Retrofit 인스턴스 초기화 (기존 인스턴스 문제 해결)
+            //             RetrofitClient.resetInstance()
+            //
+            //             val authService = RetrofitClient.getInstance(this@MainActivity)
+            //                 .create(AuthService::class.java)
+            //             val response = authService.refreshAllTokens(
+            //                 TokenRefreshRequest(refreshToken)
+            //             )
+            //
+            //             if (response.isSuccessful && response.body() != null) {
+            //                 val newTokens = response.body()!!
+            //                 tokenManager.saveTokens(
+            //                     newTokens.accessToken,
+            //                     newTokens.refreshToken,
+            //                     newTokens.accessTokenExpiresIn, // 절대 만료 시각 그대로 저장
+            //                     30 * 24 * 60 * 60 * 1000L // 리프레시 토큰 30일
+            //                 )
+            //                 Log.d("TokenInfo", "토큰 갱신 성공")
+            //             } else {
+            //                 Log.e("TokenInfo", "토큰 갱신 실패: ${response.code()}")
+            //                 // 토큰 갱신 실패 시, 기존 토큰 삭제 및 인스턴스 초기화
+            //                 tokenManager.clearTokens()
+            //                 RetrofitClient.resetInstance()
+            //             }
+            //         } catch (e: Exception) {
+            //             Log.e("TokenInfo", "토큰 갱신 중 오류: ${e.message}", e)
+            //             // 예외 발생 시 Retrofit 인스턴스 재설정
+            //             RetrofitClient.resetInstance()
+            //         }
+            //     }
+            // }
         } else {
             // 토큰이 없는 경우
             Log.d("TokenInfo", "토큰이 없습니다. 로그인이 필요합니다.")
         }
         
         // 키 해시 얻기
+        getKeyHash()
+        
+        // 상태바 숨기기
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        
+        enableEdgeToEdge()
+
+        // 앱 실행 시 1회만 주식 데이터 가져오기
+        if (!StockRepository.isInitialized()) {
+            lifecycleScope.launch {
+                try {
+                    val stockService = RetrofitClient.getInstance(this@MainActivity, ignoreAuthCheck = true).create(StockService::class.java)
+                    val response = stockService.getAllStocks()
+                    if (response.isSuccessful) {
+                        response.body()?.let { stocks ->
+                            StockRepository.setStocks(stocks)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "주식 데이터 로드 실패", e)
+                }
+            }
+        }
+
+        val authService = RetrofitClient.getInstance(this).create(AuthService::class.java)
+
+        // Retrofit 인스턴스 초기화
+        val retrofit = RetrofitClient.getInstance(this)
+        Log.d("RetrofitInit", "Retrofit 인스턴스 초기화 완료")
+
+        setContent {
+            ChickenStockTheme {
+                MainScreen(viewModel = mainViewModel, authViewModel = authViewModel)
+            }
+        }
+    }
+
+    private fun getKeyHash() {
         try {
             val packageInfo: PackageInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
@@ -154,40 +220,6 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Log.e("KeyHash", "키 해시 추출 실패", e)
         }
-        
-        // 상태바 숨기기
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        
-        enableEdgeToEdge()
-
-        // 앱 실행 시 1회만 주식 데이터 가져오기
-        if (!StockRepository.isInitialized()) {
-            lifecycleScope.launch {
-                try {
-                    val stockService = RetrofitClient.getInstance(this@MainActivity).create(StockService::class.java)
-                    val response = stockService.getAllStocks()
-                    if (response.isSuccessful) {
-                        response.body()?.let { stocks ->
-                            StockRepository.setStocks(stocks)
-                        }
-                    }
-                } catch (e: Exception) {
-                    // 에러 처리
-                }
-            }
-        }
-
-        val authService = RetrofitClient.getInstance(this).create(AuthService::class.java)
-
-        // Retrofit 인스턴스 초기화
-        val retrofit = RetrofitClient.getInstance(this)
-        Log.d("RetrofitInit", "Retrofit 인스턴스 초기화 완료")
-
-        setContent {
-            ChickenStockTheme {
-                MainScreen()
-            }
-        }
     }
 
     private fun handleDeepLink(uri: android.net.Uri?) {
@@ -204,7 +236,6 @@ class MainActivity : ComponentActivity() {
                     if (error != null) {
                         // 에러 처리
                         Log.e("OAuth2Callback", "OAuth2 error: $error")
-                        // TODO: 에러 메시지 표시
                         return
                     }
                     
@@ -214,18 +245,10 @@ class MainActivity : ComponentActivity() {
                             try {
                                 val authService = RetrofitClient.getInstance(this@MainActivity)
                                     .create(AuthService::class.java)
-                                    
-                                // TODO: 토큰 요청 API 호출
-                                // val response = authService.getToken(code)
-                                
-                                // TODO: 토큰 저장
-                                // val tokenManager = TokenManager.getInstance(this@MainActivity)
-                                // tokenManager.saveTokens(response.accessToken, response.refreshToken)
                                 
                                 Log.d("OAuth2Callback", "Token request successful")
                             } catch (e: Exception) {
                                 Log.e("OAuth2Callback", "Token request failed", e)
-                                // TODO: 에러 메시지 표시
                             }
                         }
                     }
@@ -272,7 +295,7 @@ fun SearchTopAppBar(
     )
 
     Surface(
-        color = Gray0,
+        color = Color(0xFFF5F5F5),
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
@@ -348,7 +371,7 @@ fun SearchTopAppBar(
                         .width(textFieldWidth)
                         .height(36.dp)
                         .graphicsLayer(alpha = alpha)
-                        .background(Color(0xFFF5F5F5), shape = MaterialTheme.shapes.medium),
+                        .background(Color.White, shape = MaterialTheme.shapes.medium),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     BasicTextField(
@@ -389,15 +412,58 @@ fun SearchTopAppBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    viewModel: MainViewModel = viewModel(),
-    authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory(LocalContext.current))
+    viewModel: MainViewModel,
+    authViewModel: AuthViewModel
 ) {
     val navController = rememberNavController()
-    val currentBackStack by navController.currentBackStackEntryAsState()
-    val currentRoute = currentBackStack?.destination?.route ?: Screen.Home.route
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route ?: ""
+    val context = LocalContext.current
+    
+    // 알림 권한 다이얼로그
+    if (viewModel.showNotificationPermissionDialog.value) {
+        AlertDialog(
+            onDismissRequest = { viewModel.setShowNotificationPermissionDialog(false) },
+            title = { Text("알림 권한") },
+            text = { Text("주식 거래 알림을 받으시려면 알림 권한이 필요합니다. 알림을 허용하시겠습니까?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setShowNotificationPermissionDialog(false)
+                        val intent = Intent().apply {
+                            action = android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                            putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        }
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("허용")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.setShowNotificationPermissionDialog(false) }
+                ) {
+                    Text("거부")
+                }
+            }
+        )
+    }
+    
+    Log.d("RouteCheck", "currentRoute: $currentRoute")
+    val isSplash = currentRoute?.lowercase()?.startsWith("splash") == true
     var searchText by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
     
+    val systemUiController = rememberSystemUiController()
+    val useDarkIcons = true
+    SideEffect {
+        systemUiController.setStatusBarColor(
+            color = Color(0xFFF5F5F5),
+            darkIcons = useDarkIcons
+        )
+    }
+
     LaunchedEffect(currentRoute) {
         isSearchExpanded = currentRoute.startsWith("search")
     }
@@ -418,28 +484,34 @@ fun MainScreen(
 
     // 현재 route에 따라 selectedIndex 업데이트
     LaunchedEffect(currentRoute) {
-        when {
-            currentRoute.startsWith(Screen.Home.route) -> viewModel.updateSelectedIndex(0)
-            currentRoute.startsWith(Screen.Stock.route) || currentRoute.startsWith("stock_detail") -> viewModel.updateSelectedIndex(1)
-            currentRoute.startsWith(Screen.MyPage.route) -> viewModel.updateSelectedIndex(2)
+        if (currentRoute.isNotEmpty()) {
+            when {
+                currentRoute.startsWith(Screen.Home.route) -> viewModel.updateSelectedIndex(0)
+                currentRoute.startsWith(Screen.Stock.route) || currentRoute.startsWith("stock_detail") -> viewModel.updateSelectedIndex(1)
+                currentRoute.startsWith(Screen.Ranking.route) -> viewModel.updateSelectedIndex(2)
+                currentRoute.startsWith(Screen.MyPage.route) -> viewModel.updateSelectedIndex(3)
+            }
         }
     }
 
-    val tabList = listOf(Screen.Home.route, Screen.Stock.route, Screen.MyPage.route)
+    val tabList = listOf(Screen.Home.route, Screen.Stock.route, Screen.Ranking.route, Screen.MyPage.route)
     val selectedIndex by viewModel.selectedIndex
     val isBottomBarVisible by viewModel.isBottomBarVisible
 
     // 현재 라우트가 변경될 때 bottomBar 가시성 업데이트
     LaunchedEffect(currentRoute) {
-        viewModel.setBottomBarVisibility(!currentRoute.startsWith("search") && 
-                                       !currentRoute.startsWith("login") && 
-                                       !currentRoute.startsWith("signup") &&
-                                       !currentRoute.startsWith("findpw"))
+        viewModel.setBottomBarVisibility(!isSplash &&
+            !currentRoute.startsWith("search") && 
+            !currentRoute.startsWith("login") && 
+            !currentRoute.startsWith("signup") &&
+            !currentRoute.startsWith("findpw") &&
+            !currentRoute.startsWith("terms_agreement") &&
+            !currentRoute.startsWith("chat"))
     }
 
     // 로그인 상태 변경 감지
     LaunchedEffect(authViewModel.isLoggedIn.value) {
-        if (authViewModel.isLoggedIn.value) {
+        if (currentRoute.isNotEmpty() && authViewModel.isLoggedIn.value) {
             // 로그인 시 홈으로 이동하고 하단 네비바도 홈으로 변경
             viewModel.updateSelectedIndex(0)
             navController.navigate(Screen.Home.route) {
@@ -460,27 +532,39 @@ fun MainScreen(
         label = "bottomBarOffset"
     )
 
+    // SplashScreen에서 splashDone이 true가 되면 Home으로 navigate
+    LaunchedEffect(viewModel.splashDone, currentRoute) {
+        if (viewModel.splashDone && currentRoute == Screen.Splash.route) {
+            navController.navigate(Screen.Home.route) {
+                popUpTo(Screen.Splash.route) { inclusive = true }
+            }
+        }
+    }
+
+    // NavHost(=NavGraph)는 항상 마운트, SplashScreen은 NavGraph의 route로만 존재
     Scaffold(
-        containerColor = Gray0,
+        containerColor = Color(0xFFF5F5F5),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = Modifier.padding(WindowInsets.systemBars.asPaddingValues()),
         topBar = {
-            if (!currentRoute.startsWith("login") && 
-                !currentRoute.startsWith("signup") && 
-                !currentRoute.startsWith("findpw") &&
-                !currentRoute.startsWith("stock_detail")) {
+            if (!(currentRoute.isEmpty() || currentRoute == Screen.Splash.route)
+                && !currentRoute.startsWith("login")
+                && !currentRoute.startsWith("signup")
+                && !currentRoute.startsWith("findpw")
+                && !currentRoute.startsWith("terms_agreement")
+                && !currentRoute.startsWith(Screen.Setting.route)
+                && !currentRoute.startsWith("chat")
+            ) {
                 SearchTopAppBar(
                     isSearchExpanded = isSearchExpanded,
                     searchText = searchText,
                     onSearchTextChange = { 
                         searchText = it
-                        // 검색어가 변경될 때마다 즉시 SearchScreen에 전달
                         navController.currentBackStackEntry?.savedStateHandle?.set("searchQuery", it)
                     },
                     onBackClick = {
                         isSearchExpanded = false
                         navController.navigateUp()
-                        // 검색어 초기화
                         searchText = ""
                     },
                     onSearchIconClick = {
@@ -493,24 +577,31 @@ fun MainScreen(
             }
         },
         bottomBar = {
-            Box(
-                modifier = Modifier
-                    .graphicsLayer {
-                        translationY = bottomBarOffset * 200f  // 200dp만큼 아래로 이동
-                    }
+            if (!(currentRoute.isEmpty() || currentRoute == Screen.Splash.route)
+                && !currentRoute.startsWith("chat")
+                && !currentRoute.startsWith("login")
+                && !currentRoute.startsWith("signup")
+                && !currentRoute.startsWith("findpw")
+                && !currentRoute.startsWith("terms_agreement")
             ) {
-                AnimatedBottomBar(
-                    selectedIndex = selectedIndex,
-                    onTabSelected = { index ->
-                        viewModel.updateSelectedIndex(index)
-                    },
-                    navController = navController,
-                    currentRoute = currentRoute
-                )
+                Box(
+                    modifier = Modifier
+                        .graphicsLayer {
+                            translationY = bottomBarOffset * 200f
+                        }
+                ) {
+                    AnimatedBottomBar(
+                        selectedIndex = selectedIndex,
+                        onTabSelected = { index ->
+                            viewModel.updateSelectedIndex(index)
+                        },
+                        navController = navController,
+                        currentRoute = currentRoute
+                    )
+                }
             }
         }
     ) { innerPadding ->
-        // 여백이 줄어들게 패딩 조정
         NavGraph(
             navController = navController,
             modifier = Modifier.padding(
@@ -541,7 +632,7 @@ fun AnimatedBottomBar(
             .height(72.dp)
             .background(Color.White)
     ) {
-        val itemWidth = maxWidth / 3
+        val itemWidth = maxWidth / 4
         val centerOffset = (itemWidth - indicatorWidth) / 2
         
         val indicatorOffset by animateDpAsState(
@@ -564,6 +655,7 @@ fun AnimatedBottomBar(
             listOf(
                 Pair("홈", Icons.Filled.Home),
                 Pair("주식", Icons.Filled.ShowChart),
+                Pair("랭킹", Icons.Filled.Star),
                 Pair("내 기록", Icons.Filled.Person)
             ).forEachIndexed { index, (label, icon) ->
                 val isSelected = index == selectedIndex
@@ -593,7 +685,8 @@ fun AnimatedBottomBar(
                                         val target = when (index) {
                                             0 -> Screen.Home.route
                                             1 -> Screen.Stock.route
-                                            2 -> Screen.MyPage.route
+                                            2 -> Screen.Ranking.route
+                                            3 -> Screen.MyPage.route
                                             else -> Screen.Home.route
                                         }
                                         navController.navigate(target) {
@@ -614,11 +707,16 @@ fun AnimatedBottomBar(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(icon, contentDescription = label, tint = iconColor)
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = label,
+                                tint = iconColor,
+                                modifier = Modifier.size(28.dp)
+                            )
                             Text(
                                 text = label,
-                                color = iconColor,
                                 fontSize = 12.sp,
+                                color = iconColor,
                                 fontFamily = SCDreamFontFamily
                             )
                         }
