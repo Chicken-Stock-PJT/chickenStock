@@ -9,4 +9,5 @@ public class RankingEntryDTO {
     private int rank;
     private String nickname;
     private Long totalAsset;
+    private Long memberId;
 }
