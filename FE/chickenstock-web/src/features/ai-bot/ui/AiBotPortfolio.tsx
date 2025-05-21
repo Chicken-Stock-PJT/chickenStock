@@ -1,9 +1,9 @@
 import AiBotDashboard from "./AiBotDashboard";
 import AiBotTrades from "./AiBotTrades";
-import { useAiBotDashboardQuery } from "@/features/ai-bot/model/queries";
+import { useMemberDashboardQuery } from "@/features/dashboard/model/queries";
 
 const AiBotPortfolio = ({ selectedBot }: { selectedBot: number }) => {
-  const { data, isLoading, error, refetch } = useAiBotDashboardQuery(selectedBot);
+  const { data, isLoading, error, refetch } = useMemberDashboardQuery(selectedBot);
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error: {error.message}</div>;

@@ -5,7 +5,9 @@ import { useAuthStore } from "@/shared/store/auth";
 import { RefreshCw, User } from "lucide-react";
 import RankingListItem from "./RankingListItem";
 
-const TotalAssetRankingList: React.FC = () => {
+const TotalAssetRankingList: React.FC<{
+  openDashboard: (memberId: string, name: string) => void;
+}> = ({ openDashboard }) => {
   const isLogin = useAuthStore((state) => state.isLoggedIn);
   const { data, isLoading, error } = useTotalAssetRankingQuery();
 
@@ -79,7 +81,7 @@ const TotalAssetRankingList: React.FC = () => {
       </div>
 
       {/* 스크롤 가능한 랭킹 목록 */}
-      <div className="max-h-96 overflow-y-auto px-4">
+      <div className="max-h-48 overflow-y-auto px-4">
         <div className="space-y-3">
           {data?.topRankings.map((ranking, index) => {
             const isMyRanking = !!(
@@ -94,6 +96,7 @@ const TotalAssetRankingList: React.FC = () => {
                 ranking={ranking}
                 isMyRanking={isMyRanking}
                 rankingType="totalAsset"
+                openDashboard={openDashboard}
               />
             );
           })}

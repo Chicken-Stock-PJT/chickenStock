@@ -18,6 +18,7 @@ import FindPasswordPage from "@/pages/FindPasswordPage";
 import ProtectedRoute from "./ProtectedRoute";
 import AiBotPage from "@/pages/AiBotPage";
 import CommunityPage from "@/features/stocks/community/ui";
+import DashboardPage from "@/pages/DashboardPage";
 
 const router = createBrowserRouter([
   {
@@ -116,6 +117,10 @@ const router = createBrowserRouter([
       {
         path: "ai-bot",
         element: <AiBotPage />,
+      },
+      {
+        path: "dashboard/:memberId",
+        element: <DashboardPage />,
       },
     ],
   },
