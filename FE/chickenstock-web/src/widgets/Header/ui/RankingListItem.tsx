@@ -2,12 +2,12 @@
 import React from "react";
 import { User, Bot } from "lucide-react";
 import { TotalAssetRanking, ReturnRateRanking, RankingType } from "../model/types";
-import { useNavigate } from "react-router-dom";
 
 interface RankingListItemProps {
   ranking: TotalAssetRanking | ReturnRateRanking;
   isMyRanking: boolean | undefined;
   rankingType: RankingType;
+  openDashboard: (memberId: string, name: string) => void;
 }
 
 // AI 봇인지 확인하는 함수
@@ -16,8 +16,12 @@ const isAIBot = (nickname: string) => {
   return aiNames.includes(nickname);
 };
 
-const RankingListItem: React.FC<RankingListItemProps> = ({ ranking, isMyRanking, rankingType }) => {
-  const navigate = useNavigate();
+const RankingListItem: React.FC<RankingListItemProps> = ({
+  ranking,
+  isMyRanking,
+  rankingType,
+  openDashboard,
+}) => {
   const isBot = isAIBot(ranking.nickname);
 
   return (
@@ -31,11 +35,7 @@ const RankingListItem: React.FC<RankingListItemProps> = ({ ranking, isMyRanking,
               ? "bg-gradient-to-r from-yellow-50 to-yellow-100 shadow-yellow-100"
               : "bg-white"
       }`}
-      onClick={() => {
-        void navigate(`/dashboard/${ranking.memberId}`, {
-          state: { name: ranking.nickname },
-        });
-      }}
+      onClick={() => openDashboard(ranking.memberId.toString(), ranking.nickname)}
     >
       <div className="flex items-center gap-3">
         <div
