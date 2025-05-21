@@ -35,7 +35,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final MemberRepository memberRepository;
     private final NotificationRepository notificationRepository;
     private final ObjectMapper objectMapper;
-    private final ChatService chatService;
 
     private static final DateTimeFormatter formatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -57,6 +56,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         // 연결 성공 메시지 전송
         sendConnectedMessage(session);
+
+        // 새 사용자 연결 후 현재 연결된 사용자 수를 브로드캐스트
+        broadcastActiveUserCount();
     }
 
     @Override
@@ -84,6 +86,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 case "ping":
                     handlePing(session);
                     break;
+                case "getUserCount":  // 사용자 수 요청 처리 추가
+                    sendUserCountMessage(session);
+                    break;
                 default:
                     log.warn("알 수 없는 메시지 유형: {}", type);
             }
@@ -107,6 +112,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         sessionMemberMap.remove(sessionId);
 
         log.info("웹소켓 연결 종료: sessionId={}, status={}", sessionId, status);
+
+        // 사용자 연결 종료 후 현재 연결된 사용자 수를 브로드캐스트
+        broadcastActiveUserCount();
     }
 
     // ChatWebSocketHandler.java의 sendMessageToUser 메서드 개선
@@ -175,6 +183,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 sendUnreadNotifications(memberId, session);
 
                 log.info("웹소켓 인증 성공: memberId={}, nickname={}", memberId, member.getNickname());
+
+                // 인증 성공 후 현재 연결된 사용자 수를 브로드캐스트
+                broadcastActiveUserCount();
             } else {
                 sendErrorMessage(session, "유효하지 않은 토큰입니다");
                 log.warn("웹소켓 인증 실패: 유효하지 않은 토큰");
@@ -256,6 +267,43 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         );
 
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(pongMessage)));
+    }
+
+    // 현재 연결된 인증된 사용자 수를 모든 클라이언트에게 브로드캐스트
+    private void broadcastActiveUserCount() {
+        try {
+            // 인증된 사용자 수 (memberSessions의 크기)
+            int authenticatedUserCount = memberSessions.size();
+            // 전체 연결 세션 수 (sessions의 크기)
+            int totalConnections = sessions.size();
+
+            Map<String, Object> message = Map.of(
+                    "type", "userCount",
+                    "authenticatedCount", authenticatedUserCount,
+                    "totalCount", totalConnections,
+                    "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)
+            );
+
+            broadcastMessage(objectMapper.writeValueAsString(message));
+            log.info("활성 사용자 수 브로드캐스트: 인증된 사용자={}, 전체 연결={}", authenticatedUserCount, totalConnections);
+        } catch (IOException e) {
+            log.error("활성 사용자 수 브로드캐스트 중 오류 발생", e);
+        }
+    }
+
+    // 특정 세션에 현재 사용자 수 전송
+    private void sendUserCountMessage(WebSocketSession session) throws IOException {
+        int authenticatedUserCount = memberSessions.size();
+        int totalConnections = sessions.size();
+
+        Map<String, Object> message = Map.of(
+                "type", "userCount",
+                "authenticatedCount", authenticatedUserCount,
+                "totalCount", totalConnections,
+                "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)
+        );
+
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
     }
 
     // 연결 성공 메시지 전송
