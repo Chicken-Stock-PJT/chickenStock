@@ -109,8 +109,7 @@ public class AuthController {
 
     @PostMapping("/token/refresh-mobile")
     public ResponseEntity<TokenDto> refreshAccessTokenMobile(
-            @RequestHeader("Authorization") String authorizationHeader,
-            @RequestBody RefreshTokenRequestDTO request) {
+            @RequestBody OnlyRefreshTokenRequestDTO request) {
         return ResponseEntity.ok(authService.refreshAccessTokenMobile(request));
     }
 
