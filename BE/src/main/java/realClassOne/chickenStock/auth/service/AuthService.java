@@ -178,9 +178,8 @@ public class AuthService {
     }
 
     @Transactional
-    public TokenDto refreshAccessTokenMobile(RefreshTokenRequestDTO request) {
+    public TokenDto refreshAccessTokenMobile(OnlyRefreshTokenRequestDTO request) {
 
-        String accessToken = request.getAccessToken();
         String refreshToken = request.getRefreshToken();
 
         if (!jwtTokenProvider.validateToken(refreshToken)) {
@@ -199,8 +198,6 @@ public class AuthService {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
 
-        jwtTokenProvider.addToBlacklist(accessToken);
-
         // 새 액세스 토큰만 발급 (리프레시 토큰은 재사용)
         WebTokenResponseDTO webTokenResponseDTO = jwtTokenProvider.generateAccessToken(member);
 
@@ -208,6 +205,7 @@ public class AuthService {
         TokenDto tokenDto = new TokenDto();
         tokenDto.setAccessToken(webTokenResponseDTO.getAccessToken());
         tokenDto.setRefreshToken(refreshToken); // 기존 리프레시 토큰 유지
+        tokenDto.setAccessTokenExpiresIn(webTokenResponseDTO.getAccessTokenExpiresIn());
 
         return tokenDto;
     }
