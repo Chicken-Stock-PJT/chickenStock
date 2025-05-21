@@ -13,7 +13,7 @@ const DashboardLayout = ({ name }: { name: string }) => {
   const portfolio = data!;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-4 mb-10 flex flex-col gap-4">
       <MemberDashboard name={name} portfolio={portfolio} />
       <AiBotTrades
         portfolio={portfolio}
