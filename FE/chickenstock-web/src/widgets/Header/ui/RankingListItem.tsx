@@ -12,7 +12,7 @@ interface RankingListItemProps {
 
 // AI 봇인지 확인하는 함수
 const isAIBot = (nickname: string) => {
-  const aiNames = ["쿨한 AI", "귀요미 AI", "chill~AI"];
+  const aiNames = ["쿨한 AI", "귀요미 AI", "chill~AI", "미니 AI"];
   return aiNames.includes(nickname);
 };
 

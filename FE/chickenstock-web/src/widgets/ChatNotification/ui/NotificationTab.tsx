@@ -2,15 +2,21 @@ import { Bell, Package, MessageSquare, Heart } from "lucide-react";
 import { useChatNotificationStore } from "../model/store";
 import { webSocketManager } from "../api/webSocket";
 import { cn } from "@/shared/libs/utils";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { NotificationMessage } from "@/widgets/ChatNotification/model/types";
 
 export default function NotificationTab() {
   const { notifications } = useChatNotificationStore();
+  const [nofificationState, setNotificationState] = useState<NotificationMessage[]>([]);
 
   // 탭이 열릴 때 알림 목록 요청
   useEffect(() => {
     webSocketManager.getNotifications("all");
   }, []);
+
+  useEffect(() => {
+    setNotificationState(notifications);
+  }, [notifications]);
 
   // 알림 클릭 시 읽음 처리
   const handleNotificationClick = (notificationId: number, isRead: boolean) => {
@@ -36,11 +42,13 @@ export default function NotificationTab() {
 
   return (
     <div className="h-full overflow-y-auto p-4">
-      {notifications.length === 0 ? (
-        <div className="text-center text-gray-500">새로운 알림이 없습니다.</div>
+      {nofificationState.length === 0 ? (
+        <div className="my-auto flex h-full items-center justify-center text-center text-gray-500">
+          새로운 알림이 없습니다.
+        </div>
       ) : (
         <div className="space-y-3">
-          {notifications.map((notif) => (
+          {nofificationState.map((notif) => (
             <div
               key={notif.notificationId}
               onClick={() => handleNotificationClick(notif.notificationId, notif.isRead)}

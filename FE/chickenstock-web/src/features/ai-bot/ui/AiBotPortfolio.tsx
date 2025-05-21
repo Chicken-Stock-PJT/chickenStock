@@ -7,7 +7,6 @@ const AiBotPortfolio = ({ selectedBot }: { selectedBot: number }) => {
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error: {error.message}</div>;
-  console.log(data);
 
   const portfolio = data!;
   return (

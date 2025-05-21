@@ -149,12 +149,12 @@ const PortfolioOverview = ({
                       : "text-gray-900"
                 }`}
               >
+                {todayProfitLoss > 0 ? (
+                  <ArrowUp className="mr-1 size-5" />
+                ) : todayProfitLoss < 0 ? (
+                  <ArrowDown className="mr-1 size-5" />
+                ) : null}
                 <span>
-                  {todayProfitLoss > 0 ? (
-                    <ArrowUp className="mr-1 size-5" />
-                  ) : todayProfitLoss < 0 ? (
-                    <ArrowDown className="mr-1 size-5" />
-                  ) : null}
                   {todayProfitLoss >= 0 ? "+" : ""}
                   {todayProfitLoss.toLocaleString()}원
                 </span>

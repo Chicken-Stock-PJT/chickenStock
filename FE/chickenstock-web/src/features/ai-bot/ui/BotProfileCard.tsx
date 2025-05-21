@@ -6,7 +6,6 @@ const BotProfileCard = ({
   onClick,
 }: {
   name: string;
-  profitRate: number;
   isSelected: boolean;
   onClick: () => void;
 }) => {
