@@ -46,3 +46,8 @@ export interface ErrorResponse {
   path: string;
   timestamp: string;
 }
+
+export interface AvailableQuantityResponse {
+  shortCode: string;
+  availableQuantity: number;
+}
