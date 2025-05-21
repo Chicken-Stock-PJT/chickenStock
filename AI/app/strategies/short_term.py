@@ -36,8 +36,8 @@ class ShortTermTradingModel:
     def _init_trading_settings(self) -> None:
         """매매 관련 설정 초기화"""
         # 매매 기본 설정
-        self.max_positions = 10  # 최대 보유 종목 수
-        self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (500만원)
+        self.max_positions = 7  # 최대 보유 종목 수
+        self.trade_amount_per_stock = 14000000  # 종목당 매매 금액 (500만원)
         
         # 분할 매매 관련 설정
         self.buy_division_count = 2  # 매수 분할 횟수

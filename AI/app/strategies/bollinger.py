@@ -14,8 +14,8 @@ class BollingerBandTradingModel(BaseTradingModel):
         super().__init__(stock_cache)
         
         # 매매 관련 설정
-        self.max_positions = 20  # 최대 보유 종목 수 (Envelope 모델보다 적게 설정)
-        self.trade_amount_per_stock = 6000000  # 종목당 매매 금액 (600만원)
+        self.max_positions = 7  # 최대 보유 종목 수 (Envelope 모델보다 적게 설정)
+        self.trade_amount_per_stock = 14000000  # 종목당 매매 금액 (600만원)
         
         # 분할 매수 설정
         self.split_purchase_count = 3  # 분할 매수 횟수
