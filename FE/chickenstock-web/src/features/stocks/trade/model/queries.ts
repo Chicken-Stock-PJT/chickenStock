@@ -2,6 +2,15 @@ import apiClient from "@/shared/api/axios";
 import { useQuery } from "@tanstack/react-query";
 import { AvailableQuantityResponse } from "./types";
 import { useAuthStore } from "@/shared/store/auth";
+import { isNxtStock } from "./nxtStocks";
+
+const useGetIsNxtStock = (stockCode: string) => {
+  return useQuery<boolean>({
+    queryKey: ["isNxt", stockCode],
+    queryFn: () => isNxtStock(stockCode),
+    enabled: !!stockCode,
+  });
+};
 
 const useGetAvailableQuantity = (stockCode: string) => {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
@@ -17,4 +26,4 @@ const useGetAvailableQuantity = (stockCode: string) => {
   });
 };
 
-export { useGetAvailableQuantity };
+export { useGetAvailableQuantity, useGetIsNxtStock };
