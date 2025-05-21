@@ -68,11 +68,7 @@ class BackendClient:
         인증이 필요한 API 요청 공통 처리
         - 인증 상태 자동 확인 및 갱신
         - 요청 실패 시 1회 재시도 (인증 갱신 후)
-        
-        :param method: HTTP 메서드 ('get', 'post', 'put', 'delete')
-        :param endpoint: API 엔드포인트 경로
-        :param kwargs: 요청 파라미터 (json, data 등)
-        :return: API 응답 데이터 또는 None(실패 시)
+        - HTTP 202 응답 추가 처리
         """
         if not self.running:
             await self.start()
@@ -103,7 +99,8 @@ class BackendClient:
             http_method = getattr(self.session, method.lower())
             
             async with http_method(url, **kwargs) as response:
-                if response.status in (200, 201):
+                # HTTP 202 (Accepted)도 성공으로 간주
+                if response.status in (200, 201, 202):
                     return await response.json()
                 elif response.status in (401, 403):
                     # 인증 오류 시 토큰 갱신 후 재시도
@@ -130,7 +127,8 @@ class BackendClient:
                     
                     # 요청 재시도
                     async with http_method(url, **kwargs) as retry_response:
-                        if retry_response.status in (200, 201):
+                        # HTTP 202 (Accepted)도 성공으로 간주
+                        if retry_response.status in (200, 201, 202):
                             return await retry_response.json()
                         else:
                             error_text = await retry_response.text()
@@ -217,12 +215,24 @@ class BackendClient:
         )
         
         if result:
-            logger.info(f"매수 요청 성공: {symbol} {quantity}주")
-            return True
+            # 응답 상태 확인 (status 필드가 있는 경우)
+            status = result.get('status', '')
+            message = result.get('message', '')
+            order_id = result.get('orderId', '')
+            
+            # QUEUED, PROCESSING, COMPLETED 등의 상태는 성공으로 처리
+            if status in ['QUEUED', 'PROCESSING', 'COMPLETED', 'PENDING']:
+                logger.info(f"매수 요청 성공 (상태: {status}): {symbol} {quantity}주, 주문ID: {order_id}")
+                logger.info(f"서버 메시지: {message}")
+                return True
+            else:
+                logger.error(f"매수 요청 실패 (상태: {status}): {symbol} {quantity}주")
+                logger.error(f"서버 메시지: {message}")
+                return False
         else:
             logger.error(f"매수 요청 실패: {symbol} {quantity}주")
             return False
-    
+
     async def request_sell(self, symbol: str, quantity: int, price: float = 0) -> bool:
         """매도 요청을 백엔드 API로 전송"""
         # 요청 페이로드 구성
@@ -240,8 +250,20 @@ class BackendClient:
         )
         
         if result:
-            logger.info(f"매도 요청 성공: {symbol} {quantity}주")
-            return True
+            # 응답 상태 확인 (status 필드가 있는 경우)
+            status = result.get('status', '')
+            message = result.get('message', '')
+            order_id = result.get('orderId', '')
+            
+            # QUEUED, PROCESSING, COMPLETED 등의 상태는 성공으로 처리
+            if status in ['QUEUED', 'PROCESSING', 'COMPLETED', 'PENDING']:
+                logger.info(f"매도 요청 성공 (상태: {status}): {symbol} {quantity}주, 주문ID: {order_id}")
+                logger.info(f"서버 메시지: {message}")
+                return True
+            else:
+                logger.error(f"매도 요청 실패 (상태: {status}): {symbol} {quantity}주")
+                logger.error(f"서버 메시지: {message}")
+                return False
         else:
             logger.error(f"매도 요청 실패: {symbol} {quantity}주")
             return False
