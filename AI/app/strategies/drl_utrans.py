@@ -29,8 +29,8 @@ class DRLUTransTradingModel(BaseTradingModel):
         super().__init__(stock_cache)
         
         # 매매 관련 설정
-        self.max_positions = 20  # 최대 보유 종목 수 (18에서 10으로 감소)
-        self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (600만원)
+        self.max_positions = 7  # 최대 보유 종목 수 (18에서 10으로 감소)
+        self.trade_amount_per_stock = 14000000  # 종목당 매매 금액 (1000만원)
         
         # 모델 설정
         self.model_path = os.environ.get('DRL_UTRANS_MODEL_PATH', 
