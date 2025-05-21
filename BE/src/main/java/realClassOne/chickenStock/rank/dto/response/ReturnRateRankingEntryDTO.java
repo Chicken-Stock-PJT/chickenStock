@@ -9,5 +9,6 @@ public class ReturnRateRankingEntryDTO {
     private int rank;
     private String nickname;
     private double returnRate;
+    private Long memberId;
 }
 
