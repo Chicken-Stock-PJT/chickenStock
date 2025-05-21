@@ -28,8 +28,8 @@ class BollingerBandTradingModel(BaseTradingModel):
         
         # 보수적 매수 신호 설정
         self.buy_percentB_threshold = 0.05  # 더 낮은 %B 기준값 (0.1 -> 0.05)
-        self.min_confidence_threshold = 0.6  # 높은 신뢰도 기준 (0.5 -> 0.6)
-        self.buy_cooldown_hours = 24  # 매수 신호 쿨다운 시간 (시간)
+        self.min_confidence_threshold = 0.51  # 높은 신뢰도 기준 (0.5 -> 0.6)
+        self.buy_cooldown_hours = 0  # 매수 신호 쿨다운 시간 (시간)
         
         # 실행 상태
         self.is_running = False
@@ -186,15 +186,29 @@ class BollingerBandTradingModel(BaseTradingModel):
         elapsed_hours = (now - last_trade_time).total_seconds() / 3600
         return elapsed_hours >= self.buy_cooldown_hours
     
-    def _can_make_split_purchase(self, symbol):
-        """분할 매수 가능 여부 확인"""
+    def _can_make_split_purchase(self, symbol, price):
+        """분할 매수 가능 여부 확인 - 가격 하락 조건 추가"""
         # 분할 매수 추적 정보가 없으면 첫 번째 매수 가능
         if symbol not in self.split_purchase_tracking:
             return True
         
-        # 현재 분할 매수 단계가 최대 단계보다 작으면 매수 가능
+        # 현재 분할 매수 단계가 최대 단계보다 작은지 확인
         tracking_info = self.split_purchase_tracking[symbol]
-        return tracking_info["current_step"] < self.split_purchase_count
+        if tracking_info["current_step"] >= self.split_purchase_count:
+            return False
+        
+        # 이전 매수가 대비 하락률 확인
+        last_purchase = tracking_info["purchases"][-1]
+        last_price = last_purchase["price"]
+        
+        # 단계별 하락률 설정 (단계가 늘어날수록 요구 하락률 증가)
+        required_drop_rates = [0.03, 0.03, 0.02]
+        current_step = tracking_info["current_step"]
+        required_drop = required_drop_rates[min(current_step-1, len(required_drop_rates)-1)]
+        
+        # 이전 매수가 대비 충분히 하락했는지 확인
+        price_drop_rate = (last_price - price) / last_price
+        return price_drop_rate >= required_drop
     
     def _calculate_split_purchase_amount(self, symbol):
         """다음 분할 매수 금액 계산"""
@@ -262,7 +276,7 @@ class BollingerBandTradingModel(BaseTradingModel):
             is_holding = symbol in self.positions
             
             # 분할 매수 가능 여부 확인
-            can_make_split_purchase = self._can_make_split_purchase(symbol)
+            can_make_split_purchase = self._can_make_split_purchase(symbol, price)
             
             # 매매 신호 신뢰도 계산
             signal_confidence = 0.0
