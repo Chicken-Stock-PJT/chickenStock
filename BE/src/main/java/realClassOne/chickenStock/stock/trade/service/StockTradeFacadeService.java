@@ -24,7 +24,6 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class StockTradeFacadeService {
 
     private final StockTradeService stockTradeService;
@@ -63,7 +62,6 @@ public class StockTradeFacadeService {
             // 서비스 레이어에서 발생한 예외는 그대로 전파
             throw e;
         } catch (Exception e) {
-            log.error("매수 주문 처리 중 오류 발생", e);
             throw new CustomException(StockErrorCode.TRADE_PROCESSING_FAILED,
                     "주문 처리 중 시스템 오류가 발생했습니다.");
         }
@@ -123,7 +121,6 @@ public class StockTradeFacadeService {
             // 서비스 레이어에서 발생한 예외는 그대로 전파
             throw e;
         } catch (Exception e) {
-            log.error("매도 주문 처리 중 오류 발생", e);
             throw new CustomException(StockErrorCode.TRADE_PROCESSING_FAILED,
                     "주문 처리 중 시스템 오류가 발생했습니다.");
         }
@@ -140,7 +137,6 @@ public class StockTradeFacadeService {
         } catch (CustomException e) {
             throw e;
         } catch (Exception e) {
-            log.error("주문 상태 조회 중 오류 발생", e);
             throw new CustomException(StockErrorCode.ORDER_INQUIRY_FAILED);
         }
     }
@@ -156,7 +152,6 @@ public class StockTradeFacadeService {
         } catch (CustomException e) {
             throw e;
         } catch (Exception e) {
-            log.error("미체결 주문 조회 중 오류 발생", e);
             throw new CustomException(StockErrorCode.ORDER_INQUIRY_FAILED);
         }
     }
@@ -170,7 +165,6 @@ public class StockTradeFacadeService {
         } catch (CustomException e) {
             throw e;
         } catch (Exception e) {
-            log.error("주문 취소 처리 중 오류 발생", e);
             throw new CustomException(StockErrorCode.TRADE_PROCESSING_FAILED);
         }
     }
@@ -186,7 +180,6 @@ public class StockTradeFacadeService {
         } catch (CustomException e) {
             throw e;
         } catch (Exception e) {
-            log.error("주문 상태 조회 중 오류 발생", e);
             throw new CustomException(StockErrorCode.ORDER_INQUIRY_FAILED);
         }
     }
