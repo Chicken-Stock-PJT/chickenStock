@@ -10,12 +10,12 @@ interface PortfolioChartProps {
 
 const PortfolioChart = ({ holdings, stockValuation, cash }: PortfolioChartProps) => {
   const options = {
-    series: [cash, ...holdings.map((holding) => holding.valuationAmount)],
+    series: [...holdings.map((holding) => holding.valuationAmount)],
     options: {
       chart: {
         type: "donut" as const,
       },
-      labels: ["가용 현금", ...holdings.map((holding) => holding.stockName)],
+      labels: [...holdings.map((holding) => holding.stockName)],
       responsive: [
         {
           breakpoint: 480,
@@ -36,8 +36,8 @@ const PortfolioChart = ({ holdings, stockValuation, cash }: PortfolioChartProps)
     <Card>
       <CardHeader>
         <CardTitle>종목별 투자 비중</CardTitle>
-        <CardDescription>포트폴리오 내 종목별 비중을 확인합니다.</CardDescription>
-        <div className="ml-4 flex gap-8 pt-4">
+        <CardDescription>투자 종목별 비중을 확인합니다.</CardDescription>
+        <div className="flex gap-8 pt-4">
           <div className="py-2">
             <div className="text-sm font-semibold text-gray-500">현금</div>
             <div className="font-bold">{cash.toLocaleString()}원</div>
