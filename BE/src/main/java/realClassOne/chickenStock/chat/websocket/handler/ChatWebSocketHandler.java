@@ -83,10 +83,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 case "markAsRead":
                     handleMarkAsRead(session, jsonNode);
                     break;
+                case "markAllAsRead":  // 새로운 case 추가
+                    handleMarkAllAsRead(session);
+                    break;
                 case "ping":
                     handlePing(session);
                     break;
-                case "getUserCount":  // 사용자 수 요청 처리 추가
+                case "getUserCount":
                     sendUserCountMessage(session);
                     break;
                 default:
@@ -257,6 +260,49 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             log.error("알림 읽음 처리 중 오류 발생", e);
             sendNotificationReadResponse(session, notificationId, false);
         }
+    }
+
+    // 모든 알림 읽음 처리
+    private void handleMarkAllAsRead(WebSocketSession session) throws IOException {
+        Long memberId = sessionMemberMap.get(session.getId());
+        if (memberId == null) {
+            sendErrorMessage(session, "인증이 필요합니다");
+            return;
+        }
+
+        try {
+            // 회원의 모든 미확인 알림 조회
+            List<Notification> unreadNotifications = notificationRepository
+                    .findByMemberIdAndIsReadFalseOrderByCreatedAtDesc(memberId);
+
+            // 모든 알림에 읽음 처리
+            unreadNotifications.forEach(Notification::markAsRead);
+            notificationRepository.saveAll(unreadNotifications);
+
+            // 읽음 처리된 알림 ID 목록
+            List<Long> readNotificationIds = unreadNotifications.stream()
+                    .map(Notification::getId)
+                    .toList();
+
+            // 읽음 처리 응답 전송
+            sendAllNotificationsReadResponse(session, readNotificationIds, true);
+
+            log.info("회원 ID {}의 모든 알림({}) 읽음 처리 완료", memberId, unreadNotifications.size());
+        } catch (Exception e) {
+            log.error("모든 알림 읽음 처리 중 오류 발생", e);
+            sendErrorMessage(session, "모든 알림 읽음 처리 중 오류 발생: " + e.getMessage());
+        }
+    }
+
+    // 모든 알림 읽음 처리 응답 전송
+    private void sendAllNotificationsReadResponse(WebSocketSession session, List<Long> notificationIds, boolean success) throws IOException {
+        Map<String, Object> message = Map.of(
+                "type", "allNotificationsRead",
+                "notificationIds", notificationIds,
+                "success", success
+        );
+
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
     }
 
     // Ping 처리
