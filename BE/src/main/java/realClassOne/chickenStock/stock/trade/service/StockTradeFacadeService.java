@@ -9,6 +9,9 @@ import realClassOne.chickenStock.member.exception.MemberErrorCode;
 import realClassOne.chickenStock.member.repository.MemberRepository;
 import realClassOne.chickenStock.security.jwt.JwtTokenProvider;
 import realClassOne.chickenStock.stock.dto.common.PendingOrderDTO;
+import realClassOne.chickenStock.stock.entity.HoldingPosition;
+import realClassOne.chickenStock.stock.repository.HoldingPositionRepository;
+import realClassOne.chickenStock.stock.repository.PendingOrderRepository;
 import realClassOne.chickenStock.stock.trade.dto.common.TradeStatusDTO;
 import realClassOne.chickenStock.stock.dto.request.TradeRequestDTO;
 import realClassOne.chickenStock.stock.trade.dto.request.TradeTaskDTO;
@@ -25,14 +28,12 @@ import java.util.List;
 public class StockTradeFacadeService {
 
     private final StockTradeService stockTradeService;
-    private final TradeQueueService tradeQueueService;
     private final JwtTokenProvider jwtTokenProvider;
     private final MemberRepository memberRepository;
     private final StockDataRepository stockDataRepository;
+    private final HoldingPositionRepository holdingPositionRepository;
+    private final PendingOrderRepository pendingOrderRepository;
 
-    /**
-     * 매수 주문 처리 - 큐 기반 처리 방식
-     */
     public TradeResponseDTO processBuyOrder(String authorization, TradeRequestDTO request) {
         try {
             // 토큰으로부터 회원 정보 추출
@@ -51,22 +52,10 @@ public class StockTradeFacadeService {
 
             // 시장가 주문과 지정가 주문을 구분하여 처리
             if (Boolean.TRUE.equals(request.getMarketOrder())) {
-                // 시장가 주문은 큐를 통해 처리
-                TradeTaskDTO tradeTask = new TradeTaskDTO(member, request, "BUY");
-                tradeTask = tradeQueueService.queueTradeRequest(tradeTask);
-
-                return TradeResponseDTO.builder()
-                        .status("QUEUED")
-                        .orderId(tradeTask.getOrderId())
-                        .stockCode(request.getStockCode())
-                        .stockName(stockData.getShortName())
-                        .tradeType("BUY")
-                        .quantity(request.getQuantity())
-                        .unitPrice(null)
-                        .message("시장가 매수 주문이 시스템에 접수되었습니다. 시간 순서에 따라 처리됩니다.")
-                        .build();
+                // 시장가 주문은 즉시 처리 (큐 사용하지 않음)
+                return stockTradeService.processMarketBuyOrder(member, stockData, request.getQuantity());
             } else {
-                // 지정가 주문은 stockTradeService로 직접 처리
+                // 지정가 주문은 기존과 동일하게 처리
                 return stockTradeService.processLimitBuyOrder(member, stockData, request.getQuantity(), request.getPrice());
             }
 
@@ -81,7 +70,7 @@ public class StockTradeFacadeService {
     }
 
     /**
-     * 매도 주문 처리 - 큐 기반 처리 방식
+     * 매도 주문 처리 - 시장가는 트랜잭션 기반 처리, 지정가는 기존 방식 유지
      */
     public TradeResponseDTO processSellOrder(String authorization, TradeRequestDTO request) {
         try {
@@ -99,24 +88,34 @@ public class StockTradeFacadeService {
             // 요청 유효성 검증
             validateTradeRequest(request);
 
-            // 시장가 주문과 지정가 주문을 구분하여 처리
+            // 시장가 주문인 경우
             if (Boolean.TRUE.equals(request.getMarketOrder())) {
-                // 시장가 주문은 큐를 통해 처리
-                TradeTaskDTO tradeTask = new TradeTaskDTO(member, request, "SELL");
-                tradeTask = tradeQueueService.queueTradeRequest(tradeTask);
+                // 시장가 주문은 즉시 처리 (큐 사용하지 않음)
 
-                return TradeResponseDTO.builder()
-                        .status("QUEUED")
-                        .orderId(tradeTask.getOrderId())
-                        .stockCode(request.getStockCode())
-                        .stockName(stockData.getShortName())
-                        .tradeType("SELL")
-                        .quantity(request.getQuantity())
-                        .unitPrice(null)
-                        .message("시장가 매도 주문이 시스템에 접수되었습니다. 시간 순서에 따라 처리됩니다.")
-                        .build();
+                // 보유 포지션 확인
+                List<HoldingPosition> positions = holdingPositionRepository
+                        .findAllByMemberAndStockDataAndActiveTrue(member, stockData);
+                if (positions.isEmpty()) {
+                    throw new CustomException(StockErrorCode.NO_HOLDING_POSITION);
+                }
+                HoldingPosition position = positions.get(0);
+
+                // 현재 대기 중인 매도 주문 수량 조회
+                int pendingSellQuantity = pendingOrderRepository.getTotalPendingSellQuantityForMemberAndStock(
+                        member.getMemberId(), stockData.getShortCode());
+
+                // 실제 매도 가능 수량 계산 (보유 수량 - 대기 중인 매도 주문 수량)
+                int availableQuantity = position.getQuantity() - pendingSellQuantity;
+
+                if (availableQuantity < request.getQuantity()) {
+                    throw new CustomException(StockErrorCode.INSUFFICIENT_STOCK_QUANTITY,
+                            String.format("매도 가능 수량이 부족합니다. 보유: %d주, 대기 중인 매도 주문: %d주, 가능: %d주, 요청: %d주",
+                                    position.getQuantity(), pendingSellQuantity, availableQuantity, request.getQuantity()));
+                }
+
+                return stockTradeService.processMarketSellOrder(member, stockData, request.getQuantity(), position);
             } else {
-                // 지정가 주문은 stockTradeService로 직접 처리
+                // 지정가 주문은 기존과 동일하게 처리
                 return stockTradeService.processLimitSellOrder(member, stockData, request.getQuantity(), request.getPrice());
             }
 
