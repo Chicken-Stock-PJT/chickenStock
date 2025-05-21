@@ -1,8 +1,10 @@
 import apiClient from "@/shared/api/axios";
 import { useQuery } from "@tanstack/react-query";
 import { AvailableQuantityResponse } from "./types";
+import { useAuthStore } from "@/shared/store/auth";
 
 const useGetAvailableQuantity = (stockCode: string) => {
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   return useQuery({
     queryKey: ["availableQuantity", stockCode],
     queryFn: async () => {
@@ -11,7 +13,7 @@ const useGetAvailableQuantity = (stockCode: string) => {
       );
       return response.data;
     },
-    enabled: !!stockCode,
+    enabled: !!stockCode && !!isLoggedIn,
   });
 };
 

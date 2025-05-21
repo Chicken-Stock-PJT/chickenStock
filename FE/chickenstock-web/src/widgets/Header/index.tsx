@@ -1,4 +1,4 @@
-import { Menu, Search, Sidebar } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
