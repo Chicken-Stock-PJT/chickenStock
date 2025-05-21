@@ -41,8 +41,8 @@ const getWatchlist = async (): Promise<GetWatchlistResult> => {
 const deleteWatchlist = async (
   stockCode: string,
 ): Promise<WatchlistSuccessResponse | WatchlistErrorResponse | AxiosError<ErrorResponse>> => {
-  if (!stockCode.includes("_AL")) {
-    stockCode = stockCode + "_AL";
+  if (stockCode.includes("_AL")) {
+    stockCode = stockCode.replace("_AL", "");
   }
   try {
     const response = await apiClient.delete<

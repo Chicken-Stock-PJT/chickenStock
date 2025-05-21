@@ -14,7 +14,7 @@ const AiBotAssetOverview = ({ portfolio }: { portfolio: MemberDashboardResponse 
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>금일 수익</CardTitle>
+          <CardTitle>금일 실현 수익</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{portfolio.todayProfitLoss}원</div>

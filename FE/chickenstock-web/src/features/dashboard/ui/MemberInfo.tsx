@@ -1,8 +1,7 @@
-import { botList } from "@/features/ai-bot/model/bot-list";
 import { DollarSign, TrendingUp } from "lucide-react";
 
-const AiInfo = ({
-  aiBotId,
+const MemberInfo = ({
+  name,
   totalAsset,
   memberMoney,
   totalReturnRate,
@@ -10,7 +9,7 @@ const AiInfo = ({
   todayReturnRate,
   todayProfitLoss,
 }: {
-  aiBotId: number;
+  name: string;
   totalAsset: number;
   totalReturnRate: number;
   totalProfitLoss: number;
@@ -19,12 +18,10 @@ const AiInfo = ({
   todayProfitLoss: number;
 }) => {
   return (
-    <div className="space-y-6 rounded-xl border p-6 text-left shadow">
-      <div>
-        <div className="text-lg font-semibold">{botList[aiBotId - 1].name}</div>
-        <div className="text-foreground">{botList[aiBotId - 1].type}</div>
-        <div className="text-sm text-foreground">{botList[aiBotId - 1].description}</div>
-      </div>
+    <div className="flex flex-col space-y-6 rounded-xl border p-6 pb-10 text-left shadow">
+      <h2 className="text-2xl font-semibold">
+        {name} <span className="text-xl">님의 포트폴리오</span>
+      </h2>
       <div className="space-y-4">
         <div>
           <div className="mb-1 text-sm font-medium text-muted-foreground">총 자산</div>
@@ -119,4 +116,4 @@ const AiInfo = ({
   );
 };
 
-export default AiInfo;
+export default MemberInfo;
