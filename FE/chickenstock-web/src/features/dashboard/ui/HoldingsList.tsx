@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import { Position } from "@/features/mypage/model/types";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown } from "lucide-react";
 
 interface HoldingsListProps {
   holdings: Position[];
@@ -48,7 +48,7 @@ const HoldingsList = ({ holdings, onClick, isLoading }: HoldingsListProps) => {
           <div className="col-span-2 text-right">평가금액</div>
           <div className="col-span-2 text-right">손익</div>
         </div>
-        <div className="divide-y border-t">
+        <div className="divide-y">
           {holdings.length > 0 ? (
             holdings.map((stock) => {
               const priceDiff = getPriceDifference(stock.currentPrice, stock.averagePrice);
@@ -75,18 +75,18 @@ const HoldingsList = ({ holdings, onClick, isLoading }: HoldingsListProps) => {
                           </span>
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="h-1 text-right">
                         <div className="font-medium">{stock.currentPrice.toLocaleString()}원</div>
-                        <div className="flex flex-col items-end justify-between text-sm sm:flex-row">
+                        <div className="mb-0 flex flex-col items-end justify-between text-sm sm:flex-row">
                           <span
                             className={`${
                               priceDiff.isPositive ? "text-chart-red" : "text-chart-blue"
                             } flex items-center gap-1`}
                           >
                             {priceDiff.isPositive ? (
-                              <ArrowUpRight className="size-3 text-chart-red" />
+                              <TrendingUp className="size-3 text-chart-red" />
                             ) : (
-                              <ArrowDownRight className="size-3 text-chart-blue" />
+                              <TrendingDown className="size-3 text-chart-blue" />
                             )}
                             <span>
                               {priceDiff.isPositive ? "+" : ""}
@@ -115,9 +115,9 @@ const HoldingsList = ({ holdings, onClick, isLoading }: HoldingsListProps) => {
                       <div>{stock.averagePrice.toLocaleString()}원</div>
                       <div className="flex items-center justify-end gap-1 text-xs">
                         {priceDiff.isPositive ? (
-                          <ArrowUpRight className="size-3 text-chart-red" />
+                          <TrendingUp className="size-3 text-chart-red" />
                         ) : (
-                          <ArrowDownRight className="size-3 text-chart-blue" />
+                          <TrendingDown className="size-3 text-chart-blue" />
                         )}
                         <span
                           className={priceDiff.isPositive ? "text-chart-red" : "text-chart-blue"}

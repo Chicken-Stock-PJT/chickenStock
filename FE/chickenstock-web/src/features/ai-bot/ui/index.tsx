@@ -6,7 +6,7 @@ const AiBotLayout = () => {
   const [selectedBot, setSelectedBot] = useState<number>(1);
 
   return (
-    <div className="mb-10 text-left">
+    <div className="mb-10 p-4 text-left">
       <header className="my-10 flex flex-col gap-2">
         <h2 className="text-2xl font-bold">AI 트레이딩 봇</h2>
         <p className="text-sm text-gray-500">
