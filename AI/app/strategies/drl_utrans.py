@@ -25,13 +25,12 @@ class DRLUTransTradingModel(BaseTradingModel):
     """DRL-UTrans 기반 AI 트레이딩 모델"""
     
     def __init__(self, stock_cache=None):
-        """DRL-UTrans 전략 트레이딩 모델 초기화"""
+        """DRL-UTrans 전략 트레이딩 모델 초기화 - 매수 신호 감소 설정"""
         super().__init__(stock_cache)
         
         # 매매 관련 설정
-        self.max_positions = 15  # 최대 보유 종목 수
-        self.trade_amount_per_stock = 6000000  # 종목당 매매 금액 (600만원)
-        # self.min_holding_period 삭제 (최소 보유 기간 제약 제거)
+        self.max_positions = 20  # 최대 보유 종목 수 (18에서 10으로 감소)
+        self.trade_amount_per_stock = 5000000  # 종목당 매매 금액 (600만원)
         
         # 모델 설정
         self.model_path = os.environ.get('DRL_UTRANS_MODEL_PATH', 
@@ -43,8 +42,8 @@ class DRLUTransTradingModel(BaseTradingModel):
         
         # 거래 관련 설정
         self.action_map = {0: "hold", 1: "buy", 2: "sell"}  # DRL-UTrans 모델의 액션 매핑
-        self.confidence_threshold = 0.75  # 매매 결정 신뢰도 임계값 (0.6 -> 0.75로 상향)
-        self.weight_threshold = 0.5  # 매매 가중치 임계값 (0.3 -> 0.5로 상향)
+        self.confidence_threshold = 0.98  # 매매 결정 신뢰도 임계값 (0.65에서 0.98로 대폭 증가)
+        self.weight_threshold = 0.65  # 매매 가중치 임계값 (0.4에서 0.7로 증가)
         
         # 매매 신호 저장 딕셔너리
         self.trading_signals = {}  # {symbol: {"action": int, "weight": float, "price": float, "timestamp": datetime}}
@@ -75,9 +74,13 @@ class DRLUTransTradingModel(BaseTradingModel):
         self.is_model_loaded = False
         
         # 매수 신호 제한 설정 (1일 최대 매수 신호 개수)
-        self.max_daily_buy_signals = 15  # 하루 최대 15개 매수 신호로 제한 (5->15로 증가)
+        self.max_daily_buy_signals = 20
         self.daily_buy_signals_count = 0  # 당일 매수 신호 카운트
         self.last_reset_date = datetime.now().date()  # 마지막 리셋 날짜
+        
+        # 실시간 처리 관련 설정
+        self.skip_realtime_prediction = False  # 일봉 기반 모델은 실시간 예측 생략
+        self.realtime_confidence_threshold = 0.98  # 실시간 신호에 대한 별도 신뢰도 임계값 (매우 엄격하게)
         
         logger.info("DRL-UTrans 트레이딩 모델 초기화 완료")
         
@@ -236,9 +239,42 @@ class DRLUTransTradingModel(BaseTradingModel):
         logger.info("DRL-UTrans 트레이딩 모델 중지")
     
     async def refresh_indicators(self):
-        """지표 갱신 (데이터 갱신 후 호출)"""
-        logger.info("DRL-UTrans 지표 갱신 (일괄 예측 시작)")
-        await self.run_batch_predictions()
+        """
+        지표 갱신 (데이터 갱신 후 호출)
+        일괄 예측을 비활성화하고 보유 종목 및 관심 종목만 분석
+        """
+        logger.info("DRL-UTrans 지표 갱신 시작 (제한된 예측 수행)")
+        
+        # 보유 종목 및 관심 종목 리스트 작성
+        watchlist = []
+        
+        # 1. 보유 종목 추가
+        watchlist.extend(list(self.positions.keys()))
+        
+        # 2. 관심 종목 추가 (예: 실시간 가격 갱신이 있었던 종목)
+        recently_updated = []
+        if self.stock_cache:
+            # 최근 가격 업데이트가 있었던 종목 가져오기 (예: 최근 1시간)
+            recently_updated = self.stock_cache.get_recently_updated_symbols(hours=1)
+        
+        # 중복 제거하며 합치기
+        watchlist.extend([symbol for symbol in recently_updated if symbol not in watchlist])
+        
+        # 목록 길이 제한 (최대 30개)
+        watchlist = watchlist[:30]
+        
+        if not watchlist:
+            logger.info("DRL-UTrans 지표 갱신: 분석할 종목 없음")
+            return
+        
+        logger.info(f"DRL-UTrans 지표 갱신: {len(watchlist)}개 종목 분석 (보유 종목 및 관심 종목)")
+        
+        # 선별된 종목만 예측 실행
+        for symbol in watchlist:
+            await self.process_single_prediction(symbol)
+        
+        logger.info(f"DRL-UTrans 지표 갱신 완료: {len(watchlist)}개 종목 분석 완료")
+
     
     def _should_process_price_update(self, symbol, price):
         """
@@ -602,87 +638,26 @@ class DRLUTransTradingModel(BaseTradingModel):
         except Exception as e:
             logger.error(f"일괄 예측 중 오류: {str(e)}", exc_info=True)
     
-    async def process_single_prediction(self, symbol):
-        """
-        단일 종목 예측 및 매매 신호 생성
-        """
-        try:
-            # 특성 계산
-            features = await self.calculate_technical_features(symbol)
-            if features is None:
-                return
-            
-            # 예측 수행
-            prediction = await self.predict_stock(symbol, features)
-            if prediction is None:
-                return
-            
-            # 예측 결과 저장
-            self.predictions[symbol] = prediction
-            
-            # 현재가 가져오기
-            current_price = self.stock_cache.get_price(symbol) if self.stock_cache else 0
-            if current_price <= 0:
-                logger.warning(f"종목 {symbol} 현재가를 가져올 수 없습니다.")
-            
-            # 일일 매수 신호 제한 확인 및 필요시 카운터 리셋
-            current_date = datetime.now().date()
-            if current_date != self.last_reset_date:
-                self.daily_buy_signals_count = 0
-                self.last_reset_date = current_date
-                logger.info(f"일일 매수 신호 카운터 리셋 (날짜 변경: {current_date})")
-            
-            # 예측 결과 해석 및 매매 신호 생성
-            action = prediction["action"]
-            action_prob = prediction["action_prob"]
-            action_weight = prediction["action_weight"]
-            
-            # 1. 보유 중인 종목에 대한 매도 신호 (액션=2, 확률>임계값)
-            if action == 2 and self.is_holding(symbol):
-                if action_prob >= self.confidence_threshold and action_weight >= self.weight_threshold:
-                    # 매도 신호 생성
-                    self.trading_signals[symbol] = {
-                        "action": action,
-                        "action_name": self.action_map[action],
-                        "weight": action_weight,
-                        "price": current_price,
-                        "confidence": action_prob,
-                        "value": prediction["state_value"],
-                        "timestamp": prediction["timestamp"]
-                    }
-                    logger.info(f"종목 {symbol} 매도 신호 생성: 확률={action_prob:.4f}, 가중치={action_weight:.4f}")
-            
-            # 2. 미보유 종목에 대한 매수 신호 (액션=1, 확률>임계값)
-            elif action == 1 and not self.is_holding(symbol):
-                # 일일 매수 신호 제한 확인
-                if self.daily_buy_signals_count >= self.max_daily_buy_signals:
-                    logger.debug(f"일일 매수 신호 제한({self.max_daily_buy_signals}개)에 도달, 신호 생성 보류: {symbol}")
-                    return
-                    
-                if action_prob >= self.confidence_threshold and action_weight >= self.weight_threshold:
-                    # 매수 신호 생성
-                    self.trading_signals[symbol] = {
-                        "action": action,
-                        "action_name": self.action_map[action],
-                        "weight": action_weight,
-                        "price": current_price,
-                        "confidence": action_prob,
-                        "value": prediction["state_value"],
-                        "timestamp": prediction["timestamp"]
-                    }
-                    logger.info(f"종목 {symbol} 매수 신호 생성: 확률={action_prob:.4f}, 가중치={action_weight:.4f}")
-                    
-                    # 일일 매수 신호 카운트 증가
-                    self.daily_buy_signals_count += 1
-            
-        except Exception as e:
-            logger.error(f"종목 {symbol} 예측 처리 중 오류: {str(e)}", exc_info=True)
-    
     async def handle_realtime_price(self, symbol, price, indicators=None):
-        """실시간 가격 데이터 처리"""
+        """
+        실시간 가격 데이터 처리 - 추상 메서드 구현
+        내부적으로 _process_price_update 공통 메서드를 호출하여 중복 코드 방지
+        """
         if not self.is_running or not self.is_model_loaded:
             return
+            
+        # 공통 로직을 별도 메서드로 분리하여 호출
+        await self._process_price_update(symbol, price, from_realtime=True)
         
+    async def _process_price_update(self, symbol, price, from_realtime=False):
+        """
+        가격 업데이트 공통 처리 로직
+        handle_realtime_price와 process_single_prediction에서 공통으로 사용
+        
+        :param symbol: 종목 코드
+        :param price: 현재가
+        :param from_realtime: 실시간 업데이트에서 호출되었는지 여부
+        """
         try:
             # 중복 메시지 필터링 - 처리할 필요가 없으면 함수 종료
             if not self._should_process_price_update(symbol, price):
@@ -693,6 +668,10 @@ class DRLUTransTradingModel(BaseTradingModel):
             
             if not prediction_info:
                 # 예측 결과가 없는 경우 온디맨드 예측 수행
+                # 실시간 환경에서는 예측하지 않을 수도 있음 (일봉 기반 모델의 경우)
+                if from_realtime and self.skip_realtime_prediction:
+                    return
+                    
                 features = await self.calculate_technical_features(symbol)
                 if features is not None:
                     prediction_info = await self.predict_stock(symbol, features)
@@ -709,18 +688,21 @@ class DRLUTransTradingModel(BaseTradingModel):
             
             if (now - prediction_timestamp).total_seconds() > self.prediction_valid_hours * 3600:
                 # 예측이 오래되었으면 새로 예측
+                # 실시간 환경에서는 예측하지 않을 수도 있음 (일봉 기반 모델의 경우)
+                if from_realtime and self.skip_realtime_prediction:
+                    return
+                    
                 features = await self.calculate_technical_features(symbol)
                 if features is not None:
                     new_prediction = await self.predict_stock(symbol, features)
                     if new_prediction:
                         self.predictions[symbol] = new_prediction
                         prediction_info = new_prediction
-                    # 새 예측에 실패해도 기존 예측 계속 사용
                 
             # 예측 결과 해석
             action = prediction_info["action"]
             action_prob = prediction_info["action_prob"]
-            action_weight = prediction_info["action_weight"]
+            action_weight = await self.calculate_independent_weight(symbol)
             
             # 보유 여부 확인
             is_holding = self.is_holding(symbol)
@@ -745,11 +727,17 @@ class DRLUTransTradingModel(BaseTradingModel):
                 # 그 외의 경우 기존 신호 유지
                 return
             
-            # 실시간 가격 기반 매매 신호 생성
+            # 실시간 환경에서는 신호 생성 조건을 더 엄격하게 적용할 수 있음
+            if from_realtime:
+                required_confidence = self.confidence_threshold
+                if self.realtime_confidence_threshold > self.confidence_threshold:
+                    required_confidence = self.realtime_confidence_threshold
+            else:
+                required_confidence = self.confidence_threshold
             
             # 1. 매도 신호 (현재 보유 중인 종목만)
             if action == 2 and is_holding:
-                if action_prob >= self.confidence_threshold and action_weight >= self.weight_threshold:
+                if action_prob >= required_confidence and action_weight >= self.weight_threshold:
                     # 매도 신호 생성
                     self.trading_signals[symbol] = {
                         "action": action,
@@ -758,13 +746,23 @@ class DRLUTransTradingModel(BaseTradingModel):
                         "price": price,
                         "confidence": action_prob,
                         "value": prediction_info["state_value"],
-                        "timestamp": now
+                        "timestamp": now,
+                        "source": "realtime" if from_realtime else "batch"
                     }
-                    logger.info(f"실시간 매도 신호 생성: {symbol}, 가격={price}, 확률={action_prob:.4f}, 가중치={action_weight:.4f}")
+                    log_msg = "실시간" if from_realtime else "일괄"
+                    logger.info(f"{log_msg} 매도 신호 생성: {symbol}, 가격={price}, 확률={action_prob:.4f}, 가중치={action_weight:.4f}")
             
             # 2. 매수 신호 (현재 미보유 종목만)
             elif action == 1 and not is_holding:
-                if action_prob >= self.confidence_threshold and action_weight >= self.weight_threshold:
+                # 일일 매수 신호 제한 확인
+                if self.daily_buy_signals_count >= self.max_daily_buy_signals:
+                    # 실시간과 일괄 예측에 따라 다른 임계값 적용 가능
+                    exception_threshold = 0.85 if from_realtime else 0.8
+                    if action_prob < exception_threshold:
+                        logger.debug(f"일일 매수 신호 제한({self.max_daily_buy_signals}개)에 도달, 신호 생성 보류: {symbol}")
+                        return
+                
+                if action_prob >= required_confidence and action_weight >= self.weight_threshold:
                     # 매수 신호 생성
                     self.trading_signals[symbol] = {
                         "action": action,
@@ -773,12 +771,56 @@ class DRLUTransTradingModel(BaseTradingModel):
                         "price": price,
                         "confidence": action_prob,
                         "value": prediction_info["state_value"],
-                        "timestamp": now
+                        "timestamp": now,
+                        "source": "realtime" if from_realtime else "batch"
                     }
-                    logger.info(f"실시간 매수 신호 생성: {symbol}, 가격={price}, 확률={action_prob:.4f}, 가중치={action_weight:.4f}")
+                    log_msg = "실시간" if from_realtime else "일괄"
+                    logger.info(f"{log_msg} 매수 신호 생성: {symbol}, 가격={price}, 확률={action_prob:.4f}, 가중치={action_weight:.4f}")
+                    
+                    # 일일 매수 신호 카운트 증가
+                    self.daily_buy_signals_count += 1
+        
+        except Exception as e:
+            logger.error(f"가격 처리 중 오류: {str(e)}", exc_info=True)
+    
+    # process_single_prediction 메서드 수정 - 공통 메서드 사용
+    async def process_single_prediction(self, symbol):
+        """
+        단일 종목 예측 및 매매 신호 생성
+        내부적으로 _process_price_update 공통 메서드 활용
+        """
+        try:
+            # 특성 계산
+            features = await self.calculate_technical_features(symbol)
+            if features is None:
+                return
+            
+            # 예측 수행
+            prediction = await self.predict_stock(symbol, features)
+            if prediction is None:
+                return
+            
+            # 예측 결과 저장
+            self.predictions[symbol] = prediction
+            
+            # 현재가 가져오기
+            current_price = self.stock_cache.get_price(symbol) if self.stock_cache else 0
+            if current_price <= 0:
+                logger.warning(f"종목 {symbol} 현재가를 가져올 수 없습니다.")
+                return
+            
+            # 일일 매수 신호 제한 확인 및 필요시 카운터 리셋
+            current_date = datetime.now().date()
+            if current_date != self.last_reset_date:
+                self.daily_buy_signals_count = 0
+                self.last_reset_date = current_date
+                logger.info(f"일일 매수 신호 카운터 리셋 (날짜 변경: {current_date})")
+            
+            # 공통 로직 호출 - from_realtime=False로 일괄 예측임을 표시
+            await self._process_price_update(symbol, current_price, from_realtime=False)
             
         except Exception as e:
-            logger.error(f"실시간 가격 처리 중 오류: {str(e)}", exc_info=True)
+            logger.error(f"종목 {symbol} 예측 처리 중 오류: {str(e)}", exc_info=True)
     
     async def monitor_signals(self):
         """매매 신호 주기적 모니터링 및 처리"""
@@ -786,7 +828,7 @@ class DRLUTransTradingModel(BaseTradingModel):
         
         while self.is_running:
             try:
-                # 1분마다 매매 신호 확인
+                # 60초마다 매매 신호 확인 (원래 주기 유지)
                 await asyncio.sleep(60)
                 
                 # 계좌 정보 동기화 (백엔드에서 가져옴)
@@ -798,6 +840,12 @@ class DRLUTransTradingModel(BaseTradingModel):
                 
                 # 매매 신호 로깅
                 if self.trading_signals:
+                    # 출처별로 신호 카운트
+                    batch_signals = [v for v in self.trading_signals.values() if v.get("source") == "batch"]
+                    realtime_signals = [v for v in self.trading_signals.values() if v.get("source") == "realtime"]
+                    unknown_signals = [v for v in self.trading_signals.values() if "source" not in v]
+                    
+                    # 타입별로 신호 카운트
                     signal_counts = {
                         "buy": sum(1 for v in self.trading_signals.values() if v["action"] == 1),
                         "sell": sum(1 for v in self.trading_signals.values() if v["action"] == 2),
@@ -812,21 +860,179 @@ class DRLUTransTradingModel(BaseTradingModel):
                         avg_confidence[action_name] = sum(v["confidence"] for v in signals) / max(1, len(signals))
                     
                     logger.info(f"현재 DRL-UTrans 매매 신호: " +
-                              f"매수={signal_counts['buy']}개(신뢰도 {avg_confidence['buy']:.2f}), " +
-                              f"매도={signal_counts['sell']}개(신뢰도 {avg_confidence['sell']:.2f}), " +
-                              f"홀딩={signal_counts['hold']}개(신뢰도 {avg_confidence['hold']:.2f})")
+                            f"매수={signal_counts['buy']}개(신뢰도 {avg_confidence['buy']:.2f}), " +
+                            f"매도={signal_counts['sell']}개(신뢰도 {avg_confidence['sell']:.2f})")
+                            
+                    logger.debug(f"신호 출처: 일괄예측={len(batch_signals)}개, 실시간={len(realtime_signals)}개, 미분류={len(unknown_signals)}개")
                 
-                # 오래된 신호 제거 (4시간 이상 경과)
+                # 오래된 신호 제거 (4.5시간 이상 경과)
                 now = datetime.now()
                 for symbol, signal_info in list(self.trading_signals.items()):
                     timestamp = signal_info["timestamp"]
-                    if (now - timestamp).total_seconds() > 14400:  # 4시간
+                    if (now - timestamp).total_seconds() > 16200:  # 4.5시간
                         del self.trading_signals[symbol]
-                        logger.debug(f"종목 {symbol}의 오래된 신호 제거 (4시간 경과)")
+                        logger.debug(f"종목 {symbol}의 오래된 신호 제거 (4.5시간 경과)")
                 
             except Exception as e:
                 logger.error(f"매매 신호 모니터링 중 오류: {str(e)}")
                 await asyncio.sleep(30)
+
+    async def calculate_independent_weight(self, symbol):
+        """
+        기술적 지표에 기반한 독립적인 가중치 계산
+        신뢰도(action_prob)와는 별개로 독립적인 지표로 사용
+        """
+        try:
+            # 차트 데이터 가져오기
+            if not self.stock_cache:
+                return 0.5  # 기본값
+                
+            chart_data = self.stock_cache.get_chart_data(symbol)
+            if not chart_data or len(chart_data) < 30:
+                return 0.5  # 데이터 부족 시 기본값
+                
+            # 데이터프레임 변환
+            df = pd.DataFrame(chart_data)
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values(by='date')
+            
+            # 숫자형 데이터로 변환
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in numeric_columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # NaN 값 처리
+            df = df.ffill().bfill()
+            
+            # 1. 추세 분석 (20%)
+            # - 단기, 중기, 장기 이동평균선 방향
+            df['ma5'] = df['close'].rolling(window=5).mean()
+            df['ma20'] = df['close'].rolling(window=20).mean()
+            df['ma60'] = df['close'].rolling(window=60).mean()
+            
+            # 이동평균선 방향 (상승=1, 하락=-1)
+            ma5_direction = 1 if df['ma5'].iloc[-1] > df['ma5'].iloc[-2] else -1
+            ma20_direction = 1 if df['ma20'].iloc[-1] > df['ma20'].iloc[-2] else -1
+            ma60_direction = 1 if df['ma60'].iloc[-1] > df['ma60'].iloc[-3] else -1
+            
+            # 이동평균선 배열 (황금 십자 등)
+            ma_alignment = 0
+            if df['ma5'].iloc[-1] > df['ma20'].iloc[-1] > df['ma60'].iloc[-1]:
+                ma_alignment = 1  # 완전한 상승 배열
+            elif df['ma5'].iloc[-1] < df['ma20'].iloc[-1] < df['ma60'].iloc[-1]:
+                ma_alignment = -1  # 완전한 하락 배열
+            
+            # 종합 추세 점수 (-1~1 범위)
+            trend_score = (ma5_direction * 0.5 + ma20_direction * 0.3 + ma60_direction * 0.2 + ma_alignment) / 2
+            
+            # 2. 모멘텀 분석 (30%)
+            # - RSI
+            delta = df['close'].diff()
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
+            avg_gain = gain.rolling(window=14).mean()
+            avg_loss = loss.rolling(window=14).mean()
+            rs = avg_gain / avg_loss.replace(0, 0.001)  # 0으로 나누기 방지
+            df['rsi'] = 100 - (100 / (1 + rs))
+            
+            # RSI 점수 변환 (0~100 -> -1~1, 중앙값 50)
+            # 70 이상은 과매수, 30 이하는 과매도
+            rsi_value = df['rsi'].iloc[-1]
+            if rsi_value > 70:
+                rsi_score = (70 - rsi_value) / 30  # 70 초과시 음수 (과매수 상태)
+            elif rsi_value < 30:
+                rsi_score = (30 - rsi_value) / 30  # 30 미만시 음수 (과매도 상태)
+            else:
+                rsi_score = (rsi_value - 50) / 20  # 30~70 사이는 -1~1로 변환
+            
+            # MACD
+            df['ema12'] = df['close'].ewm(span=12, adjust=False).mean()
+            df['ema26'] = df['close'].ewm(span=26, adjust=False).mean()
+            df['macd'] = df['ema12'] - df['ema26']
+            df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+            df['macd_hist'] = df['macd'] - df['macd_signal']
+            
+            # MACD 히스토그램 방향 및 크기
+            macd_hist = df['macd_hist'].iloc[-1]
+            macd_hist_prev = df['macd_hist'].iloc[-2]
+            macd_direction = macd_hist - macd_hist_prev
+            
+            # MACD 히스토그램 점수 (-1~1)
+            macd_score = min(1, max(-1, macd_hist / abs(df['macd'].mean()) * 3))
+            
+            # 모멘텀 종합 점수
+            momentum_score = rsi_score * 0.5 + macd_score * 0.5
+            
+            # 3. 변동성 분석 (20%)
+            # - 볼린저 밴드
+            df['std20'] = df['close'].rolling(window=20).std()
+            df['upper_band'] = df['ma20'] + (df['std20'] * 2)
+            df['lower_band'] = df['ma20'] - (df['std20'] * 2)
+            
+            # 볼린저 밴드 내 위치 (0~1)
+            bb_range = df['upper_band'].iloc[-1] - df['lower_band'].iloc[-1]
+            if bb_range > 0:
+                bb_position = (df['close'].iloc[-1] - df['lower_band'].iloc[-1]) / bb_range
+            else:
+                bb_position = 0.5
+            
+            # 볼린저 밴드 폭 (표준화)
+            bb_width = bb_range / df['ma20'].iloc[-1]
+            bb_width_avg = df['std20'].rolling(window=20).mean().iloc[-1] * 4 / df['ma20'].iloc[-1]
+            
+            # 밴드 상대 폭 (평균 대비)
+            relative_width = bb_width / bb_width_avg if bb_width_avg > 0 else 1
+            
+            # 변동성 점수 (-1~1)
+            # 밴드가 좁아지면 양수, 넓어지면 음수
+            volatility_score = (1 - min(2, relative_width)) * 0.5
+            
+            # 위치에 따른 조정 (상단 가까우면 음수, 하단 가까우면 양수)
+            position_score = (0.5 - bb_position) * 2
+            
+            # 변동성 종합 점수
+            volatility_score = volatility_score + position_score * 0.5
+            
+            # 4. 거래량 분석 (30%)
+            # - 거래량 증가율
+            df['vol_ma20'] = df['volume'].rolling(window=20).mean()
+            volume_ratio = df['volume'].iloc[-1] / df['vol_ma20'].iloc[-1] if df['vol_ma20'].iloc[-1] > 0 else 1
+            
+            # 거래량 방향성 (가격과 일치 여부)
+            price_up = df['close'].iloc[-1] > df['close'].iloc[-2]
+            
+            # 거래량 점수 계산
+            if price_up:
+                # 상승 + 거래량 증가 = 강한 긍정
+                volume_score = min(1, (volume_ratio - 1) * 2) if volume_ratio > 1 else 0
+            else:
+                # 하락 + 거래량 증가 = 강한 부정
+                volume_score = max(-1, (1 - volume_ratio) * 2) if volume_ratio > 1 else 0
+            
+            # 5. 종합 가중치 계산 (0~1 범위로 정규화)
+            final_score = (
+                trend_score * 0.2 +
+                momentum_score * 0.3 +
+                volatility_score * 0.2 +
+                volume_score * 0.3
+            )
+            
+            # -1~1 범위에서 0~1 범위로 변환
+            normalized_weight = (final_score + 1) / 2
+            
+            # 가중치 범위 조정 (0.3~0.8)
+            adjusted_weight = 0.3 + (normalized_weight * 0.5)
+            
+            # 결과 로깅
+            logger.debug(f"{symbol} 기술적 가중치: {adjusted_weight:.4f} " +
+                    f"[추세={trend_score:.2f}, 모멘텀={momentum_score:.2f}, " +
+                    f"변동성={volatility_score:.2f}, 거래량={volume_score:.2f}]")
+            
+            return adjusted_weight
+            
+        except Exception as e:
+            logger.error(f"독립 가중치 계산 오류 ({symbol}): {str(e)}", exc_info=True)
+            return 0.5  # 오류 발생시 중간값 반환
     
     def is_holding(self, symbol):
         """종목 보유 여부 확인"""
@@ -847,7 +1053,7 @@ class DRLUTransTradingModel(BaseTradingModel):
       
     
     async def get_trade_decisions(self, prices: Dict[str, float] = None) -> List[Dict[str, Any]]:
-        """매매 의사결정 목록 반환"""
+        """매매 의사결정 목록 반환 - 균형 잡힌 매수/매도 로직"""
         if not self.is_running:
             logger.warning("DRL-UTrans 트레이딩 모델이 실행 중이지 않습니다.")
             return []
@@ -876,12 +1082,12 @@ class DRLUTransTradingModel(BaseTradingModel):
             for symbol, signal_info in list(self.trading_signals.items()):
                 action = signal_info["action"]
                 
-                # 신호 유효 시간 (4시간) 체크
+                # 신호 유효 시간 (4.5시간으로 조정) 체크
                 timestamp = signal_info["timestamp"]
-                if (now - timestamp).total_seconds() > 14400:  # 4시간
+                if (now - timestamp).total_seconds() > 16200:  # 4.5시간
                     # 오래된 신호 제거
                     del self.trading_signals[symbol]
-                    logger.debug(f"종목 {symbol}의 오래된 신호 제거 (4시간 경과)")
+                    logger.debug(f"종목 {symbol}의 오래된 신호 제거 (4.5시간 경과)")
                     continue
                 
                 # 시그널 타입별로 분류
@@ -914,14 +1120,29 @@ class DRLUTransTradingModel(BaseTradingModel):
                     continue
                 
                 # 매도할 수량 계산 (비중에 따라 결정)
-                # weight는 0~1 사이의 값 (0.3 이상이어야 신호 생성)
                 sell_quantity = max(1, int(total_quantity * weight))
                 
-                # 매도 결정 추가 (시장가 거래이므로 종목과 수량만 포함)
+                # 현재가 확인
+                current_price = 0
+                if prices and symbol in prices:
+                    current_price = prices[symbol]
+                elif self.stock_cache:
+                    current_price = self.stock_cache.get_price(symbol)
+                    
+                if not current_price or current_price <= 0:
+                    logger.warning(f"종목 {symbol}의 가격 정보 없음, 매도 보류")
+                    current_price = 0  # 가격 정보가 없어도 매도는 진행
+                
+                # 매도 결정 추가
                 decision = {
                     "symbol": symbol,
                     "action": "sell",
-                    "quantity": sell_quantity
+                    "quantity": sell_quantity,
+                    "price": current_price,
+                    "reason": f"DRL-UTrans 모델 매도 신호 (신뢰도: {confidence:.2f}, 가중치: {weight:.2f})",
+                    "confidence": confidence,
+                    "weight": weight,
+                    "timestamp": now.isoformat()
                 }
                 decisions.append(decision)
                 
@@ -933,11 +1154,11 @@ class DRLUTransTradingModel(BaseTradingModel):
                 
                 # 신호 제거
                 del self.trading_signals[symbol]
-                logger.info(f"매도 결정: {symbol}, {sell_quantity}주, 이유: DRL-UTrans 모델 매도 신호")
+                logger.info(f"매도 결정: {symbol}, {sell_quantity}주, 가격: {current_price if current_price > 0 else '시장가'}, 신뢰도: {confidence:.2f}")
             
             # 2. 매수 신호 처리 (신뢰도 기준 정렬했으므로 순서대로 처리)
-            # 보수적인 매수를 위해 상위 5개 신호만 처리 (3->5로 증가)
-            max_buy_signals = 5
+            # 균형 잡힌 매수를 위해 상위 7개 신호 처리 (5개는 너무 적고, 10개는 너무 많음)
+            max_buy_signals = 7
             buy_count = 0
             
             for symbol, signal_info in buy_signals:
@@ -948,11 +1169,14 @@ class DRLUTransTradingModel(BaseTradingModel):
                     
                 # 현재 보유 종목 수 확인
                 if len(self.positions) >= self.max_positions:
-                    logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
-                    continue
+                    # 매우 강한 신호(0.9+)만 예외 허용
+                    if signal_info["confidence"] < 0.9:
+                        logger.debug(f"최대 보유 종목 수({self.max_positions}) 도달, 매수 보류: {symbol}")
+                        continue
                 
-                # 충분한 현금 확인
-                if self.cash_balance < self.trade_amount_per_stock:
+                # 충분한 현금 확인 - 균형 잡힌 매수 금액 기준 (80%)
+                min_required_cash = self.trade_amount_per_stock * 0.8
+                if self.cash_balance < min_required_cash:
                     logger.debug(f"현금 부족({self.cash_balance}), 매수 보류: {symbol}")
                     continue
                 
@@ -966,22 +1190,10 @@ class DRLUTransTradingModel(BaseTradingModel):
                 confidence = signal_info["confidence"]
                 weight = signal_info["weight"]
                 
-                # 보수적인 매수를 위해 신호 필터링 강화
-                # 매수 신호의 신뢰도와 가중치가 더 높은 기준 적용
-                if confidence < 0.75:  # 신뢰도 임계값 0.6 -> 0.75로 상향
-                    logger.debug(f"종목 {symbol}의 신뢰도가 낮음({confidence:.2f}), 매수 보류")
-                    continue
-                    
-                if weight < 0.5:  # 가중치 임계값 0.3 -> 0.5로 상향
-                    logger.debug(f"종목 {symbol}의 가중치가 낮음({weight:.2f}), 매수 보류")
-                    continue
-                
                 # 현재가 확인
                 current_price = 0
-                # 제공된 prices 딕셔너리에서 조회
                 if prices and symbol in prices:
                     current_price = prices[symbol]
-                # 또는 stock_cache에서 조회
                 elif self.stock_cache:
                     current_price = self.stock_cache.get_price(symbol)
                         
@@ -989,8 +1201,17 @@ class DRLUTransTradingModel(BaseTradingModel):
                     logger.warning(f"종목 {symbol}의 가격 정보 없음, 매수 보류")
                     continue
                 
-                # 매수 금액 계산 (비중에 따라 결정)
-                buy_amount = self.trade_amount_per_stock * weight
+                # 매수 금액 계산 (신뢰도에 따른 조정)
+                buy_amount_multiplier = 1.0
+                if confidence >= 0.85:
+                    buy_amount_multiplier = 1.1  # 높은 신뢰도는 10% 추가 투자
+                
+                buy_amount = self.trade_amount_per_stock * weight * buy_amount_multiplier
+                
+                # 남은 현금 상황에 따라 조정
+                if buy_amount > self.cash_balance * 0.4:  # 잔액의 40% 이상 사용 방지
+                    buy_amount = self.cash_balance * 0.4
+                    logger.debug(f"종목 {symbol} 매수 금액 조정: {buy_amount:.0f}원 (잔액의 40%)")
                 
                 # 매수 수량 계산
                 quantity = int(buy_amount / current_price)
@@ -998,11 +1219,16 @@ class DRLUTransTradingModel(BaseTradingModel):
                     logger.warning(f"종목 {symbol}의 매수 수량이 0, 매수 보류")
                     continue
                 
-                # 매수 결정 추가 (시장가 거래이므로 종목과 수량만 포함)
+                # 매수 결정 추가
                 decision = {
                     "symbol": symbol,
                     "action": "buy",
-                    "quantity": quantity
+                    "quantity": quantity,
+                    "price": current_price,
+                    "reason": f"DRL-UTrans 모델 매수 신호 (신뢰도: {confidence:.2f}, 가중치: {weight:.2f})",
+                    "confidence": confidence,
+                    "weight": weight,
+                    "timestamp": now.isoformat()
                 }
                 decisions.append(decision)
                 
@@ -1014,15 +1240,16 @@ class DRLUTransTradingModel(BaseTradingModel):
                 
                 # 신호 제거
                 del self.trading_signals[symbol]
-                logger.info(f"매수 결정: {symbol}, {quantity}주, 이유: DRL-UTrans 모델 매수 신호")
+                logger.info(f"매수 결정: {symbol}, {quantity}주, 가격: {current_price:.2f}, 신뢰도: {confidence:.2f}")
                 
                 # 처리된 매수 신호 카운트 증가
                 buy_count += 1
                 
-                # 자금 고갈 시 종료
+                # 자금 고갈 시 종료 - 최소 예비금 25%
                 self.cash_balance -= (quantity * current_price)
-                if self.cash_balance < self.trade_amount_per_stock:
-                    logger.debug(f"가용 자금 소진, 매수 신호 처리 중단 (잔액: {self.cash_balance})")
+                min_reserve = self.cash_balance * 0.25  # 전체 자금의 25%를 예비금으로 유지
+                if self.cash_balance < min_reserve:
+                    logger.debug(f"예비금 수준에 도달, 매수 신호 처리 중단 (잔액: {self.cash_balance})")
                     break
             
             return decisions
