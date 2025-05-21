@@ -2,12 +2,14 @@ export interface TotalAssetRanking {
   rank: number;
   nickname: string;
   totalAsset: number;
+  memberId: number;
 }
 
 export interface ReturnRateRanking {
   rank: number;
   nickname: string;
   returnRate: number;
+  memberId: number;
 }
 
 export interface TotalAssetRankingResponse {

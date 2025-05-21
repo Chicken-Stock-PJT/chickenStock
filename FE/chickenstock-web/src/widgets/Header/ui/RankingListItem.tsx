@@ -2,6 +2,7 @@
 import React from "react";
 import { User, Bot } from "lucide-react";
 import { TotalAssetRanking, ReturnRateRanking, RankingType } from "../model/types";
+import { useNavigate } from "react-router-dom";
 
 interface RankingListItemProps {
   ranking: TotalAssetRanking | ReturnRateRanking;
@@ -16,6 +17,7 @@ const isAIBot = (nickname: string) => {
 };
 
 const RankingListItem: React.FC<RankingListItemProps> = ({ ranking, isMyRanking, rankingType }) => {
+  const navigate = useNavigate();
   const isBot = isAIBot(ranking.nickname);
 
   return (
@@ -29,6 +31,11 @@ const RankingListItem: React.FC<RankingListItemProps> = ({ ranking, isMyRanking,
               ? "bg-gradient-to-r from-yellow-50 to-yellow-100 shadow-yellow-100"
               : "bg-white"
       }`}
+      onClick={() => {
+        void navigate(`/dashboard/${ranking.memberId}`, {
+          state: { name: ranking.nickname },
+        });
+      }}
     >
       <div className="flex items-center gap-3">
         <div

@@ -2,22 +2,22 @@ import { MemberDashboardResponse } from "@/features/dashboard/model/types";
 import { TransactionResponse } from "@/features/mypage/model/types";
 import apiClient from "@/shared/api/axios";
 
-export const getAiBotDashboard = async (botId: number): Promise<MemberDashboardResponse> => {
-  const response = await apiClient.get<MemberDashboardResponse>(`/members/${botId}/dashboard`);
+export const getMemberDashboard = async (memberId: number): Promise<MemberDashboardResponse> => {
+  const response = await apiClient.get<MemberDashboardResponse>(`/members/${memberId}/dashboard`);
   return response.data;
 };
 
-export const getAiTradeHistory = async ({
+export const getMemberTradeHistory = async ({
   size,
   cursor,
-  botId,
+  memberId,
 }: {
   size: number;
   cursor: string;
-  botId: number;
+  memberId: number;
 }): Promise<TransactionResponse> => {
   const response = await apiClient.get<TransactionResponse>(
-    `/trade-histories/${botId}?size=${size}` + (cursor.length > 0 ? `&cursor=${cursor}` : ""),
+    `/trade-histories/${memberId}?size=${size}` + (cursor.length > 0 ? `&cursor=${cursor}` : ""),
   );
 
   return response.data;

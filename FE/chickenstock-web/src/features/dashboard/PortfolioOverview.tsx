@@ -90,7 +90,9 @@ const PortfolioOverview = ({
                   <span className="mr-2 inline-block size-3 rounded-sm bg-blue-500"></span>
                   <span className="text-gray-600">가용 현금</span>
                 </div>
-                <div className="font-semibold">{memberMoney.toLocaleString()}원</div>
+                <div className="text-xs font-semibold md:text-sm">
+                  {memberMoney.toLocaleString()}원
+                </div>
                 <div className="text-xs text-gray-500">
                   {((memberMoney / totalAsset) * 100).toFixed(1)}%
                 </div>
@@ -100,7 +102,9 @@ const PortfolioOverview = ({
                   <span className="mr-2 inline-block size-3 rounded-sm bg-[#FDD141]"></span>
                   <span className="text-gray-600">매수 대기</span>
                 </div>
-                <div className="font-semibold">{pendingOrderAmount.toLocaleString()}원</div>
+                <div className="text-xs font-semibold md:text-sm">
+                  {pendingOrderAmount.toLocaleString()}원
+                </div>
                 <div className="text-xs text-gray-500">
                   {((pendingOrderAmount / totalAsset) * 100).toFixed(1)}%
                 </div>
@@ -110,7 +114,9 @@ const PortfolioOverview = ({
                   <span className="mr-2 inline-block size-3 rounded-sm bg-green-500"></span>
                   <span className="text-gray-600">주식</span>
                 </div>
-                <div className="font-semibold">{stockValuation.toLocaleString()}원</div>
+                <div className="text-xs font-semibold md:text-sm">
+                  {stockValuation.toLocaleString()}원
+                </div>
                 <div className="text-xs text-gray-500">
                   {((stockValuation / totalAsset) * 100).toFixed(1)}%
                 </div>
@@ -125,7 +131,7 @@ const PortfolioOverview = ({
           <CardTitle>금일 매매 활동</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="mb-5 grid grid-cols-2 gap-6">
+          <div className="mb-5 grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
               <div className="text-sm font-medium text-gray-600">거래 금액</div>
               <div className="text-2xl font-bold text-gray-900">
@@ -133,7 +139,7 @@ const PortfolioOverview = ({
               </div>
             </div>
             <div>
-              <div className="text-sm font-medium text-gray-600">금일 수익</div>
+              <div className="text-sm font-medium text-gray-600">금일 실현 수익</div>
               <div
                 className={`flex items-center gap-2 text-2xl font-bold ${
                   todayProfitLoss > 0
