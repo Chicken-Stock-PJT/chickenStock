@@ -13,7 +13,11 @@ export type MessageType =
   | "getNotifications"
   | "notificationList"
   | "markAsRead"
-  | "notificationRead";
+  | "notificationRead"
+  | "getUserCount"
+  | "userCount"
+  | "markAllAsRead"
+  | "allNotificationsRead";
 
 // 베이스 메시지
 export interface BaseMessage {
@@ -123,6 +127,30 @@ export interface PongMessage extends BaseMessage {
   timestamp: number;
 }
 
+// 사용자 수 요청
+export interface GetUserCountMessage extends BaseMessage {
+  type: "getUserCount";
+}
+
+// 사용자 수 응답/업데이트
+export interface UserCountMessage extends Omit<BaseMessage, "timestamp"> {
+  type: "userCount";
+  authenticatedCount: number;
+  totalCount: number;
+  timestamp: string;
+}
+
+// 모든 알림 읽음 처리 요청
+export interface MarkAllAsReadMessage extends BaseMessage {
+  type: "markAllAsRead";
+}
+
+// 모든 알림 읽음 처리 응답
+export interface AllNotificationsReadMessage extends BaseMessage {
+  type: "allNotificationsRead";
+  notificationIds: number[];
+  success: boolean;
+}
 // 유니온 타입
 export type WebSocketMessage =
   | ConnectedMessage
@@ -139,7 +167,11 @@ export type WebSocketMessage =
   | GetNotificationsMessage
   | NotificationListMessage
   | MarkAsReadMessage
-  | NotificationReadMessage;
+  | NotificationReadMessage
+  | GetUserCountMessage
+  | UserCountMessage
+  | MarkAllAsReadMessage
+  | AllNotificationsReadMessage;
 
 // 스토어 상태
 export interface ChatNotificationState {
@@ -154,6 +186,9 @@ export interface ChatNotificationState {
     nickname: string;
     memberId: number;
   } | null;
+  authenticatedCount: number;
+  totalCount: number;
+  lastCountUpdate: string;
 
   // Actions
   setOpen: (isOpen: boolean) => void;
@@ -168,4 +203,8 @@ export interface ChatNotificationState {
   removeUser: (nickname: string) => void;
   setCurrentUser: (user: { nickname: string; memberId: number } | null) => void;
   reset: () => void;
+  setUserCount: (authenticatedCount: number, totalCount: number, timestamp: string) => void;
+  getUserCount: () => void;
+  markAllNotificationsAsRead: () => void;
+  markMultipleNotificationsAsRead: (notificationIds: number[]) => void; // 추가
 }

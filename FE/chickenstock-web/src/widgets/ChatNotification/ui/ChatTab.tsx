@@ -31,6 +31,9 @@ export default function ChatTab() {
       <div className="bg-white shadow-sm">
         <div className="px-4 py-3">
           <h3 className="text-center font-medium text-gray-900">실시간 채팅방</h3>
+          <p className="text-center text-xs text-gray-500">
+            {useChatNotificationStore((state) => state.authenticatedCount)}명 접속 중
+          </p>
         </div>
 
         {/* 연결 상태 */}
