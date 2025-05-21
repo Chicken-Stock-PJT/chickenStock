@@ -2,6 +2,8 @@ package realClassOne.chickenStock.chat.websocket.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -22,9 +24,13 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 @Component
 @Slf4j
@@ -49,15 +55,47 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     // 세션 ID -> 회원 ID
     private final Map<String, Long> sessionMemberMap = new ConcurrentHashMap<>();
 
+    private final Map<String, Long> lastPingTimeMap = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    // 클래스 초기화 시 스케줄러 시작
+    @PostConstruct
+    public void init() {
+        // 30초마다 비활성 연결 검사
+        scheduler.scheduleAtFixedRate(this::checkInactiveConnections, 30, 30, TimeUnit.SECONDS);
+    }
+
+    // 애플리케이션 종료 시 스케줄러 종료
+    @PreDestroy
+    public void destroy() {
+        scheduler.shutdown();
+    }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        sessions.put(session.getId(), session);
-        log.info("웹소켓 연결 성공: sessionId={}", session.getId());
+        // 이전 같은 ID를 가진 세션이 있는지 확인
+        String sessionId = session.getId();
+//        log.info("웹소켓 연결 시도: sessionId={}", sessionId);
+
+        // 기존 연결된 세션이 있으면 제거
+        WebSocketSession existingSession = sessions.get(sessionId);
+        if (existingSession != null && existingSession != session) {
+            try {
+//                log.info("이미 존재하는 세션 교체: sessionId={}", sessionId);
+                existingSession.close(new CloseStatus(CloseStatus.SESSION_NOT_RELIABLE.getCode(), "새 연결로 대체"));
+            } catch (Exception e) {
+                log.warn("기존 세션 종료 중 오류 발생: {}", e.getMessage());
+            }
+        }
+
+        sessions.put(sessionId, session);
+        lastPingTimeMap.put(sessionId, System.currentTimeMillis()); // 핑 시간 초기화
+
 
         // 연결 성공 메시지 전송
         sendConnectedMessage(session);
 
-        // 새 사용자 연결 후 현재 연결된 사용자 수를 브로드캐스트
+        // 현재 연결된 사용자 수를 브로드캐스트
         broadcastActiveUserCount();
     }
 
@@ -143,10 +181,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
                     // TextMessage 생성 및 전송
                     TextMessage textMessage = new TextMessage(message);
-                    log.debug("TextMessage 생성 완료: length={}", textMessage.getPayloadLength());
+//                    log.debug("TextMessage 생성 완료: length={}", textMessage.getPayloadLength());
 
                     session.sendMessage(textMessage);
-                    log.info("회원 ID {}에게 메시지 전송 성공", memberId);
+//                    log.info("회원 ID {}에게 메시지 전송 성공", memberId);
                 } catch (IOException e) {
                     log.error("메시지 전송 중 IO 오류 발생: memberId={}, error={}", memberId, e.getMessage(), e);
                 } catch (Exception e) {
@@ -287,7 +325,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             // 읽음 처리 응답 전송
             sendAllNotificationsReadResponse(session, readNotificationIds, true);
 
-            log.info("회원 ID {}의 모든 알림({}) 읽음 처리 완료", memberId, unreadNotifications.size());
+//            log.info("회원 ID {}의 모든 알림({}) 읽음 처리 완료", memberId, unreadNotifications.size());
         } catch (Exception e) {
             log.error("모든 알림 읽음 처리 중 오류 발생", e);
             sendErrorMessage(session, "모든 알림 읽음 처리 중 오류 발생: " + e.getMessage());
@@ -307,12 +345,69 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     // Ping 처리
     private void handlePing(WebSocketSession session) throws IOException {
+        // 마지막 핑 시간 업데이트
+        lastPingTimeMap.put(session.getId(), System.currentTimeMillis());
+
         Map<String, Object> pongMessage = Map.of(
                 "type", "pong",
-                "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter) // 🌐 [KST 적용]
+                "timestamp", ZonedDateTime.now(ZoneId.of("Asia/Seoul")).format(formatter)
         );
 
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(pongMessage)));
+    }
+
+    // 비활성 연결 검사 메서드
+    private void checkInactiveConnections() {
+        long currentTime = System.currentTimeMillis();
+        boolean needBroadcast = false;
+
+        // 세션 ID 목록 복사 (ConcurrentModificationException 방지)
+        List<String> sessionIds = new ArrayList<>(sessions.keySet());
+
+        for (String sessionId : sessionIds) {
+            // 마지막 핑 시간 확인
+            Long lastPingTime = lastPingTimeMap.get(sessionId);
+
+            // 60초 이상 핑이 없으면 연결이 끊긴 것으로 간주
+            if (lastPingTime == null || (currentTime - lastPingTime) > 60000) {
+                WebSocketSession session = sessions.get(sessionId);
+                if (session != null) {
+                    try {
+                        Long memberId = sessionMemberMap.get(sessionId);
+
+                        if (memberId != null) {
+                            memberSessions.remove(memberId);
+                            try {
+                                sendUserLeftMessage(memberId);
+                            } catch (IOException e) {
+                                log.error("사용자 퇴장 메시지 전송 실패: {}", e.getMessage());
+                            }
+                            log.info("비활성 사용자 제거: memberId={}", memberId);
+                        }
+
+                        sessions.remove(sessionId);
+                        sessionMemberMap.remove(sessionId);
+                        lastPingTimeMap.remove(sessionId);
+
+                        session.close(new CloseStatus(CloseStatus.SESSION_NOT_RELIABLE.getCode(), "연결 시간 초과"));
+                        needBroadcast = true;
+
+                        log.info("비활성 연결 종료: sessionId={}", sessionId);
+                    } catch (Exception e) {
+                        log.error("비활성 연결 종료 중 오류 발생: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+
+        // 연결이 변경된 경우에만 브로드캐스트
+        if (needBroadcast) {
+            try {
+                broadcastActiveUserCount();
+            } catch (Exception e) {
+                log.error("비활성 연결 정리 후 브로드캐스트 중 오류 발생: {}", e.getMessage());
+            }
+        }
     }
 
     // 현재 연결된 인증된 사용자 수를 모든 클라이언트에게 브로드캐스트
