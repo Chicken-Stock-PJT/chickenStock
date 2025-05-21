@@ -29,11 +29,6 @@ public class TradeHistoryController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") int size) {
 
-        // memberId 유효성 검증 - 1부터 4까지만 허용
-        if (memberId < 1 || memberId > 4) {
-            return ResponseEntity.badRequest().build();
-        }
-
         TradeHistoriesCursorResponse response = tradeHistoryService.getMemberTradeHistories(memberId, cursor, size);
         return ResponseEntity.ok(response);
     }
