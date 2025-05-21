@@ -356,7 +356,7 @@ async def initialize_service(strategy: TradingStrategy = TradingStrategy.ENVELOP
         return False
 
 async def trading_loop():
-    """주기적인 매매 처리 루프"""
+    """주기적인 매매 처리 루프 - 각 봇의 요청을 1초에 한 개씩 순차 처리"""
     global kiwoom_api, backend_client, bot_manager
     
     if not bot_manager:
@@ -370,8 +370,14 @@ async def trading_loop():
     last_trading_decision_time = datetime.now()
     
     # 타이머 설정 (초 단위)
-    ACCOUNT_UPDATE_INTERVAL = 30  # 계좌 정보 조회 간격 (30초)
-    TRADING_DECISION_INTERVAL = 60  # 거래 처리 간격 (60초)
+    ACCOUNT_UPDATE_INTERVAL = 10  # 계좌 정보 조회 간격 (10초)
+    TRADING_DECISION_INTERVAL = 30  # 거래 처리 간격 (60초)
+    
+    # 마지막 주문 처리 시간 추적
+    last_order_time = datetime.now() - timedelta(seconds=2)  # 초기에 바로 주문 가능하도록
+    
+    # 대기 중인 주문 큐 (모든 봇의 요청을 순차 처리하기 위한 큐)
+    order_queue = []
     
     while service_status["is_running"]:
         try:
@@ -381,7 +387,7 @@ async def trading_loop():
             # 실행 중인 봇 조회
             running_bots = bot_manager.get_running_bots()
             
-            # 30초마다 계좌 정보만 업데이트
+            # 10초마다 계좌 정보만 업데이트
             if (current_time - last_account_update_time).total_seconds() >= ACCOUNT_UPDATE_INTERVAL:
                 logger.info(f"계좌 정보 업데이트 시작 (실행 중인 봇 수: {len(running_bots)})")
                 
@@ -417,91 +423,149 @@ async def trading_loop():
                 # 마지막 계좌 업데이트 시간 갱신
                 last_account_update_time = current_time
             
-            # 60초마다 매매 결정 처리
+            # 60초마다 매매 결정 수집 - 실제 주문 처리는 순차적으로 진행
             if (current_time - last_trading_decision_time).total_seconds() >= TRADING_DECISION_INTERVAL:
-                logger.info(f"매매 결정 처리 시작 (실행 중인 봇 수: {len(running_bots)})")
+                logger.info(f"매매 결정 수집 시작 (실행 중인 봇 수: {len(running_bots)})")
                 
-                # 병렬 처리를 위한 태스크 리스트
-                trading_decision_tasks = []
-                
-                # 각 봇에 대한 매매 결정 처리 함수 정의
-                async def process_trading_decisions(email, bot):
-                    try:
-                        logger.info(f"봇 [{email}] 매매 결정 처리 시작 (전략: {bot.strategy})")
-                        
-                        if bot.trading_model:
-                            # 현재가 정보는 bot_stock_cache를 통해 가져오도록 수정
-                            prices = {}
-                            filtered_symbols = bot.bot_stock_cache.get_filtered_stocks()
-                            for symbol in filtered_symbols:
-                                price = bot.bot_stock_cache.get_price(symbol)
-                                if price:
-                                    prices[symbol] = price
+                # 모든 봇의 매매 결정을 수집하는 함수
+                async def collect_trading_decisions():
+                    all_decisions = []  # 모든 봇의 모든 매매 결정을 담을 리스트
+                    bot_decisions_count = {}  # 봇별 매매 결정 개수 추적
+                    
+                    for email, bot in running_bots.items():
+                        try:
+                            logger.info(f"봇 [{email}] 매매 결정 수집 시작 (전략: {bot.strategy})")
                             
-                            # 매매 결정 요청
-                            logger.info(f"봇 [{email}] 매매 결정 요청 중...")
-                            try:
-                                decisions = await bot.trading_model.get_trade_decisions(prices)
+                            if bot.trading_model:
+                                # 현재가 정보는 bot_stock_cache를 통해 가져오도록 수정
+                                prices = {}
+                                filtered_symbols = bot.bot_stock_cache.get_filtered_stocks()
+                                for symbol in filtered_symbols:
+                                    price = bot.bot_stock_cache.get_price(symbol)
+                                    if price:
+                                        prices[symbol] = price
                                 
-                                if decisions:
-                                    logger.info(f"봇 [{email}] 매매 결정: {len(decisions)}개")
-                                    for idx, decision in enumerate(decisions):
-                                        logger.info(f"봇 [{email}] 매매 결정 #{idx+1}: {decision}")
-                                else:
-                                    logger.info(f"봇 [{email}] 매매 결정: 없음")
-                                
-                                # 매매 결정이 있으면 봇 자신의 백엔드 클라이언트로 요청 전송
-                                for decision in decisions:
-                                    try:
-                                        symbol = decision.get("symbol")
-                                        action = decision.get("action")
-                                        quantity = decision.get("quantity", 0)
-                                        price = decision.get("price", 0)
-                                        
-                                        # 봇 자신의 백엔드 클라이언트를 통해 거래 요청 전송
-                                        if action.lower() == "buy":
-                                            logger.info(f"봇 [{email}] 매수 요청 시작: {symbol} {quantity}주, 가격: {price}")
-                                            result = await bot.backend_client.request_buy(symbol, quantity, price)
-                                            if result:
-                                                logger.info(f"봇 [{email}] 매수 요청 성공: {symbol} {quantity}주, 가격: {price}")
-                                            else:
-                                                logger.error(f"봇 [{email}] 매수 요청 실패: {symbol} {quantity}주, 가격: {price}")
-                                        
-                                        elif action.lower() == "sell":
-                                            logger.info(f"봇 [{email}] 매도 요청 시작: {symbol} {quantity}주, 가격: {price}")
-                                            result = await bot.backend_client.request_sell(symbol, quantity, price)
-                                            if result:
-                                                logger.info(f"봇 [{email}] 매도 요청 성공: {symbol} {quantity}주, 가격: {price}")
-                                            else:
-                                                logger.error(f"봇 [{email}] 매도 요청 실패: {symbol} {quantity}주, 가격: {price}")
+                                # 매매 결정 요청
+                                try:
+                                    decisions = await bot.trading_model.get_trade_decisions(prices)
                                     
-                                    except Exception as e:
-                                        logger.error(f"봇 [{email}]의 거래 요청 전송 중 오류: {str(e)}")
-                            except Exception as e:
-                                logger.error(f"봇 [{email}]의 매매 결정 처리 중 오류: {str(e)}")
-                        
-                        logger.info(f"봇 [{email}] 매매 결정 처리 완료")
-                    except Exception as e:
-                        logger.error(f"봇 [{email}]의 매매 결정 처리 중 오류: {str(e)}")
+                                    if decisions:
+                                        # 한 봇당 최대 처리할 매수 주문 제한
+                                        buy_decisions = [d for d in decisions if d.get('action', '').lower() == 'buy']
+                                        sell_decisions = [d for d in decisions if d.get('action', '').lower() == 'sell']
+                                        
+                                        # 최대 3개의 매수 주문만 허용 (신뢰도 기준 정렬)
+                                        buy_decisions.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+                                        buy_decisions = buy_decisions[:3]  # 상위 3개만 유지
+                                        
+                                        # 최종 결정 목록
+                                        limited_decisions = sell_decisions + buy_decisions
+                                        
+                                        logger.info(f"봇 [{email}] 매매 결정: {len(limited_decisions)}개 (원래: {len(decisions)}개, 제한 후: 매도 {len(sell_decisions)}개, 매수 {len(buy_decisions)}개)")
+                                        
+                                        # 각 결정에 봇 정보 추가 (이메일, backend_client 참조)
+                                        for decision in limited_decisions:
+                                            decision['bot_email'] = email
+                                            decision['bot_reference'] = bot
+                                        
+                                        # 봇별 결정 카운트 추적
+                                        bot_decisions_count[email] = len(limited_decisions)
+                                        
+                                        # 전체 결정 목록에 추가
+                                        all_decisions.extend(limited_decisions)
+                                    else:
+                                        logger.info(f"봇 [{email}] 매매 결정: 없음")
+                                except Exception as e:
+                                    logger.error(f"봇 [{email}]의 매매 결정 수집 중 오류: {str(e)}")
+                            
+                            logger.info(f"봇 [{email}] 매매 결정 수집 완료")
+                        except Exception as e:
+                            logger.error(f"봇 [{email}]의 매매 결정 수집 중 오류: {str(e)}")
+                    
+                    # 봇별 결정 카운트 요약 로깅
+                    if bot_decisions_count:
+                        decisions_summary = ", ".join([f"{email}: {count}개" for email, count in bot_decisions_count.items()])
+                        logger.info(f"봇별 매매 결정 수: {decisions_summary}")
+                    
+                    return all_decisions
                 
-                # 각 봇에 대한 매매 결정 태스크 생성
-                for email, bot in running_bots.items():
-                    trading_decision_tasks.append(process_trading_decisions(email, bot))
-                
-                # 모든 매매 결정 태스크를 병렬로 실행 (타임아웃 20초로 설정)
+                # 모든 봇의 매매 결정 수집
                 try:
-                    await asyncio.wait_for(asyncio.gather(*trading_decision_tasks), timeout=20.0)
-                    logger.info("모든 봇의 매매 결정 처리 완료")
-                except asyncio.TimeoutError:
-                    logger.warning("일부 봇의 매매 결정 처리가 시간 초과로 완료되지 않았습니다.")
+                    all_decisions = await collect_trading_decisions()
+                    
+                    # 매매 결정 정렬 (매도 먼저, 그 다음 매수 - 신뢰도 순)
+                    sell_decisions = [d for d in all_decisions if d.get('action', '').lower() == 'sell']
+                    buy_decisions = [d for d in all_decisions if d.get('action', '').lower() == 'buy']
+                    
+                    # 각각 신뢰도 순으로 정렬
+                    sell_decisions.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+                    buy_decisions.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+                    
+                    # 매도를 먼저 처리하도록 정렬된 결정 생성
+                    sorted_decisions = sell_decisions + buy_decisions
+                    
+                    if sorted_decisions:
+                        logger.info(f"총 {len(sorted_decisions)}개 매매 결정 수집 완료 (매도: {len(sell_decisions)}개, 매수: {len(buy_decisions)}개)")
+                        
+                        # 기존 대기 목록에 추가
+                        order_queue.extend(sorted_decisions)
+                        logger.info(f"현재 처리 대기 중인 주문: {len(order_queue)}개")
+                    else:
+                        logger.info("수집된 매매 결정 없음")
+                
                 except Exception as e:
-                    logger.error(f"매매 결정 처리 중 오류 발생: {str(e)}")
+                    logger.error(f"매매 결정 수집 중 오류 발생: {str(e)}")
                 
                 # 마지막 매매 결정 시간 갱신
                 last_trading_decision_time = current_time
             
-            # 1초 대기
-            await asyncio.sleep(1)
+            # 대기 중인 주문이 있고, 마지막 주문 처리 후 1초 이상 지났으면 처리
+            if order_queue and (current_time - last_order_time).total_seconds() >= 1.0:
+                # 큐에서 첫 번째 주문 가져오기
+                order = order_queue.pop(0)
+                
+                # 주문 처리
+                try:
+                    symbol = order.get("symbol")
+                    action = order.get("action", "").lower()
+                    quantity = order.get("quantity", 0)
+                    price = order.get("price", 0)
+                    
+                    # 봇 정보 가져오기
+                    bot_email = order.get("bot_email")
+                    bot = order.get("bot_reference")
+                    
+                    if bot and bot.backend_client:
+                        # 봇 자신의 백엔드 클라이언트를 통해 거래 요청 전송
+                        if action == "buy":
+                            logger.info(f"봇 [{bot_email}] 매수 요청 시작: {symbol} {quantity}주, 가격: {price}")
+                            result = await bot.backend_client.request_buy(symbol, quantity, price)
+                            if result:
+                                logger.info(f"봇 [{bot_email}] 매수 요청 성공: {symbol} {quantity}주, 가격: {price}")
+                            else:
+                                logger.error(f"봇 [{bot_email}] 매수 요청 실패: {symbol} {quantity}주, 가격: {price}")
+                        
+                        elif action == "sell":
+                            logger.info(f"봇 [{bot_email}] 매도 요청 시작: {symbol} {quantity}주, 가격: {price}")
+                            result = await bot.backend_client.request_sell(symbol, quantity, price)
+                            if result:
+                                logger.info(f"봇 [{bot_email}] 매도 요청 성공: {symbol} {quantity}주, 가격: {price}")
+                            else:
+                                logger.error(f"봇 [{bot_email}] 매도 요청 실패: {symbol} {quantity}주, 가격: {price}")
+                    else:
+                        logger.error(f"주문 처리 실패: 봇 또는 백엔드 클라이언트가 없음 (봇: {bot_email})")
+                
+                except Exception as e:
+                    logger.error(f"주문 처리 중 오류: {str(e)}")
+                
+                # 마지막 주문 시간 갱신
+                last_order_time = current_time
+                
+                # 남은 주문 로깅
+                logger.info(f"주문 처리 완료. 남은 대기 주문: {len(order_queue)}개")
+            
+            # 짧은 대기
+            await asyncio.sleep(0.1)
             
         except asyncio.CancelledError:
             logger.info("거래 처리 루프가 취소되었습니다.")
