@@ -449,9 +449,9 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
                 minute: "2-digit",
                 hour12: false,
               })
-            : chartType === "DAILY"
-              ? new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).toLocaleDateString()
-              : new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).getFullYear() + "년"
+            : chartType === "YEARLY"
+              ? new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).getFullYear() + "년"
+              : new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).toLocaleDateString()
         }</div>
 
         <div>시가: ${candleData.open}</div>
