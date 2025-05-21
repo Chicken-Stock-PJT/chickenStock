@@ -3,22 +3,51 @@ import { cn } from "@/shared/libs/utils";
 import ChatTab from "./ChatTab";
 import NotificationTab from "./NotificationTab";
 import FloatingButton from "./FloatingButton";
+import { useEffect, useRef } from "react";
 
 export default function ChatNotification() {
   const { isOpen, setOpen, notifications, activeTab, setActiveTab } = useChatNotificationStore();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLDivElement>(null);
 
   // 읽지 않은 알림 개수
   const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  // 외부 클릭 감지
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        isOpen &&
+        panelRef.current &&
+        !panelRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen, setOpen]);
+
   return (
     <>
       {/* 플로팅 버튼 */}
-      <FloatingButton onClick={() => setOpen(!isOpen)} unreadCount={unreadCount} />
+      <div ref={buttonRef}>
+        <FloatingButton onClick={() => setOpen(!isOpen)} unreadCount={unreadCount} />
+      </div>
 
-      {/* 채팅/알림 패널 - 크기 증가, 여백 추가 */}
+      {/* 채팅/알림 패널 */}
       {isOpen && (
-        <div className="fixed bottom-24 right-5 z-50 h-[650px] w-[450px] overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div
+          ref={panelRef}
+          className="fixed bottom-24 right-5 z-50 h-[650px] w-[450px] overflow-hidden rounded-xl bg-white shadow-2xl"
+        >
           <div className="flex h-full flex-col">
-            {/* 탭 버튼 - 상단 여백 추가 */}
+            {/* 탭 버튼 */}
             <div className="bg-white px-4 pt-4">
               <div className="flex rounded-lg bg-gray-100 p-1">
                 <TabButton active={activeTab === "chat"} onClick={() => setActiveTab("chat")}>
@@ -49,7 +78,7 @@ export default function ChatNotification() {
   );
 }
 
-// 탭 버튼 컴포넌트 - 더 부드러운 스타일
+// 탭 버튼 컴포넌트
 function TabButton({
   children,
   active,

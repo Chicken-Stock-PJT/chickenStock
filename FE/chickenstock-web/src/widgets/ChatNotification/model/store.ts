@@ -51,7 +51,7 @@ export const useChatNotificationStore = create<ChatNotificationState>((set, get)
 
   addNotification: (notification) =>
     set((state) => ({
-      notifications: [...state.notifications, notification],
+      notifications: [notification, ...state.notifications],
     })),
 
   setNotifications: (notifications) => set({ notifications }),
