@@ -112,3 +112,14 @@ export interface ChartResponse {
   code: number;
   message: string;
 }
+
+export interface ChartProps {
+  stockName?: string;
+  stockCode?: string;
+  priceData?: {
+    currentPrice: string;
+    priceChange: string;
+    changeRate: string;
+  };
+  tradeExecutionData?: TradeExecutionData | null;
+}

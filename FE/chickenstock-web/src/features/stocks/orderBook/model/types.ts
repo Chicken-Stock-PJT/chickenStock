@@ -173,7 +173,10 @@ export const mapInitialOrderBookToOrderBookData = (data: InitialOrderBook): Orde
 export interface OrderBookProps {
   stockCode: string;
   currentPrice: number;
+  initialData?: InitialOrderBook;
+  orderBookData?: OrderBookData | null;
 }
+
 export interface OrderRowProps {
   price: number;
   askVolume: number;

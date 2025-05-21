@@ -32,16 +32,16 @@ const ChartHeader = ({
   return (
     <>
       <div className="flex justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 lg:gap-4">
           <img
-            className="w-[50px] rounded-2xl lg:w-[78px]"
+            className="w-[40px] rounded-2xl lg:w-[78px]"
             src={`https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${stockCode}.png`}
             alt=""
           />
-          <div className="flex flex-col lg:gap-2">
-            <div className="flex items-end gap-2 text-left">
-              <h1 className="text-lg font-bold text-gray-800 lg:text-xl">{stockName}</h1>
-              <p className="text-sm text-gray-600 lg:text-base">{stockCode}</p>
+          <div className="flex flex-col gap-1 lg:gap-2">
+            <div className="flex items-end gap-1 text-left lg:gap-2">
+              <h1 className="text-base font-bold text-gray-800 lg:text-xl">{stockName}</h1>
+              <p className="text-xs text-gray-600 lg:text-base">{stockCode}</p>
               {/* 커뮤니티 버튼 추가 */}
               {isLoggedIn && (
                 <span
@@ -50,18 +50,18 @@ const ChartHeader = ({
                       state: { stockName },
                     });
                   }}
-                  className="inline-block cursor-pointer rounded-md bg-yellow-200 px-2 py-0.5 text-base text-gray-900 hover:bg-yellow-100 hover:text-gray-600"
+                  className="inline-block cursor-pointer rounded-md bg-yellow-200 px-1.5 py-0.5 text-xs text-gray-900 hover:bg-yellow-100 hover:text-gray-600 lg:text-base"
                 >
                   커뮤니티
                 </span>
               )}
             </div>
-            <div className={`flex gap-2 text-left`}>
-              <p className="text-2xl font-semibold leading-none lg:text-3xl">
+            <div className="flex gap-1 text-left lg:gap-2">
+              <p className="text-xl font-semibold leading-none lg:text-3xl">
                 {formattedPrice(currentPrice)}
               </p>
               <div
-                className={`flex items-end items-center gap-2 text-sm lg:text-lg ${Number(priceChange) > 0 ? "text-chart-red" : Number(priceChange) < 0 ? "text-chart-blue" : "text-gray-800"}`}
+                className={`flex items-end items-center gap-1 text-xs lg:gap-2 lg:text-lg ${Number(priceChange) > 0 ? "text-chart-red" : Number(priceChange) < 0 ? "text-chart-blue" : "text-gray-800"}`}
               >
                 <span className="leading-none">
                   {Number(priceChange) > 0 ? "▲" : Number(priceChange) < 0 ? "▼" : ""}{" "}
@@ -77,7 +77,7 @@ const ChartHeader = ({
             onClick={() => toggleWatchlist(stockCode)}
             fill={isCurrentInWatchlist ? "red" : "none"}
             stroke={isCurrentInWatchlist ? "red" : "black"}
-            className="cursor-pointer"
+            className="size-5 cursor-pointer lg:size-6"
           />
           {/* </div> */}
           <div className="mb-2 hidden items-end gap-1 lg:flex">
@@ -135,11 +135,11 @@ const ChartHeader = ({
           </div>
         </div>
       </div>
-      <div className="mb-2 flex items-end gap-1 lg:hidden">
+      <div className="mb-2 flex items-end gap-0.5 lg:hidden">
         <DropdownMenu>
           <DropdownMenuTrigger className="rounded p-0 text-xs">
             <button
-              className={`rounded px-2 py-1 text-xs ${
+              className={`rounded px-1.5 py-0.5 text-xs ${
                 selectedChartType === "MINUTE" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
               }`}
             >
@@ -156,7 +156,7 @@ const ChartHeader = ({
           </DropdownMenuContent>
         </DropdownMenu>
         <button
-          className={`rounded px-2 py-1 text-xs ${
+          className={`rounded px-1.5 py-0.5 text-xs ${
             selectedChartType === "DAILY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
           }`}
           onClick={() => onChartTypeChange("DAILY")}
@@ -164,7 +164,7 @@ const ChartHeader = ({
           일
         </button>
         <button
-          className={`rounded px-2 py-1 text-xs ${
+          className={`rounded px-1.5 py-0.5 text-xs ${
             selectedChartType === "WEEKLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
           }`}
           onClick={() => onChartTypeChange("WEEKLY")}
@@ -172,7 +172,7 @@ const ChartHeader = ({
           주
         </button>
         <button
-          className={`rounded px-2 py-1 text-xs ${
+          className={`rounded px-1.5 py-0.5 text-xs ${
             selectedChartType === "MONTHLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
           }`}
           onClick={() => onChartTypeChange("MONTHLY")}
@@ -180,7 +180,7 @@ const ChartHeader = ({
           월
         </button>
         <button
-          className={`rounded px-2 py-1 text-xs ${
+          className={`rounded px-1.5 py-0.5 text-xs ${
             selectedChartType === "YEARLY" ? "bg-blue-100 text-blue-600" : "bg-gray-100"
           }`}
           onClick={() => onChartTypeChange("YEARLY")}
