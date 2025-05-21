@@ -1,4 +1,4 @@
-import { X, Home, LineChart, Bot, Trophy, LogOut, LogIn } from "lucide-react";
+import { X, Home, Bot, Trophy, LogOut, LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { SIDEBAR_CONFIG } from "@/widgets/sidebar/model/config";
 import { useAuthStore } from "@/shared/store/auth";
@@ -47,13 +47,6 @@ const SideNavbar = ({ onClick, onRankingOpen }: SideNavbarProps) => {
           >
             <Home className="size-5" />
             <span className="font-medium">홈</span>
-          </button>
-          <button
-            onClick={() => handleNavigation("/stocks/005930")}
-            className="flex items-center gap-3 rounded-lg px-4 py-3 text-gray-700 hover:bg-gray-50"
-          >
-            <LineChart className="size-5" />
-            <span className="font-medium">주식</span>
           </button>
           <button
             onClick={() => handleNavigation("/ai-bot")}
