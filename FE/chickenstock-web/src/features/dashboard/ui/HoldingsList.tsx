@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/libs/ui/card";
 import { Position } from "@/features/mypage/model/types";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown } from "lucide-react";
 
 interface HoldingsListProps {
   holdings: Position[];
