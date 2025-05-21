@@ -76,12 +76,12 @@ public class RankingService {
 //                topRankings.add(new RankingEntryDTO(rank, nickname, totalAsset));
 //            }
             if (rank <= 100) {
-                topRankings.add(new RankingEntryDTO(rank, nickname, totalAsset));
+                topRankings.add(new RankingEntryDTO(rank, nickname, totalAsset, memberId));
             }
 
             // 로그인 유저 순위 기록
             if (myId != null && myId.equals(memberId)) {
-                myRank = new RankingEntryDTO(rank, nickname, totalAsset);
+                myRank = new RankingEntryDTO(rank, nickname, totalAsset, memberId);
             }
 
             prevScore = totalAsset;
@@ -124,7 +124,7 @@ public class RankingService {
             // 대상 멤버만 필터링
             if (memberIds.contains(memberId)) {
                 String nickname = nicknameMap.getOrDefault(memberId, "탈퇴회원");
-                filteredRanks.add(new RankingEntryDTO(rank, nickname, totalAsset));
+                filteredRanks.add(new RankingEntryDTO(rank, nickname, totalAsset, memberId));
             }
 
             prevScore = totalAsset;
@@ -180,12 +180,12 @@ public class RankingService {
 
             // TOP 100만 담기
             if (rank <= 100) {
-                topRankings.add(new ReturnRateRankingEntryDTO(rank, nickname, returnRate));
+                topRankings.add(new ReturnRateRankingEntryDTO(rank, nickname, returnRate, memberId));
             }
 
             // 내 랭킹 추적
             if (myId != null && myId.equals(memberId)) {
-                myRank = new ReturnRateRankingEntryDTO(rank, nickname, returnRate);
+                myRank = new ReturnRateRankingEntryDTO(rank, nickname, returnRate, memberId);
             }
 
             prevScore = returnRate;
@@ -229,7 +229,7 @@ public class RankingService {
             // 지정된 멤버만 필터링
             if (memberIds.contains(memberId)) {
                 String nickname = nicknameMap.getOrDefault(memberId, "탈퇴회원");
-                filteredRanks.add(new ReturnRateRankingEntryDTO(rank, nickname, returnRate));
+                filteredRanks.add(new ReturnRateRankingEntryDTO(rank, nickname, returnRate, memberId));
             }
 
             prevScore = returnRate;
