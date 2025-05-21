@@ -17,6 +17,7 @@ import realClassOne.chickenStock.stock.dto.response.PortfolioResponseDTO;
 import realClassOne.chickenStock.stock.service.DashboardService;
 import realClassOne.chickenStock.stock.service.PortfolioService;
 import realClassOne.chickenStock.stock.trade.service.StockTradeFacadeService;
+import realClassOne.chickenStock.stock.trade.service.StockTradeService;
 
 @RestController
 @RequestMapping("/api/members")
@@ -27,7 +28,7 @@ public class MemberController {
     private final MemberService memberService;
     private final PortfolioService portfolioService;
     private final DashboardService dashboardService;
-    private final StockTradeFacadeService stockTradeFacadeService;
+    private final StockTradeService stockTradeService;
 
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
@@ -68,8 +69,8 @@ public class MemberController {
     public ResponseEntity<InitializeMoneyResponseDTO> initializeMemberMoney(
             @RequestHeader("Authorization") String authorization) {
         try {
-            // stockTradeService 대신 memberService 활용
-            InitializeMoneyResponseDTO response = memberService.initializeMemberMoney(authorization);
+            // stockTradeService 사용
+            InitializeMoneyResponseDTO response = stockTradeService.initializeMemberMoney(authorization);
             return ResponseEntity.ok(response);
         } catch (CustomException e) {
             return ResponseEntity.badRequest().body(
