@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import logo from "../../assets/logoImg.svg";
@@ -7,16 +7,22 @@ import RankingModal from "@/widgets/Header/ui/RankingModal";
 import { useAuthStore } from "@/shared/store/auth";
 import HeaderDropdown from "@/widgets/Header/HeaderDropdown";
 import { useSimpleProfile } from "@/shared/model/queries";
-
+import SideNavbar from "./ui/SideNavbar";
 const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isRankingOpen, setIsRankingOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen);
+  };
+
   const { data: simpleProfile } = useSimpleProfile();
   const isLogin = useAuthStore((state) => state.isLoggedIn);
   const navigate = useNavigate();
   return (
     <div className="sticky top-0 z-50 flex h-14 w-screen items-center justify-between bg-white px-4 md:px-6 lg:px-8">
-      <div className="flex items-center lg:mr-[200px]">
+      <div className="flex items-center xl:mr-[200px]">
         <img
           src={logo}
           alt="Chicken Stock Logo"
@@ -90,13 +96,13 @@ const Header = () => {
       </div>
 
       {isLogin ? (
-        <div className="flex items-center text-sm font-semibold lg:text-lg">
+        <div className="lg:text-md flex hidden items-center text-sm font-semibold md:flex">
           <div className="flex items-center gap-4">
-            <div className="hidden items-center gap-2 lg:flex">
+            <div className="hidden items-center gap-2 xl:flex">
               <div className="rounded-md bg-primary-100 p-2 text-xs">총 자산</div>
               <div className="text-sm">₩{Number(simpleProfile?.totalAsset).toLocaleString()}</div>
             </div>
-            <div className="hidden items-center gap-2 lg:flex">
+            <div className="hidden items-center gap-2 xl:flex">
               <div className="rounded-md bg-primary-100 p-2 text-xs">수익률</div>
               <div
                 className={`text-sm ${Number(simpleProfile?.returnRate) > 0 ? "text-chart-red" : Number(simpleProfile?.returnRate) < 0 ? "text-chart-blue" : ""}`}
@@ -109,7 +115,7 @@ const Header = () => {
           <HeaderDropdown nickname={simpleProfile?.nickname ?? ""} />
         </div>
       ) : (
-        <div className="flex items-center gap-4 lg:gap-10">
+        <div className="flex hidden items-center gap-4 md:flex lg:gap-10">
           <Link to="/login" className="text-sm font-semibold lg:text-base">
             로그인
           </Link>
@@ -118,6 +124,15 @@ const Header = () => {
           </Link>
         </div>
       )}
+      {isSidebarOpen && (
+        <SideNavbar
+          onClick={toggleSidebar}
+          onRankingOpen={() => setIsRankingOpen(!isRankingOpen)}
+        />
+      )}
+      <div className="md:hidden">
+        <Menu onClick={toggleSidebar} />
+      </div>
       <SearchModal open={isSearchOpen} onOpenChange={setIsSearchOpen} />
       <RankingModal open={isRankingOpen} onOpenChange={setIsRankingOpen} />
     </div>
