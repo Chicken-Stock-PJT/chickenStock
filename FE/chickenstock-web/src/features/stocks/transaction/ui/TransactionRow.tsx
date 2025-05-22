@@ -31,15 +31,15 @@ const TransactionRow = ({
   const styles = useMemo(() => {
     const tradeTypeColor = tradeType === "BUY" ? "text-chart-red" : "text-chart-blue";
     return {
-      quantityClass: `flex items-center justify-end text-nowrap text-xs sm:text-sm ${tradeTypeColor}`,
-      totalAmountClass: `col-span-2 flex items-center justify-end text-xs sm:text-sm ${tradeTypeColor}`,
+      quantityClass: `flex items-center justify-end text-nowrap text-[10px] sm:text-sm ${tradeTypeColor}`,
+      totalAmountClass: `col-span-2 hidden items-center justify-end text-xs sm:text-sm ${tradeTypeColor} md:flex`,
     };
   }, [tradeType]);
 
   return (
-    <div className="grid grid-cols-5 items-center overflow-hidden text-nowrap p-1.5 sm:p-2">
+    <div className="flex items-center justify-between overflow-hidden text-nowrap p-1.5 sm:p-2 md:grid md:grid-cols-5">
       {/* 가격 */}
-      <div className="flex items-center justify-start text-xs font-semibold sm:text-sm">
+      <div className="flex items-center justify-start text-[10px] font-semibold sm:text-sm">
         {formattedValues.price}원
       </div>
 
