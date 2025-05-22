@@ -42,7 +42,7 @@ const Transaction = ({ stockCode, tradeExecutionData }: TransactionProps) => {
   // 거래 데이터가 없는 경우 처리
   if (transactionData.length === 0) {
     return (
-      <div className="flex h-full min-h-[300px] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="flex h-full max-h-[300px] min-h-[300px] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm sm:max-h-[632px]">
         <header className="flex items-center justify-between border-b border-gray-200 px-3 py-2 sm:px-6 sm:py-3">
           <span className="text-sm font-semibold text-gray-800 sm:text-base">실시간 거래</span>
         </header>
@@ -54,7 +54,7 @@ const Transaction = ({ stockCode, tradeExecutionData }: TransactionProps) => {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div className="flex h-full max-h-[300px] min-h-[300px] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm sm:max-h-[632px]">
       <header className="flex items-center justify-between border-b border-gray-200 px-3 py-2 sm:px-6 sm:py-3">
         <span className="text-sm font-semibold text-gray-800 sm:text-base">실시간 거래</span>
       </header>

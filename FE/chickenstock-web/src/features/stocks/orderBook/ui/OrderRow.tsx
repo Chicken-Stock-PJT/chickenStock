@@ -23,7 +23,7 @@ const OrderRow = ({ price, askVolume, bidVolume, max, isCurrentPrice = false }: 
         ${isCurrentPrice ? "bg-blue-50" : "hover:bg-gray-50"}
         ${isPurchase ? "text-chart-red" : "text-chart-blue"}
       `,
-      priceClass: `flex items-center justify-center text-xs sm:text-sm font-semibold ${
+      priceClass: `flex items-center justify-center text-[10px] xs:text-xs sm:text-sm font-semibold ${
         isCurrentPrice ? "text-blue-700" : "text-gray-800"
       }`,
     };
@@ -39,7 +39,7 @@ const OrderRow = ({ price, askVolume, bidVolume, max, isCurrentPrice = false }: 
             style={{ width: styles.bidWidth }}
           />
         )}
-        <span className="relative z-10 text-xs font-medium sm:text-sm">
+        <span className="xs:text-xs relative z-10 text-[8px] font-medium sm:text-sm">
           {bidVolume ? bidVolume.toLocaleString() : ""}
         </span>
       </div>
@@ -61,7 +61,7 @@ const OrderRow = ({ price, askVolume, bidVolume, max, isCurrentPrice = false }: 
             style={{ width: styles.askWidth }}
           />
         )}
-        <span className="relative z-10 text-xs font-medium sm:text-sm">
+        <span className="xs:text-xs relative z-10 text-[8px] font-medium sm:text-sm">
           {askVolume ? askVolume.toLocaleString() : ""}
         </span>
       </div>

@@ -36,8 +36,10 @@ const StockPage = () => {
 
   // 현재가 데이터 메모이제이션
   const currentPrice = useMemo(() => {
-    const price = stockPriceData?.currentPrice ?? initialPriceData?.currentPrice ?? "0";
-    return Number(price);
+    const price = Math.abs(
+      Number(stockPriceData?.currentPrice ?? initialPriceData?.currentPrice ?? "0"),
+    );
+    return price;
   }, [stockPriceData?.currentPrice, initialPriceData?.currentPrice]);
 
   // 주식 정보 메모이제이션
