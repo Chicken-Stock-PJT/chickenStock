@@ -5,6 +5,12 @@ plugins {
     id("com.google.devtools.ksp") version "2.1.0-1.0.29"
 }
 
+buildscript {
+    dependencies {
+        classpath("com.google.gms:google-services:4.4.1")
+    }
+}
+
 android {
     namespace = "com.example.chickenstock"
     compileSdk = 35
@@ -13,8 +19,8 @@ android {
         applicationId = "com.example.chickenstock"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 4
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -102,4 +108,15 @@ dependencies {
 
     // Accompanist Swipe Refresh
     implementation("com.google.accompanist:accompanist-swiperefresh:0.33.2-alpha")
+
+    // Accompanist System UI Controller (상태바 색상 변경용)
+    implementation("com.google.accompanist:accompanist-systemuicontroller:0.32.0")
+
+    // Splashscreen
+    implementation(libs.splashscreen)
+
+    // Firebase Messaging
+    implementation("com.google.firebase:firebase-messaging:23.4.1")
 }
+
+apply(plugin = "com.google.gms.google-services")

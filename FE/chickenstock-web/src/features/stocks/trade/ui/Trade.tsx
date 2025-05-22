@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/libs/ui/tabs";
 import {
@@ -8,15 +8,19 @@ import {
   useSellMarketOrder,
 } from "@/features/stocks/trade/model/mutations";
 import checkAvailableTime from "../model/checkAvailableTime";
-import { isNxtStock } from "../model/nxtStocks";
 import { TradeAlert } from "./TradeAlert";
 import { queryClient } from "@/shared/api/queryClient";
 import { Button } from "@/shared/libs/ui/button";
-import { useGetAvailableQuantity } from "../model/queries";
 
-const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: string }) => {
-  console.log(currentPrice);
-  const [isNxt, setIsNxt] = useState<boolean>(false);
+interface TradeProps {
+  stockCode: string;
+  currentPrice: number;
+  maxSellQty: number;
+  isNxt: boolean;
+}
+
+const Trade = ({ stockCode, currentPrice, maxSellQty, isNxt }: TradeProps) => {
+  console.log(isNxt);
   const [isLimitOrder, setIsLimitOrder] = useState<boolean>(false); // true: 지정가, false: 시장가
   const [isSell, setIsSell] = useState<boolean>(false); // true: 매도, false: 매수
   const [quantity, setQuantity] = useState<number>(1); // 수량
@@ -27,16 +31,6 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
   const priceInputRef = useRef<HTMLInputElement>(null); // 가격 input ref
   const memberMoney =
     queryClient.getQueryData<{ memberMoney: number }>(["simpleProfile"])?.memberMoney ?? 0;
-
-  const { data: availableQuantity } = useGetAvailableQuantity(stockCode);
-
-  useEffect(() => {
-    const fetchIsNxt = async () => {
-      const isNxt = await isNxtStock(stockCode);
-      setIsNxt(isNxt);
-    };
-    void fetchIsNxt();
-  }, [stockCode]);
 
   // Alert 상태 추가
   const [alertConfig, setAlertConfig] = useState({
@@ -122,7 +116,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
 
   const handleMaxQuantity = () => {
     if (isSell) {
-      setQuantity(availableQuantity?.availableQuantity ?? 0);
+      setQuantity(maxSellQty);
     } else {
       setQuantity(Math.floor(memberMoney / (price || currentPrice)));
     }
@@ -229,18 +223,18 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
         message={alertConfig.message}
         onClose={() => setAlertConfig((prev) => ({ ...prev, show: false }))}
       />
-      <div className="w-full rounded-lg border border-gray-200 bg-white p-4 text-left">
+      <div className="w-full rounded-lg border border-gray-200 bg-white p-2 text-left sm:p-4">
         <Tabs defaultValue="buy" className="w-full">
-          <div className="mb-4 flex items-center justify-between">
-            <span className="font-bold text-gray-800">주문하기</span>
-            <TabsList className="flex gap-1.5">
+          <div className="mb-2 flex items-center justify-between sm:mb-4">
+            <span className="text-sm font-bold text-gray-800 sm:text-base">주문하기</span>
+            <TabsList className="flex gap-1 sm:gap-1.5">
               <TabsTrigger
                 value="buy"
                 className="
-                w-full 
-                text-gray-500 
-                data-[state=active]:font-semibold
+                w-full text-xs text-gray-500
+                data-[state=active]:font-semibold 
                 data-[state=active]:text-chart-red
+                sm:text-sm
               "
                 onClick={() => setIsSell(false)}
               >
@@ -249,10 +243,10 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
               <TabsTrigger
                 value="sell"
                 className="
-                w-full 
-                text-gray-500 
-                data-[state=active]:font-semibold
+                w-full text-xs text-gray-500
+                data-[state=active]:font-semibold 
                 data-[state=active]:text-chart-blue
+                sm:text-sm
               "
                 onClick={() => setIsSell(true)}
               >
@@ -261,9 +255,9 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
             </TabsList>
           </div>
 
-          <div className="mt-4 flex items-center gap-4">
+          <div className="mt-2 flex items-center gap-2 sm:mt-4 sm:gap-4">
             <button
-              className={`w-full rounded-lg px-4 py-2 transition-colors ${
+              className={`w-full rounded-lg px-2 py-1.5 text-xs transition-colors sm:px-4 sm:py-2 sm:text-sm ${
                 !isLimitOrder
                   ? "border-2 border-primary-400 bg-primary-50 text-gray-900"
                   : "bg-gray-100 font-semibold text-gray-600 hover:bg-gray-200"
@@ -273,7 +267,7 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
               시장가
             </button>
             <button
-              className={`w-full rounded-lg px-4 py-2 transition-colors ${
+              className={`w-full rounded-lg px-2 py-1.5 text-xs transition-colors sm:px-4 sm:py-2 sm:text-sm ${
                 isLimitOrder
                   ? "border-2 border-primary-400 bg-primary-50 text-gray-900"
                   : "bg-gray-100 font-semibold text-gray-600 hover:bg-gray-200"
@@ -285,13 +279,13 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
           </div>
 
           <TabsContent value="buy">
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-2 flex flex-col gap-1 sm:mt-4 sm:gap-2">
               <div className="flex items-center justify-between">
-                <label htmlFor="quantity" className="text-sm font-bold text-gray-500">
+                <label htmlFor="quantity" className="text-xs font-bold text-gray-500 sm:text-sm">
                   수량
                 </label>
                 <Button
-                  className="rounded-lg bg-primary-300 font-semibold text-black"
+                  className="rounded-lg bg-primary-300 px-2 py-1 text-xs font-semibold text-black sm:px-3 sm:py-1.5 sm:text-sm"
                   onClick={handleMaxQuantity}
                 >
                   최대
@@ -300,9 +294,9 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
               <div className="relative flex items-center">
                 <button
                   onClick={handleQuantityDecrease}
-                  className="absolute left-2 p-1 text-gray-500 hover:text-primary-500"
+                  className="absolute left-1 p-1 text-gray-500 hover:text-primary-500 sm:left-2"
                 >
-                  <Minus size={16} />
+                  <Minus size={14} className="sm:size-4" />
                 </button>
                 <input
                   ref={quantityInputRef}
@@ -312,29 +306,29 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                   onChange={(e) => handleQuantityChange(e.target.value)}
                   onClick={(e) => e.currentTarget.select()}
                   min="0"
-                  className="w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="w-full rounded-lg border bg-white px-6 py-1.5 text-center text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 sm:px-8 sm:py-2 sm:text-base [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <button
                   onClick={handleQuantityIncrease}
-                  className="absolute right-2 p-1 text-gray-500 hover:text-primary-500"
+                  className="absolute right-1 p-1 text-gray-500 hover:text-primary-500 sm:right-2"
                 >
-                  <Plus size={16} />
+                  <Plus size={14} className="sm:size-4" />
                 </button>
               </div>
             </div>
 
             {isLimitOrder && (
-              <div className="mt-4 flex flex-col gap-2">
-                <label htmlFor="price" className="text-sm text-gray-500">
+              <div className="mt-2 flex flex-col gap-1 sm:mt-4 sm:gap-2">
+                <label htmlFor="price" className="text-xs text-gray-500 sm:text-sm">
                   가격
                 </label>
                 <div className="relative flex items-center">
                   <button
                     onClick={handlePriceDecrease}
-                    className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                    className={`absolute left-1 p-1 text-gray-500 sm:left-2 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
                     disabled={!isLimitOrder}
                   >
-                    <Minus size={16} />
+                    <Minus size={14} className="sm:size-4" />
                   </button>
                   <input
                     ref={priceInputRef}
@@ -346,50 +340,50 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                     onClick={(e) => e.currentTarget.select()}
                     readOnly={!isLimitOrder}
                     min={lowPrice}
-                    className={`w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
+                    className={`w-full rounded-lg border bg-white px-6 py-1.5 text-center text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 sm:px-8 sm:py-2 sm:text-base [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
                 ${!isLimitOrder ? "cursor-not-allowed bg-gray-100" : ""}`}
                   />
                   <button
                     onClick={handlePriceIncrease}
-                    className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                    className={`absolute right-1 p-1 text-gray-500 sm:right-2 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
                     disabled={!isLimitOrder}
                   >
-                    <Plus size={16} />
+                    <Plus size={14} className="sm:size-4" />
                   </button>
                 </div>
               </div>
             )}
 
-            <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
+            <div className="mb-2 mt-4 flex justify-between gap-2 text-sm sm:mb-4 sm:mt-8 sm:text-lg">
               <span className="font-semibold">예수금 잔고</span>
               <span>{Number(memberMoney).toLocaleString()}원</span>
             </div>
 
             {isLimitOrder && (
-              <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
+              <div className="mb-2 mt-4 flex justify-between gap-2 text-sm sm:mb-4 sm:mt-8 sm:text-lg">
                 <span>총 가격</span>
                 <span>{(price * quantity).toLocaleString()}원</span>
               </div>
             )}
             <button
-              className="w-full rounded-lg bg-primary-300 py-3 
-            font-semibold text-gray-900
-            drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
-            transition-all duration-200 hover:bg-primary-400
-            active:scale-[0.98] active:shadow-inner"
+              className="w-full rounded-lg bg-primary-300 py-2 text-sm 
+            font-semibold text-gray-900 drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)] transition-all
+            duration-200
+            hover:bg-primary-400 active:scale-[0.98] active:shadow-inner
+            sm:py-3 sm:text-base"
               onClick={handleBuyOrder}
             >
               매수 신청하기
             </button>
           </TabsContent>
           <TabsContent value="sell">
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-2 flex flex-col gap-1 sm:mt-4 sm:gap-2">
               <div className="flex items-center justify-between">
-                <label htmlFor="quantity" className="text-sm font-bold text-gray-500">
+                <label htmlFor="quantity" className="text-xs font-bold text-gray-500 sm:text-sm">
                   수량
                 </label>
                 <Button
-                  className="rounded-lg bg-primary-300 font-semibold text-black"
+                  className="rounded-lg bg-primary-300 px-2 py-1 text-xs font-semibold text-black sm:px-3 sm:py-1.5 sm:text-sm"
                   onClick={handleMaxQuantity}
                 >
                   최대
@@ -398,9 +392,9 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
               <div className="relative flex items-center">
                 <button
                   onClick={handleQuantityDecrease}
-                  className="absolute left-2 p-1 text-gray-500 hover:text-primary-500"
+                  className="absolute left-1 p-1 text-gray-500 hover:text-primary-500 sm:left-2"
                 >
-                  <Minus size={16} />
+                  <Minus size={14} className="sm:size-4" />
                 </button>
                 <input
                   ref={quantityInputRef}
@@ -410,29 +404,29 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                   onChange={(e) => handleQuantityChange(e.target.value)}
                   onClick={(e) => e.currentTarget.select()}
                   min="0"
-                  className="w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="w-full rounded-lg border bg-white px-6 py-1.5 text-center text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 sm:px-8 sm:py-2 sm:text-base [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <button
                   onClick={handleQuantityIncrease}
-                  className="absolute right-2 p-1 text-gray-500 hover:text-primary-500"
+                  className="absolute right-1 p-1 text-gray-500 hover:text-primary-500 sm:right-2"
                 >
-                  <Plus size={16} />
+                  <Plus size={14} className="sm:size-4" />
                 </button>
               </div>
             </div>
 
             {isLimitOrder && (
-              <div className="mt-4 flex flex-col gap-2">
-                <label htmlFor="price" className="text-sm text-gray-500">
+              <div className="mt-2 flex flex-col gap-1 sm:mt-4 sm:gap-2">
+                <label htmlFor="price" className="text-xs text-gray-500 sm:text-sm">
                   가격
                 </label>
                 <div className="relative flex items-center">
                   <button
                     onClick={handlePriceDecrease}
-                    className={`absolute left-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                    className={`absolute left-1 p-1 text-gray-500 sm:left-2 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
                     disabled={!isLimitOrder}
                   >
-                    <Minus size={16} />
+                    <Minus size={14} className="sm:size-4" />
                   </button>
                   <input
                     ref={priceInputRef}
@@ -444,32 +438,32 @@ const Trade = ({ currentPrice, stockCode }: { currentPrice: number; stockCode: s
                     onClick={(e) => e.currentTarget.select()}
                     readOnly={!isLimitOrder}
                     min={lowPrice}
-                    className={`w-full rounded-lg border bg-white px-8 py-2 text-center focus:outline-none focus:ring-2 focus:ring-primary-500 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
+                    className={`w-full rounded-lg border bg-white px-6 py-1.5 text-center text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 sm:px-8 sm:py-2 sm:text-base [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
                 ${!isLimitOrder ? "cursor-not-allowed bg-gray-100" : ""}`}
                   />
                   <button
                     onClick={handlePriceIncrease}
-                    className={`absolute right-2 p-1 text-gray-500 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
+                    className={`absolute right-1 p-1 text-gray-500 sm:right-2 ${isLimitOrder ? "hover:text-primary-500" : "disabled:cursor-not-allowed disabled:opacity-50"}`}
                     disabled={!isLimitOrder}
                   >
-                    <Plus size={16} />
+                    <Plus size={14} className="sm:size-4" />
                   </button>
                 </div>
               </div>
             )}
 
             {isLimitOrder && (
-              <div className="mb-4 mt-8 flex justify-between gap-2 text-lg">
+              <div className="mb-2 mt-4 flex justify-between gap-2 text-sm sm:mb-4 sm:mt-8 sm:text-lg">
                 <span>총 가격</span>
                 <span>{(price * quantity).toLocaleString()}원</span>
               </div>
             )}
             <button
               className="mt-4 w-full rounded-lg bg-primary-300 
-        py-3 font-semibold
-        text-gray-900
-        drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)] transition-all duration-200
-        hover:bg-primary-400 active:scale-[0.98] active:shadow-inner"
+        py-2 font-semibold text-gray-900
+        drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
+        transition-all duration-200 hover:bg-primary-400
+        active:scale-[0.98] active:shadow-inner sm:py-3"
               onClick={handleSellOrder}
             >
               매도 신청하기

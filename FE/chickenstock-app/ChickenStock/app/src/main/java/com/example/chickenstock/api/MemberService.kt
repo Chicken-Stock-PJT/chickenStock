@@ -3,12 +3,14 @@ package com.example.chickenstock.api
 import retrofit2.Response
 import retrofit2.http.*
 import com.example.chickenstock.model.PortfolioData
+import com.example.chickenstock.model.DashboardResponse
 
 data class SimpleProfileResponse(
     val nickname: String,
-    val memberMoney: String,
-    val returnRate: String,
-    val isOauth: String
+    val totalAsset: String?,
+    val returnRate: String?,
+    val isOauth: String,
+    val memberMoney: String?
 )
 
 data class WatchlistResponse(
@@ -41,4 +43,10 @@ interface MemberService {
 
     @DELETE("members/watchlist/{stockCode}")
     suspend fun removeFromWatchlist(@Header("Authorization") token: String, @Path("stockCode") stockCode: String): Response<Unit>
+
+    @GET("members/dashboard")
+    suspend fun getDashboard(@Header("Authorization") token: String): Response<DashboardResponse>
+
+    @GET("members/{memberId}/dashboard")
+    suspend fun getAIDashboard(@Path("memberId") memberId: Int): Response<com.example.chickenstock.model.DashboardResponse>
 } 

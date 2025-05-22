@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ChatNotificationState } from "./types";
-
+import { webSocketManager } from "../api/webSocket";
 // 초기 상태
 const initialState = {
   isOpen: false,
@@ -16,10 +16,26 @@ const initialState = {
 // Zustand 스토어 생성
 export const useChatNotificationStore = create<ChatNotificationState>((set, get) => ({
   ...initialState,
-
+  authenticatedCount: 0,
+  totalCount: 0,
+  lastCountUpdate: "",
   get unreadCount() {
     return get().notifications.filter((n) => !n.isRead).length;
   },
+  // 모든 알림을 읽음 처리
+  markAllNotificationsAsRead: () => {
+    // 웹소켓으로 요청 전송
+    if (webSocketManager) {
+      webSocketManager.markAllAsRead();
+    }
+  },
+  // 여러 알림 읽음 처리 (응답 처리용)
+  markMultipleNotificationsAsRead: (notificationIds: number[]) =>
+    set((state) => ({
+      notifications: state.notifications.map((notif) =>
+        notificationIds.includes(notif.notificationId) ? { ...notif, isRead: true } : notif,
+      ),
+    })),
   // UI 관련 액션
   setOpen: (isOpen) => set({ isOpen }),
   setActiveTab: (activeTab) => set({ activeTab }),
@@ -74,7 +90,21 @@ export const useChatNotificationStore = create<ChatNotificationState>((set, get)
     })),
 
   setCurrentUser: (user) => set({ currentUser: user }),
+  setUserCount: (authenticatedCount, totalCount, timestamp) =>
+    set({
+      authenticatedCount,
+      totalCount,
+      // 숫자 타임스탬프라면 변환해서 저장
+      lastCountUpdate:
+        typeof timestamp === "number" ? new Date(timestamp).toLocaleString() : timestamp,
+    }),
 
+  getUserCount: () => {
+    // 웹소켓으로 요청 전송
+    if (webSocketManager) {
+      webSocketManager.getUserCount();
+    }
+  },
   // 초기화
   reset: () => set(initialState),
 }));

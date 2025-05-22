@@ -65,6 +65,16 @@ class OAuthRedirectActivity : ComponentActivity() {
                             loginResponse.accessTokenExpiresIn
                         )
                         
+                        // 소셜 로그인 여부 저장
+                        val prefs = getSharedPreferences("auth_prefs", MODE_PRIVATE)
+                        prefs.edit().putBoolean("is_social_login", true).apply()
+                        
+                        // FCM 토큰 등록 (응답 로그도 직접 출력)
+                        com.example.chickenstock.ui.screens.login.registerFcmTokenToServer(this@OAuthRedirectActivity) { success, msg ->
+                            Log.d(TAG, "소셜 로그인 후 FCM 등록 응답: $success, $msg")
+                        }
+                        Log.d(TAG, "소셜 로그인 후 FCM 토큰 등록 요청 완료")
+                        
                         // 로그인 상태 업데이트
                         AuthViewModel.Factory(this@OAuthRedirectActivity).create(AuthViewModel::class.java).login()
                         

@@ -22,6 +22,12 @@ import com.example.chickenstock.data.TokenManager
 import com.example.chickenstock.model.TradeHistoryResponse
 import com.example.chickenstock.model.TradeHistory
 import com.example.chickenstock.api.TradeHistoryService
+import com.example.chickenstock.model.Order
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.example.chickenstock.model.DashboardResponse
+import android.os.Build
+import android.app.NotificationManager
 
 class MainViewModel : ViewModel() {
     private val _selectedIndex = mutableStateOf(0)
@@ -67,9 +73,42 @@ class MainViewModel : ViewModel() {
     private val _nextCursor = MutableStateFlow<String?>(null)
     val nextCursor: StateFlow<String?> = _nextCursor.asStateFlow()
 
+    private val _pendingOrders = MutableStateFlow<List<Order>>(emptyList())
+    val pendingOrders: StateFlow<List<Order>> = _pendingOrders.asStateFlow()
+
+    // 대시보드 데이터 상태
+    private val _dashboardData = MutableStateFlow<DashboardResponse?>(null)
+    val dashboardData: StateFlow<DashboardResponse?> = _dashboardData.asStateFlow()
+
     private var memberService: MemberService? = null
     private var stockService: StockService? = null
     private var tradeHistoryService: TradeHistoryService? = null
+
+    var splashDone by mutableStateOf(false)
+        private set
+
+    private val _showNotificationPermissionDialog = mutableStateOf(false)
+    val showNotificationPermissionDialog: State<Boolean> = _showNotificationPermissionDialog
+
+    fun setShowNotificationPermissionDialog(show: Boolean) {
+        _showNotificationPermissionDialog.value = show
+    }
+
+    fun checkAndRequestNotificationPermission(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val prefs = context.getSharedPreferences("NotificationPrefs", Context.MODE_PRIVATE)
+            val hasRequestedBefore = prefs.getBoolean("has_requested_notification", false)
+            
+            if (!hasRequestedBefore) {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                if (!notificationManager.areNotificationsEnabled()) {
+                    setShowNotificationPermissionDialog(true)
+                    // 권한 요청 상태 저장
+                    prefs.edit().putBoolean("has_requested_notification", true).apply()
+                }
+            }
+        }
+    }
 
     fun initializeServices(context: Context) {
         try {
@@ -110,7 +149,7 @@ class MainViewModel : ViewModel() {
                 if (response.isSuccessful) {
                     response.body()?.let { profile ->
                         Log.d("MainViewModel", "프로필 정보 조회 성공: ${profile.nickname}")
-                        Log.d("MainViewModel", "프로필 상세 정보: memberMoney=${profile.memberMoney}, returnRate=${profile.returnRate}")
+                        Log.d("MainViewModel", "프로필 상세 정보: memberMoney=${profile.totalAsset}, returnRate=${profile.returnRate}")
                         _userProfile.value = profile
                     } ?: run {
                         Log.e("MainViewModel", "프로필 정보 응답 본문이 null입니다.")
@@ -227,21 +266,21 @@ class MainViewModel : ViewModel() {
                     _isLoading.value = false
                     return@launch
                 }
-                
                 // memberService가 null인 경우 초기화
                 if (memberService == null) {
                     Log.d("MainViewModel", "memberService가 null이므로 초기화합니다.")
                     initializeServices(context)
                 }
-                
                 memberService?.let { service ->
                     val response = service.getWatchlist("Bearer $token")
                     if (response.isSuccessful) {
                         response.body()?.let { watchlistResponse ->
-                            Log.d("MainViewModel", "관심 종목 조회 성공: ${watchlistResponse.watchList.size}개")
-                            Log.d("MainViewModel", "관심 종목 상세 정보: ${watchlistResponse.watchList}")
+                            val rawCodes = watchlistResponse.watchList.map { it.stockCode }
+                            val pureCodes = watchlistResponse.watchList.map { getPureStockCode(it.stockCode) }
+                            Log.d("MainViewModel", "관심 종목 서버 응답: $rawCodes")
+                            Log.d("MainViewModel", "관심 종목 Set에 들어갈 값: $pureCodes")
                             _watchlistItems.value = watchlistResponse.watchList
-                            _watchlist.value = watchlistResponse.watchList.map { it.stockCode }.toSet()
+                            _watchlist.value = pureCodes.toSet()
                         }
                     } else {
                         Log.e("MainViewModel", "관심 종목 조회 실패: ${response.code()} - ${response.message()}")
@@ -265,6 +304,11 @@ class MainViewModel : ViewModel() {
         return _watchlistItems.value.find { it.stockCode == stockCode }
     }
 
+    // 종목 코드에서 _AL 등 접미사를 제거하는 함수
+    fun getPureStockCode(stockCode: String): String {
+        return stockCode.substringBefore("_")
+    }
+
     // 관심 종목 추가
     fun addToWatchlist(stockCode: String, context: Context, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
         viewModelScope.launch {
@@ -274,21 +318,19 @@ class MainViewModel : ViewModel() {
                     onError("토큰이 없습니다. 다시 로그인 해주세요.")
                     return@launch
                 }
-                
                 // memberService가 null인 경우 초기화
                 if (memberService == null) {
                     Log.d("MainViewModel", "memberService가 null이므로 초기화합니다.")
                     initializeServices(context)
                 }
-                
-                memberService?.addToWatchlist("Bearer $token", stockCode)?.let { response ->
+                // 종목 코드에서 _AL 등 접미사 제거
+                val pureCode = getPureStockCode(stockCode)
+                memberService?.addToWatchlist("Bearer $token", pureCode)?.let { response ->
                     if (response.isSuccessful) {
-                        Log.d("MainViewModel", "관심 종목 추가 성공: $stockCode")
-                        _watchlist.value = _watchlist.value + stockCode
-                        
+                        Log.d("MainViewModel", "관심 종목 추가 성공: $pureCode")
+                        _watchlist.value = _watchlist.value + pureCode
                         // 관심 목록 새로고침
                         loadWatchlist(context)
-                        
                         onSuccess()
                     } else {
                         Log.e("MainViewModel", "관심 종목 추가 실패: ${response.code()} - ${response.message()}")
@@ -314,21 +356,19 @@ class MainViewModel : ViewModel() {
                     onError("토큰이 없습니다. 다시 로그인 해주세요.")
                     return@launch
                 }
-                
                 // memberService가 null인 경우 초기화
                 if (memberService == null) {
                     Log.d("MainViewModel", "memberService가 null이므로 초기화합니다.")
                     initializeServices(context)
                 }
-                
-                memberService?.removeFromWatchlist("Bearer $token", stockCode)?.let { response ->
+                // 종목 코드에서 _AL 등 접미사 제거
+                val pureCode = getPureStockCode(stockCode)
+                memberService?.removeFromWatchlist("Bearer $token", pureCode)?.let { response ->
                     if (response.isSuccessful) {
-                        Log.d("MainViewModel", "관심 종목 삭제 성공: $stockCode")
-                        _watchlist.value = _watchlist.value - stockCode
-                        
+                        Log.d("MainViewModel", "관심 종목 삭제 성공: $pureCode")
+                        _watchlist.value = _watchlist.value - pureCode
                         // 관심 목록 새로고침
                         loadWatchlist(context)
-                        
                         onSuccess()
                     } else {
                         Log.e("MainViewModel", "관심 종목 삭제 실패: ${response.code()} - ${response.message()}")
@@ -465,6 +505,83 @@ class MainViewModel : ViewModel() {
                 Log.e("MainViewModel", "데이터 로드 준비 중 오류 발생: ${e.message}", e)
                 _error.value = "데이터 로드를 준비하는 중 오류가 발생했습니다."
                 _isLoading.value = false
+            }
+        }
+    }
+
+    fun loadPendingOrders(token: String) {
+        viewModelScope.launch {
+            try {
+                val response = stockService?.getPendingOrders(token)
+                if (response != null && response.isSuccessful) {
+                    _pendingOrders.value = response.body() ?: emptyList()
+                } else {
+                    Log.e("MainViewModel", "미체결 주문 로드 실패: ${response?.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "미체결 주문 로드 중 오류 발생", e)
+            }
+        }
+    }
+
+    fun setSplashDone() {
+        splashDone = true
+    }
+
+    fun loadDashboard(memberService: MemberService, context: Context) {
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+                _error.value = null
+                val token = TokenManager.getInstance(context).getAccessToken()
+                if (token.isNullOrBlank()) {
+                    _error.value = "토큰이 없습니다. 다시 로그인 해주세요."
+                    _isLoading.value = false
+                    return@launch
+                }
+                val response = memberService.getDashboard("Bearer $token")
+                if (response.isSuccessful) {
+                    _dashboardData.value = response.body()
+                    _error.value = null
+                } else {
+                    _error.value = "대시보드 정보를 불러오는데 실패했습니다. (${response.code()})"
+                }
+            } catch (e: Exception) {
+                _error.value = e.message ?: "알 수 없는 오류가 발생했습니다."
+                Log.e("MainViewModel", "대시보드 로드 중 오류 발생", e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun cancelPendingOrder(context: Context, orderId: Int, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                val token = TokenManager.getInstance(context).getAccessToken()
+                if (token.isNullOrBlank()) {
+                    onError("토큰이 없습니다. 다시 로그인 해주세요.")
+                    return@launch
+                }
+                if (stockService == null) {
+                    initializeServices(context)
+                }
+                val response = stockService?.cancelOrder("Bearer $token", orderId)
+                if (response != null && response.isSuccessful) {
+                    val body = response.body()
+                    if (body?.status == "success") {
+                        // 미체결 주문 새로고침
+                        loadPendingOrders("Bearer $token")
+                        onSuccess()
+                    } else {
+                        onError(body?.message ?: "주문 취소에 실패했습니다.")
+                    }
+                } else {
+                    val errorMsg = response?.errorBody()?.string() ?: "주문 취소에 실패했습니다."
+                    onError(errorMsg)
+                }
+            } catch (e: Exception) {
+                onError(e.message ?: "주문 취소 중 오류가 발생했습니다.")
             }
         }
     }

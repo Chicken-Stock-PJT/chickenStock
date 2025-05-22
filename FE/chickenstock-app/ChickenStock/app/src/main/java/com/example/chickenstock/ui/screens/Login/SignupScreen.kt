@@ -266,7 +266,7 @@ fun SignupScreen(navController: NavController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Color(0xFFF5F5F5))
     ) {
         // 뒤로가기 버튼
         IconButton(
@@ -507,13 +507,13 @@ fun SignupScreen(navController: NavController) {
                     unfocusedContainerColor = Color.White,
                     focusedContainerColor = Color.White,
                     unfocusedBorderColor = when {
-                        isPasswordEmpty -> Color.Red
+                        password.isEmpty() -> Gray300
                         !validatePassword(password) -> Color.Red
                         !isPasswordMatching && passwordConfirm.isNotEmpty() -> Color.Red
                         else -> Gray300
                     },
                     focusedBorderColor = when {
-                        isPasswordEmpty -> Color.Red
+                        password.isEmpty() -> Gray300
                         !validatePassword(password) -> Color.Red
                         !isPasswordMatching && passwordConfirm.isNotEmpty() -> Color.Red
                         else -> Gray300
@@ -529,7 +529,7 @@ fun SignupScreen(navController: NavController) {
                     imeAction = ImeAction.Next
                 ),
                 singleLine = true,
-                isError = isPasswordEmpty || !validatePassword(password) || (!isPasswordMatching && passwordConfirm.isNotEmpty()),
+                isError = password.isNotEmpty() && (!validatePassword(password) || (!isPasswordMatching && passwordConfirm.isNotEmpty())),
                 trailingIcon = {
                     IconButton(
                         onClick = { },
@@ -551,14 +551,14 @@ fun SignupScreen(navController: NavController) {
             }
             
             // 비밀번호 안내 메시지
+            if (password.isNotEmpty()) {
             Text(
                 text = when {
-                    isPasswordEmpty -> "비밀번호를 입력해주세요"
                     !validatePassword(password) -> "비밀번호는 8자리 이상이어야 합니다"
                     else -> "비밀번호는 8자리 이상이어야 합니다"
                 },
                 color = when {
-                    isPasswordEmpty || !validatePassword(password) -> Color.Red
+                        !validatePassword(password) -> Color.Red
                     else -> Gray500
                 },
                 fontSize = 12.sp,
@@ -567,6 +567,7 @@ fun SignupScreen(navController: NavController) {
                     .align(Alignment.Start)
                     .padding(start = 8.dp, bottom = 8.dp)
             )
+            }
             
             // 비밀번호 재입력 필드
             OutlinedTextField(
