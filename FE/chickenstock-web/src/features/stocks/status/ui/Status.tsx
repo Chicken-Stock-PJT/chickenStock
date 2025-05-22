@@ -18,7 +18,7 @@ const Status = ({ stockCode }: { stockCode: string }) => {
     void navigate("/login");
   };
   return (
-    <div className="flex h-full flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+    <div className="flex h-full max-h-[518px] flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4 sm:max-h-[907px]">
       <Tabs defaultValue="filled" className="flex h-full flex-col">
         <TabsList className="mb-2 flex gap-1.5">
           <TabsTrigger value="filled" className="w-full">
