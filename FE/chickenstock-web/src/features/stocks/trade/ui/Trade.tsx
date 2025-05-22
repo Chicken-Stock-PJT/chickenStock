@@ -354,15 +354,15 @@ const Trade = ({ stockCode, currentPrice, maxSellQty, isNxt }: TradeProps) => {
               </div>
             )}
 
-            <div className="mb-2 mt-4 flex justify-between gap-2 text-sm sm:mb-4 sm:mt-8 sm:text-lg">
-              <span className="font-semibold">예수금 잔고</span>
-              <span>{Number(memberMoney).toLocaleString()}원</span>
+            <div className="sm:text-md mb-2 mt-4 flex justify-between gap-2 text-xs sm:mb-4 sm:mt-8 md:text-lg">
+              <span>예수금 잔고</span>
+              <span className="font-semibold">{Number(memberMoney).toLocaleString()}원</span>
             </div>
 
             {isLimitOrder && (
-              <div className="mb-2 mt-4 flex justify-between gap-2 text-sm sm:mb-4 sm:mt-8 sm:text-lg">
+              <div className="sm:text-md mb-2 mt-4 flex justify-between gap-2 text-xs sm:mb-4 sm:mt-8 md:text-lg">
                 <span>총 가격</span>
-                <span>{(price * quantity).toLocaleString()}원</span>
+                <span className="font-semibold">{(price * quantity).toLocaleString()}원</span>
               </div>
             )}
             <button
@@ -460,10 +460,10 @@ const Trade = ({ stockCode, currentPrice, maxSellQty, isNxt }: TradeProps) => {
             )}
             <button
               className="mt-4 w-full rounded-lg bg-primary-300 
-        py-2 font-semibold text-gray-900
+        py-2 text-sm font-semibold text-gray-900
         drop-shadow-[0_0px_1px_rgba(0,0,0,0.1)]
         transition-all duration-200 hover:bg-primary-400
-        active:scale-[0.98] active:shadow-inner sm:py-3"
+        active:scale-[0.98] active:shadow-inner sm:py-3 sm:text-base"
               onClick={handleSellOrder}
             >
               매도 신청하기

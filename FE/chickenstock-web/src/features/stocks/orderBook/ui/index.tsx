@@ -96,7 +96,7 @@ const OrderBook = ({ stockCode, currentPrice }: OrderBookProps) => {
         <div className="grid">{renderOrderRows()}</div>
       </div>
 
-      <footer className="flex justify-between border-t border-gray-200 px-3 py-1.5 text-[10px] text-gray-500 sm:px-6 sm:py-2 sm:text-xs">
+      <footer className="flex justify-between border-t border-gray-200 px-1 py-1.5 text-[10px] text-gray-500 sm:px-6 sm:py-2 sm:text-xs">
         <div className="flex flex-col items-start gap-1 md:flex-row md:items-center md:gap-2">
           <span>총 매수잔량: </span>
           <span>{totalVolumes.bid.toLocaleString()}</span>
