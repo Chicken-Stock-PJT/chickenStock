@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "818545950918",
+    "project_id": "chickenstock-c7404",
+    "storage_bucket": "chickenstock-c7404.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:818545950918:android:2215c5a1b986eb2e1897c7",
+        "android_client_info": {
+          "package_name": "com.example.chickenstock"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBE08H4yvSc_A_WG1Ch-0r9unAzS8z1CdI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

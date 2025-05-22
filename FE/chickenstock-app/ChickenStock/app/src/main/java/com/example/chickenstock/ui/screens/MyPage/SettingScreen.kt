@@ -50,6 +50,17 @@ import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import android.content.Context
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import com.google.firebase.messaging.FirebaseMessaging
+import com.example.chickenstock.api.NotificationService
+import com.example.chickenstock.api.FcmTokenRequest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import android.util.Log
 
 // API 서비스에 닉네임 변경 및 자본 초기화 요청 추가
 interface MemberUpdateService {
@@ -80,11 +91,20 @@ fun SettingScreen(
     var isLoading by remember { mutableStateOf(false) }
     var showChangePassword by remember { mutableStateOf(false) }
     var showChangeNickname by remember { mutableStateOf(false) }
+    var showSocialPasswordAlert by remember { mutableStateOf(false) }
+    var showAlreadyInitializedDialog by remember { mutableStateOf(false) }
+    var initializedUntil by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val authService = remember { RetrofitClient.getInstance(context).create(AuthService::class.java) }
     val memberUpdateService = remember { RetrofitClient.getInstance(context).create(MemberUpdateService::class.java) }
     val tokenManager = remember { TokenManager.getInstance(context) }
+
+    // 소셜 로그인 여부 확인
+    fun isSocialLogin(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("is_social_login", false)
+    }
 
     // 로그아웃 확인 다이얼로그
     if (showLogoutDialog) {
@@ -99,13 +119,26 @@ fun SettingScreen(
                             isLoading = true
                             try {
                                 println("로그아웃 시도")
-                                val response = authService.logout()
-                                println("로그아웃 응답 코드: ${response.code()}")
-                                println("로그아웃 응답 메시지: ${response.message()}")
-                                println("로그아웃 응답 헤더: ${response.headers()}")
-                                
-                                if (response.isSuccessful) {
-                                    println("로그아웃 성공")
+                                val accessToken = tokenManager.getAccessToken()
+                                if (!accessToken.isNullOrBlank()) {
+                                    // 1. FCM 토큰 삭제 요청 먼저
+                                    val fcmDeleted = deleteFcmTokenFromServerSuspend(context)
+                                    println("FCM 토큰 삭제 요청 결과: $fcmDeleted")
+                                    // 2. FCM 삭제 후 로그아웃 API 호출
+                                    RetrofitClient.resetInstance()
+                                    val authService = RetrofitClient.getInstance(context).create(AuthService::class.java)
+                                    val response = authService.logout()
+                                    println("로그아웃 응답 코드: ${response.code()}")
+                                    println("로그아웃 응답 메시지: ${response.message()}")
+                                    println("로그아웃 응답 헤더: ${response.headers()}")
+                                    if (response.isSuccessful) {
+                                        println("로그아웃 성공")
+                                    } else {
+                                        println("로그아웃 실패: "+response.code())
+                                        val errorBody = response.errorBody()?.string()
+                                        println("에러 응답: $errorBody")
+                                    }
+                                    // 3. 토큰 삭제 및 상태 초기화
                                     tokenManager.clearTokens()
                                     showLogoutDialog = false
                                     authViewModel.logout()
@@ -116,20 +149,15 @@ fun SettingScreen(
                                         }
                                     }
                                 } else {
-                                    println("로그아웃 실패: ${response.code()}")
-                                    val errorBody = response.errorBody()?.string()
-                                    println("에러 응답: $errorBody")
-                                    
-                                    // 서버 응답이 실패해도 로컬에서 로그아웃 처리
+                                    // 토큰이 없으면 바로 로컬 로그아웃 처리
                                     tokenManager.clearTokens()
                                     showLogoutDialog = false
                                     authViewModel.logout()
                                     viewModel.updateSelectedIndex(0)
                                     navController.navigate(Screen.Home.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            inclusive = true
-                                        }
+                                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
                                     }
+                                    return@launch
                                 }
                             } catch (e: Exception) {
                                 println("로그아웃 오류: ${e.message}")
@@ -168,7 +196,7 @@ fun SettingScreen(
                     Text("취소", color = Color(0xFF0066CC), fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
                 }
             },
-            containerColor = Color.White
+            containerColor = Color(0xFFF5F5F5)
         )
     }
 
@@ -177,7 +205,7 @@ fun SettingScreen(
         AlertDialog(
             onDismissRequest = { showInitializeDialog = false },
             title = { Text("자본 초기화", fontFamily = SCDreamFontFamily, color = Color.Black, fontWeight = FontWeight.Bold) },
-            text = { Text("정말 자본을 1억원으로 초기화하시겠습니까?\n모든 주식 포지션이 정리되고 현금이 1억원으로 초기화됩니다.", fontFamily = SCDreamFontFamily, color = Color.Black, textAlign = TextAlign.Center) },
+            text = { Text("정말 자본을 1억원으로 초기화하시겠습니까?\n모든 주식 포지션이 정리되고 현금이 1억원으로 초기화됩니다.\n\n※ 한 번 초기화하면 1주일간 다시 초기화할 수 없습니다.", fontFamily = SCDreamFontFamily, color = Color.Black, textAlign = TextAlign.Center) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -188,16 +216,44 @@ fun SettingScreen(
                                 if (token != null) {
                                     val response = memberUpdateService.initializeMoney("Bearer $token")
                                     if (response.isSuccessful) {
-                                        // 성공 메시지 표시
                                         showInitializeDialog = false
-                                        // 홈 화면으로 이동
                                         navController.navigate(Screen.Home.route) {
                                             popUpTo(navController.graph.startDestinationId)
                                         }
                                     } else {
-                                        println("자본 초기화 실패: ${response.code()}")
                                         val errorBody = response.errorBody()?.string()
-                                        println("에러 응답: $errorBody")
+                                        // 이미 초기화한 회원(1주일 제한) 처리
+                                        if (response.code() == 400 && errorBody?.contains("MEMBER-E007") == true) {
+                                            // timestamp 파싱 및 7일 후 계산
+                                            val regex = "\"timestamp\":\"([^\"]+)\"".toRegex()
+                                            val match = regex.find(errorBody ?: "")
+                                            val timestampStr = match?.groupValues?.getOrNull(1)
+                                            android.util.Log.d("InitMoney", "errorBody: $errorBody")
+                                            android.util.Log.d("InitMoney", "timestampStr: $timestampStr")
+                                            if (timestampStr != null) {
+                                                try {
+                                                    val isoFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+                                                    val zdt = try {
+                                                        ZonedDateTime.parse(timestampStr, isoFormatter)
+                                                    } catch (e: Exception) {
+                                                        val localFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss[.SSSSSSSSS]")
+                                                        val ldt = java.time.LocalDateTime.parse(timestampStr, localFormatter)
+                                                        ldt.atZone(ZoneId.systemDefault())
+                                                    }
+                                                    val until = zdt.plusDays(7)
+                                                    initializedUntil = until.format(DateTimeFormatter.ofPattern("yyyy년 MM월 dd일 HH시 mm분까지"))
+                                                } catch (e: Exception) {
+                                                    initializedUntil = "7일 후까지"
+                                                }
+                                            } else {
+                                                initializedUntil = "7일 후까지"
+                                            }
+                                            showInitializeDialog = false
+                                            showAlreadyInitializedDialog = true
+                                        } else {
+                                            println("자본 초기화 실패: ${response.code()}")
+                                            println("에러 응답: $errorBody")
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {
@@ -228,7 +284,37 @@ fun SettingScreen(
                     Text("취소", color = Color(0xFF0066CC), fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
                 }
             },
-            containerColor = Color.White
+            containerColor = Color(0xFFF5F5F5)
+        )
+    }
+
+    // 이미 초기화한 회원 경고창
+    if (showAlreadyInitializedDialog) {
+        AlertDialog(
+            onDismissRequest = { showAlreadyInitializedDialog = false },
+            title = { Text("자본 초기화 불가", fontFamily = SCDreamFontFamily, color = Color.Black, fontWeight = FontWeight.Bold) },
+            text = { Text("이미 초기화하여 $initializedUntil 초기화가 불가능합니다.", fontFamily = SCDreamFontFamily, color = Color.Black, textAlign = TextAlign.Center) },
+            confirmButton = {
+                TextButton(onClick = { showAlreadyInitializedDialog = false }) {
+                    Text("확인", color = Color(0xFF0066CC), fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFFF5F5F5)
+        )
+    }
+
+    // 소셜 로그인 비밀번호 변경 불가 경고창
+    if (showSocialPasswordAlert) {
+        AlertDialog(
+            onDismissRequest = { showSocialPasswordAlert = false },
+            title = { Text("비밀번호 변경 불가", fontFamily = SCDreamFontFamily, color = Color.Black, fontWeight = FontWeight.Bold) },
+            text = { Text("소셜 로그인 이용자는 비밀번호 변경이 불가능합니다.", fontFamily = SCDreamFontFamily, color = Color.Black) },
+            confirmButton = {
+                TextButton(onClick = { showSocialPasswordAlert = false }) {
+                    Text("확인", color = Color(0xFF0066CC), fontFamily = SCDreamFontFamily, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFFF5F5F5)
         )
     }
 
@@ -258,40 +344,7 @@ fun SettingScreen(
         }
 
         Scaffold(
-            containerColor = Gray0,
-            topBar = {
-                TopAppBar(
-                    title = { 
-                        Text(
-                            text = "설정",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = SCDreamFontFamily,
-                            color = Gray700,
-                            modifier = Modifier.offset(y = 3.dp)
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = { navController.navigateUp() },
-                            modifier = Modifier
-                                .size(72.dp)
-                                .padding(start = 0.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.KeyboardArrowLeft,
-                                contentDescription = "뒤로가기",
-                                modifier = Modifier.size(52.dp),
-                                tint = Gray700
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Gray0
-                    ),
-                    modifier = Modifier.height(64.dp)
-                )
-            }
+            containerColor = Color(0xFFF5F5F5),
         ) { paddingValues ->
             Column(
                 modifier = Modifier
@@ -299,10 +352,43 @@ fun SettingScreen(
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp)
             ) {
+                // 뒤로가기 버튼 추가
+                IconButton(
+                    onClick = { navController.navigateUp() },
+                    modifier = Modifier
+                        .size(72.dp)
+                        .padding(start = 0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowLeft,
+                        contentDescription = "뒤로가기",
+                        modifier = Modifier.size(52.dp),
+                        tint = Gray700
+                    )
+                }
+                
+                // 설정 타이틀
+                Text(
+                    text = "설정",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SCDreamFontFamily,
+                    color = Gray700,
+                    modifier = Modifier
+                        .padding(start = 16.dp, bottom = 16.dp)
+                        .offset(y = 3.dp)
+                )
+
                 // 설정 메뉴 아이템들
                 SettingMenuItem(
                     title = "비밀번호 변경",
-                    onClick = { showChangePassword = true }
+                    onClick = {
+                        if (isSocialLogin(context)) {
+                            showSocialPasswordAlert = true
+                        } else {
+                            showChangePassword = true
+                        }
+                    }
                 )
                 SettingMenuItem(
                     title = "닉네임 변경",
@@ -331,7 +417,7 @@ fun SettingMenuItem(
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         shape = RoundedCornerShape(12.dp),
-        color = Color.White,
+        color = Color(0xFFF5F5F5),
         onClick = onClick
     ) {
         Text(
@@ -412,12 +498,12 @@ fun ChangePasswordScreen(
                     )
                 }
             },
-            containerColor = Color.White
+            containerColor = Color(0xFFF5F5F5)
         )
     }
 
     Scaffold(
-        containerColor = Gray0,
+        containerColor = Color(0xFFF5F5F5),
         topBar = {
             TopAppBar(
                 title = { 
@@ -446,7 +532,7 @@ fun ChangePasswordScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Gray0
+                    containerColor = Color(0xFFF5F5F5)
                 ),
                 modifier = Modifier.height(64.dp)
             )
@@ -766,12 +852,12 @@ fun ChangeNicknameScreen(
                     )
                 }
             },
-            containerColor = Color.White
+            containerColor = Color(0xFFF5F5F5)
         )
     }
 
     Scaffold(
-        containerColor = Gray0,
+        containerColor = Color(0xFFF5F5F5),
         topBar = {
             TopAppBar(
                 title = { 
@@ -800,7 +886,7 @@ fun ChangeNicknameScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Gray0
+                    containerColor = Color(0xFFF5F5F5)
                 ),
                 modifier = Modifier.height(64.dp)
             )
@@ -878,6 +964,11 @@ fun ChangeNicknameScreen(
                             if (response.isSuccessful) {
                                 println("닉네임 변경 성공")
                                 showSuccessDialog = true
+                                // 닉네임 변경 성공 시 프로필 정보 즉시 갱신
+                                viewModel.loadUserProfile(
+                                    com.example.chickenstock.api.RetrofitClient.getInstance(context).create(com.example.chickenstock.api.MemberService::class.java),
+                                    context
+                                )
                             } else {
                                 println("닉네임 변경 실패: ${response.code()}")
                                 val errorBody = response.errorBody()?.string()
@@ -928,5 +1019,36 @@ fun ChangeNicknameScreen(
                 }
             }
         }
+    }
+}
+
+// FCM 토큰 삭제를 suspend로 처리하는 함수 추가
+suspend fun deleteFcmTokenFromServerSuspend(context: Context): Boolean {
+    return try {
+        val fcmToken = kotlinx.coroutines.suspendCancellableCoroutine<String?> { cont ->
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                cont.resume(token, null)
+            }.addOnFailureListener {
+                cont.resume(null, null)
+            }
+        }
+        val accessToken = com.example.chickenstock.data.TokenManager.getInstance(context).getAccessToken()
+        if (!accessToken.isNullOrBlank() && !fcmToken.isNullOrBlank()) {
+            val service = com.example.chickenstock.api.RetrofitClient.getInstance(context).create(com.example.chickenstock.api.NotificationService::class.java)
+            val response = service.deleteFcmToken("Bearer $accessToken", com.example.chickenstock.api.FcmTokenRequest(fcmToken))
+            if (response.isSuccessful) {
+                val body = response.body()?.toString() ?: ""
+                android.util.Log.d("FCM", "deleteFcmTokenFromServerSuspend response: ${response.code()} $body")
+                true
+            } else {
+                android.util.Log.e("FCM", "deleteFcmTokenFromServerSuspend error: ${response.code()}")
+                false
+            }
+        } else {
+            false
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("FCM", "deleteFcmTokenFromServerSuspend exception: ${e.message}")
+        false
     }
 }

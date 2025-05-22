@@ -33,13 +33,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chickenstock.api.AuthService
 import com.example.chickenstock.api.LoginRequest
 import com.example.chickenstock.api.RetrofitClient
-import kotlinx.coroutines.launch
 import com.example.chickenstock.data.TokenManager
+import com.example.chickenstock.api.TokenExchangeService
+import com.example.chickenstock.api.NotificationService
+import com.example.chickenstock.api.FcmTokenRequest
 import androidx.compose.ui.platform.LocalContext
+import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
-import com.example.chickenstock.api.TokenExchangeService
+import android.content.Context
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +53,7 @@ fun LoginScreen(
     navController: NavController,
     authViewModel: AuthViewModel
 ) {
+    val context = LocalContext.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -56,7 +63,6 @@ fun LoginScreen(
     var showExitDialog by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
     
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val authService = remember { RetrofitClient.getInstance(context).create(AuthService::class.java) }
     val tokenManager = remember { TokenManager.getInstance(context) }
@@ -84,7 +90,7 @@ fun LoginScreen(
     // 소셜 로그인 처리 함수
     fun handleSocialLogin(provider: String) {
         val redirectUri = "chickenstock://oauth2callback"
-        val authUrl = "https://k12a106.p.ssafy.io/api/auth/oauth2/redirect/$provider?redirectUri=$redirectUri&platform=mobile"
+        val authUrl = "https://chickenstock.shop/api/auth/oauth2/redirect/$provider?redirectUri=$redirectUri&platform=mobile"
         
         Log.d("SocialLogin", "Opening URL: $authUrl")
         
@@ -131,6 +137,8 @@ fun LoginScreen(
                     onClick = {
                         showSuccessDialog = false
                         authViewModel.login()
+                        // FCM 토큰 등록
+                        registerFcmTokenToServer(context)
                         navController.navigate(Screen.Home.route) {
                             popUpTo(navController.graph.startDestinationId) {
                                 inclusive = true
@@ -148,7 +156,7 @@ fun LoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Color(0xFFF5F5F5))
     ) {
         // 뒤로가기 버튼
         IconButton(
@@ -309,6 +317,9 @@ fun LoginScreen(
                                         println("저장된 Refresh Token: ${tokenManager.getRefreshToken()}")
                                         println("저장된 만료 시간: ${tokenManager.getAccessTokenExpiresIn()}")
                                         
+                                        // FCM 토큰 등록
+                                        registerFcmTokenToServer(context)
+                                        
                                         showSuccessDialog = true
                                     } ?: run {
                                         errorMessage = "서버 응답이 올바르지 않습니다"
@@ -377,7 +388,7 @@ fun LoginScreen(
                     color = Gray500,
                     fontFamily = SCDreamFontFamily,
                     fontSize = 14.sp,
-                    modifier = Modifier.clickable { navController.navigate(Screen.Signup.route) }
+                    modifier = Modifier.clickable { navController.navigate("terms_agreement") }
                 )
                 Text(
                     " | ",
@@ -468,6 +479,29 @@ fun LoginScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+fun registerFcmTokenToServer(context: Context, onResult: ((Boolean, String) -> Unit)? = null) {
+    FirebaseMessaging.getInstance().token.addOnSuccessListener { fcmToken: String ->
+        val accessToken = TokenManager.getInstance(context).getAccessToken()
+        Log.d("FCM", "registerFcmTokenToServer called. fcmToken=$fcmToken, accessToken=$accessToken")
+        if (!accessToken.isNullOrBlank()) {
+            val service = RetrofitClient.getInstance(context).create(NotificationService::class.java)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val response = service.registerFcmToken("Bearer $accessToken", FcmTokenRequest(fcmToken))
+                    val msg = "registerFcmTokenToServer response: ${response.code()} ${response.body()?.message ?: response.errorBody()?.string()}"
+                    Log.d("FCM", msg)
+                    onResult?.invoke(response.isSuccessful, msg)
+                } catch (e: Exception) {
+                    Log.e("FCM", "registerFcmTokenToServer error: ${e.message}")
+                    onResult?.invoke(false, e.message ?: "Unknown error")
+                }
+            }
+        } else {
+            onResult?.invoke(false, "No access token")
         }
     }
 } 

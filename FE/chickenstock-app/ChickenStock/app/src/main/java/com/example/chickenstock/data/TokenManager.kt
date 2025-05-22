@@ -6,6 +6,7 @@ import android.util.Log
 
 class TokenManager private constructor(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    private var isFirstCheck = true
 
     companion object {
         private const val TAG = "TokenManager"
@@ -29,7 +30,8 @@ class TokenManager private constructor(context: Context) {
     }
 
     fun saveTokens(accessToken: String, refreshToken: String, accessTokenExpiresIn: Long, refreshTokenExpiresIn: Long = 30 * 24 * 60 * 60 * 1000L) {
-        val accessExpirationTime = System.currentTimeMillis() + accessTokenExpiresIn
+        // accessTokenExpiresIn은 절대 만료 시각(타임스탬프)로 저장
+        val accessExpirationTime = accessTokenExpiresIn
         val refreshExpirationTime = System.currentTimeMillis() + refreshTokenExpiresIn
         prefs.edit().apply {
             putString(KEY_ACCESS_TOKEN, accessToken)
@@ -114,5 +116,35 @@ class TokenManager private constructor(context: Context) {
         Log.d(TAG, "리프레시 토큰 만료 시간: ${if (refreshExpiresAt > 0) "${refreshExpiresAt - now}ms 후" else "설정되지 않음"}")
         Log.d(TAG, "액세스 토큰 만료 여부: ${if (now >= accessExpiresAt) "만료됨" else "유효함"}")
         Log.d(TAG, "리프레시 토큰 만료 여부: ${if (now >= refreshExpiresAt) "만료됨" else "유효함"}")
+    }
+
+    fun saveAccessToken(accessToken: String) {
+        prefs.edit().putString(KEY_ACCESS_TOKEN, accessToken).apply()
+        Log.d(TAG, "액세스 토큰 저장 완료")
+    }
+
+    fun saveRefreshToken(refreshToken: String) {
+        prefs.edit().putString(KEY_REFRESH_TOKEN, refreshToken).apply()
+        Log.d(TAG, "리프레시 토큰 저장 완료")
+    }
+
+    fun setAccessTokenExpiry(expirationTime: Long) {
+        prefs.edit().putLong(KEY_ACCESS_TOKEN_EXPIRES_IN, expirationTime).apply()
+        Log.d(TAG, "액세스 토큰 만료 시간 설정: ${expirationTime - System.currentTimeMillis()}ms 후")
+    }
+
+    fun setRefreshTokenExpiry(expirationTime: Long) {
+        prefs.edit().putLong(KEY_REFRESH_TOKEN_EXPIRES_IN, expirationTime).apply()
+        Log.d(TAG, "리프레시 토큰 만료 시간 설정: ${expirationTime - System.currentTimeMillis()}ms 후")
+    }
+
+    fun isAccessTokenExpired(): Boolean {
+        // 원래 만료 체크 로직
+        val expireTime = getAccessTokenExpiresIn()
+        return System.currentTimeMillis() > expireTime
+    }
+
+    fun needsTokenRefresh(): Boolean {
+        return shouldRefreshToken()
     }
 } 

@@ -61,7 +61,7 @@ fun VerificationScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Color(0xFFF5F5F5))
     ) {
         // 뒤로가기 버튼
         IconButton(

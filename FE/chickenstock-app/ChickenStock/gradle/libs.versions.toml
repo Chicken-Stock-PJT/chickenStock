@@ -29,6 +29,7 @@ androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit
 material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
 navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+splashscreen = { group = "androidx.core", name = "core-splashscreen", version = "1.0.1" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,6 +50,16 @@ private fun String.formatWithCommas(): String {
     }
 }
 
+// 관심 종목 여부 체크 함수 (공통)
+fun isInWatchlist(watchlist: Set<String>, stockCode: String): Boolean {
+    return watchlist.any { it.trim().equals(stockCode.trim(), ignoreCase = true) }
+}
+
+// 종목 코드에서 _AL 등 접미사를 제거하는 함수
+fun getPureStockCode(stockCode: String): String {
+    return stockCode.substringBefore("_")
+}
+
 @Composable
 fun StockListItem(
     stock: StockItem,
@@ -62,7 +73,7 @@ fun StockListItem(
     val context = LocalContext.current
     
     // 관심 종목 여부 확인
-    val isInWatchlist = viewModel.watchlist.value.contains(stock.stockCode)
+    val isInWatchlist = isInWatchlist(viewModel.watchlist.value, getPureStockCode(stock.stockCode))
     
     val isUp = stock.fluctuationRate.startsWith("+")
     val fluctuationColor = when {
@@ -134,14 +145,13 @@ fun StockListItem(
                     restoreState = true
                 }
             },
-        shape = RoundedCornerShape(16.dp),
         color = Color(0xFFF8F8F8),
-        shadowElevation = 2.dp
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -156,7 +166,7 @@ fun StockListItem(
                         if (authViewModel.isLoggedIn.value) {
                             if (isInWatchlist) {
                                 viewModel.removeFromWatchlist(
-                                    stockCode = stock.stockCode,
+                                    stockCode = getPureStockCode(stock.stockCode),
                                     context = context,
                                     onSuccess = {
                                         // 관심 종목 목록 새로고침
@@ -169,7 +179,7 @@ fun StockListItem(
                                 )
                             } else {
                                 viewModel.addToWatchlist(
-                                    stockCode = stock.stockCode,
+                                    stockCode = getPureStockCode(stock.stockCode),
                                     context = context,
                                     onSuccess = {
                                         // 관심 종목 목록 새로고침
@@ -204,10 +214,12 @@ fun StockListItem(
                         .clip(CircleShape)
                         .background(Color.White)
                 ) {
+                    val imageUrl = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${getPureStockCode(stock.stockCode).trim().uppercase()}.png"
                     AsyncImage(
-                        model = "https://thumb.tossinvest.com/image/resized/96x0/https%3A%2F%2Fstatic.toss.im%2Fpng-icons%2Fsecurities%2Ficn-sec-fill-${stock.stockCode}.png",
+                        model = imageUrl,
                         contentDescription = "주식 로고",
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        error = painterResource(id = com.example.chickenstock.R.drawable.logo) // 기본 이미지 리소스
                     )
                 }
                 
@@ -217,20 +229,20 @@ fun StockListItem(
                 ) {
                     Text(
                         text = stock.stockName,
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.W700,
                         fontFamily = SCDreamFontFamily
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "${stock.currentPrice.formatWithCommas()}원",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.W500,
                             fontFamily = SCDreamFontFamily
                         )
                         Text(
                             text = " ${stock.fluctuationRate}%",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.W500,
                             color = fluctuationColor,
                             fontFamily = SCDreamFontFamily
@@ -250,18 +262,29 @@ fun StockListItem(
                     val (label, value, unit) = when {
                         showContractStrength -> Triple("체결강도", stock.tradeAmount, "%")
                         showTradeVolume -> Triple("거래량", stock.tradeAmount.formatWithCommas(), "주")
-                        else -> Triple("거래대금", stock.tradeAmount.formatWithCommas(), "원")
+                        else -> Triple("거래대금", stock.tradeAmount.formatWithCommas(), "")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = label,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.W500,
+                            color = Color.Gray,
+                            fontFamily = SCDreamFontFamily
+                        )
+                        if (!showContractStrength && !showTradeVolume) {
+                            Text(
+                                text = " (백만원)",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.W500,
+                                color = Color.Gray,
+                                fontFamily = SCDreamFontFamily
+                            )
+                        }
                     }
                     Text(
-                        text = label,
+                        text = value + if (showContractStrength) unit else if (showTradeVolume) unit else "",
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.W500,
-                        color = Color.Gray,
-                        fontFamily = SCDreamFontFamily
-                    )
-                    Text(
-                        text = "$value$unit",
-                        fontSize = 13.sp,
                         fontWeight = FontWeight.W500,
                         fontFamily = SCDreamFontFamily,
                         color = Color.Black

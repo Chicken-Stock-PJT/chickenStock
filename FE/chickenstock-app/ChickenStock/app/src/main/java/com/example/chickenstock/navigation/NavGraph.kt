@@ -16,6 +16,7 @@ import com.example.chickenstock.ui.components.StockItem
 import com.example.chickenstock.ui.screens.search.SearchScreen
 import com.example.chickenstock.ui.screens.login.LoginScreen
 import com.example.chickenstock.ui.screens.login.SignupScreen
+import com.example.chickenstock.ui.screens.login.TermsAgreementScreen
 import com.example.chickenstock.ui.screens.mypage.SettingScreen
 import com.example.chickenstock.viewmodel.AuthViewModel
 import androidx.compose.ui.platform.LocalContext
@@ -26,6 +27,18 @@ import com.example.chickenstock.ui.screens.login.SignupSuccessScreen
 import com.example.chickenstock.api.MemberService
 import com.example.chickenstock.api.StockService
 import com.example.chickenstock.api.RetrofitClient
+import com.example.chickenstock.ui.screens.SplashScreen
+import com.example.chickenstock.ui.screens.ranking.RankingScreen
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.fillMaxSize
+import com.example.chickenstock.ui.screens.stock.ChatScreen
+import com.example.chickenstock.ui.screens.ranking.AIDashboardScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -38,10 +51,14 @@ sealed class Screen(val route: String) {
     object FindPW : Screen("findpw")
     object Verification : Screen("verification")
     object SignupSuccess : Screen("signup_success")
+    object TermsAgreement : Screen("terms_agreement")
     object StockDetail : Screen("stock_detail/{stockCode}/{currentPrice}/{fluctuationRate}") {
         fun createRoute(stockCode: String, currentPrice: String, fluctuationRate: String) = 
             "stock_detail/$stockCode/$currentPrice/$fluctuationRate"
     }
+    object Splash : Screen("splash")
+    object Ranking : Screen("ranking")
+    object Chat : Screen("chat/{stockCode}")
 }
 
 @Composable
@@ -57,9 +74,17 @@ fun NavGraph(
 
     NavHost(
         navController = navController,
-        startDestination = Screen.Home.route,
+        startDestination = Screen.Splash.route,
         modifier = modifier
     ) {
+        composable(Screen.Splash.route) {
+            SplashScreen(
+                navController = navController,
+                authViewModel = authViewModel,
+                viewModel = viewModel
+            )
+        }
+        
         composable(Screen.Home.route) {
             HomeScreen(
                 navController = navController,
@@ -77,29 +102,47 @@ fun NavGraph(
             )
         }
         composable(
-            route = Screen.MyPage.route + "?tab={tab}",
+            route = Screen.MyPage.route + "?tab={tab}&pending={pending}",
             arguments = listOf(
                 navArgument("tab") {
                     type = NavType.StringType
                     nullable = true
+                },
+                navArgument("pending") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 }
             )
         ) { entry ->
-            val tab = entry.arguments?.getString("tab") ?: "portfolio"
             MyPageScreen(
                 navController = navController,
+                navBackStackEntry = entry,
                 authViewModel = authViewModel,
-                initialTab = tab
+                mainViewModel = viewModel
             )
         }
         composable(Screen.Search.route) {
-            SearchScreen(navController = navController)
+            SearchScreen(
+                navController = navController
+            )
         }
         composable(Screen.Login.route) {
-            LoginScreen(navController = navController, authViewModel = authViewModel)
+            LoginScreen(
+                navController = navController,
+                authViewModel = authViewModel
+            )
+        }
+        composable(Screen.TermsAgreement.route) {
+            TermsAgreementScreen(
+                navController = navController,
+                viewModel = viewModel
+            )
         }
         composable(Screen.Signup.route) {
-            SignupScreen(navController = navController)
+            SignupScreen(
+                navController = navController
+            )
         }
         composable(Screen.Setting.route) {
             SettingScreen(
@@ -109,7 +152,9 @@ fun NavGraph(
             )
         }
         composable(Screen.FindPW.route) {
-            FindPWScreen(navController = navController)
+            FindPWScreen(
+                navController = navController
+            )
         }
         composable(
             route = Screen.StockDetail.route,
@@ -161,6 +206,29 @@ fun NavGraph(
                 navController = navController,
                 viewModel = viewModel
             )
+        }
+        composable(Screen.Ranking.route) {
+            RankingScreen(
+                navController = navController
+            )
+        }
+        composable(
+            route = "chat/{stockCode}",
+            arguments = listOf(
+                navArgument("stockCode") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val stockCode = backStackEntry.arguments?.getString("stockCode") ?: ""
+            ChatScreen(stockCode = stockCode, viewModel = viewModel, navController = navController, authViewModel = authViewModel)
+        }
+        composable(
+            route = "ai_dashboard?nickname={nickname}&memberId={memberId}",
+            arguments = listOf(
+                navArgument("nickname") { type = NavType.StringType; nullable = true },
+                navArgument("memberId") { type = NavType.StringType; nullable = true }
+            )
+        ) { entry ->
+            AIDashboardScreen(navController = navController)
         }
     }
 } 

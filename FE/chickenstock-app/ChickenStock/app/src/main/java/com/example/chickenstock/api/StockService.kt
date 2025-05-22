@@ -9,10 +9,15 @@ import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.Body
 import retrofit2.http.Headers
+import retrofit2.http.Header
+import com.example.chickenstock.model.Order
+import retrofit2.http.DELETE
+import retrofit2.http.PUT
 
 data class StockDetailResponse(
     val stockCode: String,          // 종목 코드
     val shortName: String,          // 종목 이름
+    val stockName: String?,         // 종목 이름(서버에서 내려주는 경우, null 허용)
     val currentPrice: String,       // 현재가
     val changeRate: String,         // 등락률
     val priceChange: String,        // 전일대비 변동 금액
@@ -83,6 +88,70 @@ data class SellOrderResponse(
     val status: String
 )
 
+data class CancelOrderResponse(
+    val status: String,
+    val message: String
+)
+
+data class RankingUser(
+    val rank: Int,
+    val nickname: String,
+    val totalAsset: Double,
+    val memberId: Int
+)
+
+data class TotalAssetRankingResponse(
+    val topRankings: List<RankingUser>,
+    val myRank: RankingUser? = null
+)
+
+data class CommentResponse(
+    val id: Int,
+    val content: String?,
+    val nickname: String,
+    val createdAt: String,
+    val updatedAt: String,
+    val children: List<CommentResponse>,
+    val likeCount: Int,
+    val likedByMe: Boolean?,
+    val deleted: Boolean
+)
+
+data class CommentsListResponse(
+    val comments: List<CommentResponse>,
+    val nextCursor: String?
+)
+
+data class CommentPostRequest(
+    val content: String
+)
+
+data class CommentEditRequest(
+    val content: String
+)
+
+data class ReplyPostRequest(
+    val content: String,
+    val parentId: Int
+)
+
+data class LikeToggleResponse(
+    val likeCount: Int,
+    val liked: Boolean
+)
+
+data class ReturnRateRankingUser(
+    val rank: Int,
+    val nickname: String,
+    val returnRate: Double,
+    val memberId: Int
+)
+
+data class ReturnRateRankingResponse(
+    val topRankings: List<ReturnRateRankingUser>,
+    val myRank: ReturnRateRankingUser? = null
+)
+
 interface StockService {
     @GET("stocks/all")
     suspend fun getAllStocks(): Response<List<Stock>>
@@ -127,15 +196,99 @@ interface StockService {
 
     @Headers("Content-Type: application/json")
     @POST("stock/trading/buy")
-    suspend fun buyStock(@Body request: BuyOrderRequest): Response<BuyOrderResponse>
+    suspend fun buyStock(
+        @Header("Authorization") token: String,
+        @Body request: BuyOrderRequest
+    ): Response<BuyOrderResponse>
 
     @Headers("Content-Type: application/json")
     @POST("stock/trading/sell")
-    suspend fun sellStock(@Body request: SellOrderRequest): Response<SellOrderResponse>
+    suspend fun sellStock(
+        @Header("Authorization") token: String,
+        @Body request: SellOrderRequest
+    ): Response<SellOrderResponse>
 
     @GET("stocks/info/{stockCode}")
     suspend fun getStockInfo(@Path("stockCode") stockCode: String): Response<StockDetailResponse>
 
     @GET("stocks/askbid/{code}")
     suspend fun getStockBidAsk(@Path("code") stockCode: String): Response<StockBidAskResponse>
+
+    @GET("stock/trading/pending-orders")
+    suspend fun getPendingOrders(@Header("Authorization") token: String): Response<List<Order>>
+
+    @POST("stock/trading/cancel-order/{orderId}")
+    suspend fun cancelOrder(
+        @Header("Authorization") token: String,
+        @Path("orderId") orderId: Int
+    ): Response<CancelOrderResponse>
+
+    @GET("stocks/{shortCode}/comments")
+    suspend fun getComments(
+        @Path("shortCode") shortCode: String,
+        @Query("limit") limit: Int? = null,
+        @Query("cursor") cursor: String? = null
+    ): Response<CommentsListResponse>
+
+    @GET("stocks/{shortCode}/comments")
+    suspend fun getCommentsWithAuth(
+        @Header("Authorization") token: String,
+        @Path("shortCode") shortCode: String,
+        @Query("limit") limit: Int? = null,
+        @Query("cursor") cursor: String? = null
+    ): Response<CommentsListResponse>
+
+    @POST("stocks/{shortCode}/comments")
+    suspend fun postComment(
+        @Header("Authorization") token: String,
+        @Path("shortCode") shortCode: String,
+        @Body request: CommentPostRequest
+    ): Response<CommentResponse>
+
+    @DELETE("stocks/{shortCode}/comments/{commentId}")
+    suspend fun deleteComment(
+        @Header("Authorization") token: String,
+        @Path("shortCode") shortCode: String,
+        @Path("commentId") commentId: Int
+    ): Response<Unit>
+
+    @PUT("stocks/{shortCode}/comments/{commentId}")
+    suspend fun editComment(
+        @Header("Authorization") token: String,
+        @Path("shortCode") shortCode: String,
+        @Path("commentId") commentId: Int,
+        @Body request: CommentEditRequest
+    ): Response<CommentResponse>
+
+    @POST("stocks/{shortCode}/comments/reply")
+    suspend fun postReply(
+        @Header("Authorization") token: String,
+        @Path("shortCode") shortCode: String,
+        @Body request: ReplyPostRequest
+    ): Response<CommentResponse>
+
+    @POST("stocks/{shortCode}/comments/{commentId}/like")
+    suspend fun toggleLike(
+        @Header("Authorization") token: String,
+        @Path("shortCode") shortCode: String,
+        @Path("commentId") commentId: Int
+    ): Response<LikeToggleResponse>
+}
+
+interface RankingService {
+    @GET("ranking/total-asset")
+    suspend fun getTotalAssetRanking(
+        @Header("Authorization") token: String? = null
+    ): Response<TotalAssetRankingResponse>
+
+    @GET("ranking/total-asset/ai")
+    suspend fun getAiTotalAssetRanking(): Response<List<RankingUser>>
+
+    @GET("ranking/return-rate")
+    suspend fun getReturnRateRanking(
+        @Header("Authorization") token: String? = null
+    ): Response<ReturnRateRankingResponse>
+
+    @GET("ranking/return-rate/ai")
+    suspend fun getAiReturnRateRanking(): Response<List<ReturnRateRankingUser>>
 } 

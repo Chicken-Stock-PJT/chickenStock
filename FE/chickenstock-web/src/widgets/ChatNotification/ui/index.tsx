@@ -44,7 +44,7 @@ export default function ChatNotification() {
       {isOpen && (
         <div
           ref={panelRef}
-          className="fixed bottom-24 right-5 z-50 h-[650px] w-[450px] overflow-hidden rounded-xl bg-white shadow-2xl"
+          className="fixed bottom-24 right-5 z-50 h-[calc(100vh-8rem)] max-h-[600px] w-[calc(100vw-2.5rem)] max-w-[400px] overflow-hidden rounded-xl bg-white shadow-2xl sm:bottom-8 sm:right-8 sm:w-[400px]"
         >
           <div className="flex h-full flex-col">
             {/* 탭 버튼 */}
@@ -68,7 +68,7 @@ export default function ChatNotification() {
             </div>
 
             {/* 콘텐츠 영역 */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
               {activeTab === "chat" ? <ChatTab /> : <NotificationTab />}
             </div>
           </div>

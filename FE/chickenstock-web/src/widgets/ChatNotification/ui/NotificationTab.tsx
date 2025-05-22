@@ -1,4 +1,4 @@
-import { Bell, Package, MessageSquare, Heart } from "lucide-react";
+import { Bell, Package, MessageSquare, Heart, Check } from "lucide-react";
 import { useChatNotificationStore } from "../model/store";
 import { webSocketManager } from "../api/webSocket";
 import { cn } from "@/shared/libs/utils";
@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import { NotificationMessage } from "@/widgets/ChatNotification/model/types";
 
 export default function NotificationTab() {
-  const { notifications } = useChatNotificationStore();
+  const { notifications, markAllNotificationsAsRead } = useChatNotificationStore();
   const [nofificationState, setNotificationState] = useState<NotificationMessage[]>([]);
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   // 탭이 열릴 때 알림 목록 요청
   useEffect(() => {
@@ -41,7 +42,23 @@ export default function NotificationTab() {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-4">
+    <div className="h-full overflow-y-auto">
+      <div className="sticky top-0 z-10 bg-white p-3 shadow-sm ">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">
+            {unreadCount > 0 && `읽지 않은 알림 ${unreadCount}개`}
+          </span>
+          {unreadCount > 0 && (
+            <button
+              onClick={markAllNotificationsAsRead}
+              className="flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200"
+            >
+              <Check size={14} />
+              모두 읽음
+            </button>
+          )}
+        </div>
+      </div>
       {nofificationState.length === 0 ? (
         <div className="my-auto flex h-full items-center justify-center text-center text-gray-500">
           새로운 알림이 없습니다.

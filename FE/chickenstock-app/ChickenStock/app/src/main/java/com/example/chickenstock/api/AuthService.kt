@@ -49,7 +49,6 @@ data class LoginResponse(
 )
 
 data class TokenRefreshRequest(
-    val accessToken: String,
     val refreshToken: String
 )
 
@@ -93,9 +92,6 @@ interface AuthService {
 
     @POST("auth/token/refresh-mobile")
     suspend fun refreshAccessToken(@Body request: TokenRefreshRequest): Response<TokenResponse>
-
-    @POST("auth/token/refresh-all-mobile")
-    suspend fun refreshAllTokens(@Body request: TokenRefreshRequest): Response<TokenResponse>
 
     @POST("auth/logout")
     suspend fun logout(): Response<Unit>

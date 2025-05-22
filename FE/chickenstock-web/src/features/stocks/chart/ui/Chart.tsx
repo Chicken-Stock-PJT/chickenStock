@@ -1,8 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import ChartHeader from "./ChartHeader";
-import { ChartData, ChartType, TimeInterval } from "../model/types";
+import { ChartData, ChartType, TimeInterval, TradeExecutionData } from "../model/types";
 import { getStockChartData } from "../api";
-import { useWebSocketStore } from "@/shared/store/websocket";
 import {
   createChart,
   CandlestickSeries,
@@ -15,6 +14,7 @@ import {
   MouseEventParams,
 } from "lightweight-charts";
 import { formatChartTime, updateTimestamp } from "@/features/stocks/chart/model/hooks";
+import { StockPriceData } from "@/features/stocks/chart/model/types";
 
 interface ChartProps {
   stockName?: string;
@@ -24,9 +24,17 @@ interface ChartProps {
     priceChange: string;
     changeRate: string;
   };
+  stockPriceData?: StockPriceData;
+  tradeExecutionData?: TradeExecutionData;
 }
 
-const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: ChartProps) => {
+const Chart = ({
+  stockName = "삼성전자",
+  stockCode = "005930",
+  priceData,
+  stockPriceData,
+  tradeExecutionData,
+}: ChartProps) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
@@ -34,7 +42,6 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
   const [timeInterval, setTimeInterval] = useState<TimeInterval>("1");
   const [nextKey, setNextKey] = useState<string>("");
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const { stockPriceData, tradeExecutionData } = useWebSocketStore();
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const [prevVolume, setPrevVolume] = useState({ time: 0 as Time, value: 0, color: "" });
@@ -449,9 +456,9 @@ const Chart = ({ stockName = "삼성전자", stockCode = "005930", priceData }: 
                 minute: "2-digit",
                 hour12: false,
               })
-            : chartType === "DAILY"
-              ? new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).toLocaleDateString()
-              : new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).getFullYear() + "년"
+            : chartType === "YEARLY"
+              ? new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).getFullYear() + "년"
+              : new Date(Number(param.time) * 1000 + 9 * 60 * 60 * 1000).toLocaleDateString()
         }</div>
 
         <div>시가: ${candleData.open}</div>

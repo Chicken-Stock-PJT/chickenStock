@@ -14,6 +14,10 @@ import {
   MarkAsReadMessage,
   NotificationListMessage,
   NotificationReadMessage,
+  UserCountMessage,
+  GetUserCountMessage,
+  MarkAllAsReadMessage,
+  AllNotificationsReadMessage,
 } from "../model/types";
 import { useChatNotificationStore } from "../model/store";
 import { useAuthStore } from "@/shared/store/auth";
@@ -42,7 +46,10 @@ const isNotificationListMessage = (msg: WebSocketMessage): msg is NotificationLi
 const isNotificationReadMessage = (msg: WebSocketMessage): msg is NotificationReadMessage =>
   msg.type === "notificationRead";
 const isErrorMessage = (msg: WebSocketMessage): msg is ErrorMessage => msg.type === "error";
-
+const isUserCountMessage = (msg: WebSocketMessage): msg is UserCountMessage =>
+  msg.type === "userCount";
+const isAllNotificationsReadMessage = (msg: WebSocketMessage): msg is AllNotificationsReadMessage =>
+  msg.type === "allNotificationsRead";
 // WebSocket 연결
 export const connect = () => {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -64,6 +71,11 @@ export const connect = () => {
     pingInterval = setInterval(() => {
       sendMessage({ type: "ping" } as PingMessage);
     }, 30000);
+
+    // 연결 시 바로 사용자 수 요청
+    setTimeout(() => {
+      getUserCount();
+    }, 1000);
   };
 
   ws.onmessage = (event: MessageEvent) => {
@@ -138,6 +150,14 @@ const handleMessage = (data: WebSocketMessage) => {
     console.error("서버 오류:", data.message);
   } else if (data.type === "pong") {
     // pong 응답 받음 (연결 정상)
+  } else if (isUserCountMessage(data)) {
+    console.log("사용자 수 업데이트:", data);
+    store.setUserCount(data.authenticatedCount, data.totalCount, data.timestamp);
+  } else if (isAllNotificationsReadMessage(data)) {
+    console.log("모든 알림 읽음 처리 응답:", data);
+    if (data.success) {
+      store.markMultipleNotificationsAsRead(data.notificationIds);
+    }
   } else {
     console.log("알 수 없는 메시지 타입:", data);
   }
@@ -218,6 +238,21 @@ export const disconnect = () => {
   }
 };
 
+// 사용자 수 요청 함수 추가
+export const getUserCount = () => {
+  const message: GetUserCountMessage = {
+    type: "getUserCount",
+  };
+  sendMessage(message);
+};
+// 모든 알림 읽음 처리 요청 함수 추가
+export const markAllAsRead = () => {
+  const message: MarkAllAsReadMessage = {
+    type: "markAllAsRead",
+  };
+  sendMessage(message);
+};
+
 // WebSocket 관리 객체
 export const webSocketManager = {
   connect,
@@ -225,4 +260,6 @@ export const webSocketManager = {
   sendChatMessage,
   getNotifications,
   markAsRead,
+  getUserCount,
+  markAllAsRead,
 };
